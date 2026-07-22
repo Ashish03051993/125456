@@ -11,6 +11,7 @@ import Settings from "@/pages/Settings";
 import AdminPanel from "@/pages/AdminPanel";
 import AuthCallback from "@/pages/AuthCallback";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import ShortLinkRedirect from "@/pages/ShortLinkRedirect";
 
 function AppRouter() {
   const location = useLocation();
@@ -23,6 +24,7 @@ function AppRouter() {
       <Route path="/" element={<Landing />} />
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
+      <Route path="/l/:slug" element={<ShortLinkRedirect />} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/new" element={<ProtectedRoute><ProjectWizard /></ProtectedRoute>} />
       <Route path="/project/:id" element={<ProtectedRoute><ProjectView /></ProtectedRoute>} />

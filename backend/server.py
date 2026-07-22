@@ -304,39 +304,59 @@ async def waitlist_join(payload: WaitlistIn, request: Request):
 async def admin_waitlist(_admin=Depends(require_admin),
                          source: Optional[str] = None,
                          plan: Optional[str] = None,
+                         variant: Optional[str] = None,
                          q: Optional[str] = None):
     match: dict = {}
     if source == "direct":
-        # Match both explicit 'direct' and legacy null/missing rows
         match["$or"] = [{"source": "direct"}, {"source": None}, {"source": {"$exists": False}}]
     elif source:
         match["source"] = source
     if plan:
         match["plan_interest"] = plan
+    if variant == "unassigned":
+        v_clause = [{"variant": None}, {"variant": {"$exists": False}}]
+        if "$or" in match:
+            match = {"$and": [{"$or": match.pop("$or")}, {"$or": v_clause}]}
+        else:
+            match["$or"] = v_clause
+    elif variant:
+        match["variant"] = variant
     if q:
         rx = {"$regex": re.escape(q), "$options": "i"}
         q_or = [{"email": rx}, {"name": rx}, {"use_case": rx}]
         if "$or" in match:
             match = {"$and": [{"$or": match.pop("$or")}, {"$or": q_or}], **match}
+        elif "$and" in match:
+            match["$and"].append({"$or": q_or})
         else:
             match["$or"] = q_or
     rows = await db.waitlist.find(match, {"_id": 0}).sort("position", 1).to_list(2000)
 
-    # Unfiltered facets — coalesce null/missing source into 'direct'
-    by_plan_cur = db.waitlist.aggregate([{"$group": {"_id": "$plan_interest", "n": {"$sum": 1}}}])
-    by_plan = {d["_id"] or "unspecified": d["n"] async for d in by_plan_cur}
+    # Unfiltered facets — coalesce null/missing into a fallback bucket
+    by_plan_cur = db.waitlist.aggregate([
+        {"$group": {"_id": {"$ifNull": ["$plan_interest", "unspecified"]}, "n": {"$sum": 1}}},
+        {"$sort": {"n": -1}},
+    ])
+    by_plan = [{"plan": d["_id"], "n": d["n"]} async for d in by_plan_cur]
     by_source_cur = db.waitlist.aggregate([
         {"$group": {"_id": {"$ifNull": ["$source", "direct"]}, "n": {"$sum": 1}}},
         {"$sort": {"n": -1}},
     ])
     by_source = [{"source": d["_id"], "n": d["n"]} async for d in by_source_cur]
+    by_variant_cur = db.waitlist.aggregate([
+        {"$group": {"_id": {"$ifNull": ["$variant", "unassigned"]}, "n": {"$sum": 1}}},
+        {"$sort": {"n": -1}},
+    ])
+    by_variant = [{"variant": d["_id"], "n": d["n"]} async for d in by_variant_cur]
     total = await db.waitlist.count_documents({})
     return {
         "count": len(rows),
         "total": total,
-        "by_plan_interest": by_plan,
+        "by_plan_interest": {r["plan"]: r["n"] for r in by_plan},
+        "by_plan": by_plan,
         "by_source": by_source,
-        "filters": {"source": source, "plan": plan, "q": q},
+        "by_variant": by_variant,
+        "filters": {"source": source, "plan": plan, "variant": variant, "q": q},
         "entries": rows,
     }
 
@@ -345,6 +365,7 @@ async def admin_waitlist(_admin=Depends(require_admin),
 async def admin_waitlist_csv(_admin=Depends(require_admin),
                              source: Optional[str] = None,
                              plan: Optional[str] = None,
+                             variant: Optional[str] = None,
                              q: Optional[str] = None):
     match: dict = {}
     if source == "direct":
@@ -352,11 +373,21 @@ async def admin_waitlist_csv(_admin=Depends(require_admin),
     elif source:
         match["source"] = source
     if plan: match["plan_interest"] = plan
+    if variant == "unassigned":
+        v_clause = [{"variant": None}, {"variant": {"$exists": False}}]
+        if "$or" in match:
+            match = {"$and": [{"$or": match.pop("$or")}, {"$or": v_clause}]}
+        else:
+            match["$or"] = v_clause
+    elif variant:
+        match["variant"] = variant
     if q:
         rx = {"$regex": re.escape(q), "$options": "i"}
         q_or = [{"email": rx}, {"name": rx}, {"use_case": rx}]
         if "$or" in match:
             match = {"$and": [{"$or": match.pop("$or")}, {"$or": q_or}], **match}
+        elif "$and" in match:
+            match["$and"].append({"$or": q_or})
         else:
             match["$or"] = q_or
     rows = await db.waitlist.find(match, {"_id": 0}).sort("position", 1).to_list(5000)
@@ -377,6 +408,7 @@ async def admin_waitlist_csv(_admin=Depends(require_admin),
     fname = "waitlist"
     if source: fname += f"-{source}"
     if plan: fname += f"-{plan}"
+    if variant: fname += f"-v{variant}"
     return Response(
         content=buf.getvalue(),
         media_type="text/csv",
@@ -827,7 +859,32 @@ def _iso_ago_days(n: int) -> str:
     return (datetime.now(timezone.utc) - timedelta(days=n)).isoformat()
 
 
-# --------------------------- UTM Campaign Links ---------------------------
+# --------------------------- Short URLs ---------------------------
+@api.get("/short/{slug}")
+async def short_resolve(slug: str, request: Request):
+    slug = _clean_slug(slug) or ""
+    link = await db.utm_links.find_one({"slug": slug}, {"_id": 0})
+    if not link:
+        raise HTTPException(404, "Not found")
+    # Fire an analytics event so short-link clicks show up in dashboards
+    await db.analytics_events.insert_one({
+        "id": f"evt_{uuid.uuid4().hex[:12]}",
+        "event": "short_link_hit",
+        "properties": {
+            "slug": slug,
+            "utm_source": link["params"].get("utm_source"),
+            "utm_campaign": link["params"].get("utm_campaign"),
+        },
+        "path": f"/l/{slug}",
+        "referrer": request.headers.get("referer", ""),
+        "user_agent": request.headers.get("user-agent", "")[:200],
+        "ip": request.client.host if request.client else None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"slug": slug, "target": link["url"], "name": link.get("name")}
+
+
+# --------------------------- UTM Campaign Links (existing) ---------------------------
 class UtmLinkIn(BaseModel):
     name: str
     base_url: Optional[str] = None
@@ -836,6 +893,7 @@ class UtmLinkIn(BaseModel):
     campaign: Optional[str] = None
     content: Optional[str] = None
     term: Optional[str] = None
+    slug: Optional[str] = None  # Optional short-URL slug for /l/<slug>
 
 
 def _clean_slug(s: Optional[str]) -> Optional[str]:
@@ -872,12 +930,22 @@ async def utm_create(payload: UtmLinkIn, request: Request, _admin=Depends(requir
         "utm_content": _clean_slug(payload.content),
         "utm_term": _clean_slug(payload.term),
     }
+    # Short-URL slug: user-supplied or derived from name; ensure uniqueness.
+    desired_slug = _clean_slug(payload.slug) or _clean_slug(payload.name) or None
+    slug = None
+    if desired_slug:
+        slug = desired_slug
+        suffix = 1
+        while await db.utm_links.find_one({"slug": slug}):
+            suffix += 1
+            slug = f"{desired_slug}-{suffix}"
     doc = {
         "id": f"utm_{uuid.uuid4().hex[:12]}",
         "name": payload.name.strip(),
         "base_url": base,
         "params": params,
         "url": _compose_url(base, params),
+        "slug": slug,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.utm_links.insert_one(doc)
