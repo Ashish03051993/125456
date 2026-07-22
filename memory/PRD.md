@@ -26,6 +26,14 @@ Dashboard, credit system, projects, download, admin panel, pricing.
 - Landing, Pricing, Dashboard, Wizard, Project View, Settings, Admin Panel
 - Blue & white professional theme (Canva/InVideo inspired)
 
+## Phase 5 (2026-02) — UTM Campaign Links
+- ✅ **UTM Builder** in Admin (new tab `UTM Links`) — 7 quick presets: LinkedIn Post / Article / DM / Ad, Cold Email, Community Post, Custom
+- ✅ Form with live-updating kebab-cased preview URL, copy-to-clipboard (with fallback), and save-to-DB
+- ✅ Saved-links table with per-link stats (sessions / demo clicks / signups / conversion %) rolled up from `analytics_events` by matching `properties.source/medium/campaign`
+- ✅ Backend endpoints: `POST /api/admin/utm-links`, `GET /api/admin/utm-links`, `DELETE /api/admin/utm-links/{id}` — admin-only
+- ✅ Testing pass 5/5: 10/10 new tests + 56/56 across the non-generation suite — 100% green
+
+
 ## Phase 1 Additions #2 (2026-02, this iteration) — A/B Testing + Daily Digest
 
 - ✅ **A/B Testing** on landing hero (`landing_hero` experiment) — two variants (A/B) with distinct **eyebrow / headline / subtitle / primary CTA / secondary CTA**. Deterministic per-client assignment via SHA-256 (client_id persisted in `localStorage.avs_client_id`). Every subsequent analytics event carries `properties.variant`.

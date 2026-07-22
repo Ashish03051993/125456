@@ -85,9 +85,21 @@ export default function UtmLinksTab() {
     load();
   };
 
-  const copy = (text, label = "URL") => {
-    navigator.clipboard.writeText(text);
-    toast.success(`${label} copied`);
+  const copy = async (text, label = "URL") => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback for older browsers / restricted contexts
+        const ta = document.createElement("textarea");
+        ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+        document.body.appendChild(ta); ta.select();
+        document.execCommand("copy"); document.body.removeChild(ta);
+      }
+      toast.success(`${label} copied`);
+    } catch {
+      toast.error("Copy failed — check browser permissions");
+    }
   };
 
   return (
