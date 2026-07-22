@@ -25,8 +25,8 @@ from dotenv import load_dotenv
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 from emergentintegrations.llm.openai import OpenAITextToSpeech
 from fastapi import (APIRouter, BackgroundTasks, Cookie, Depends, FastAPI,
-                     Header, HTTPException, Request, Response)
-from fastapi.responses import FileResponse, JSONResponse
+                     Header, HTTPException, Request)
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
@@ -254,6 +254,11 @@ class WaitlistIn(BaseModel):
     use_case: Optional[str] = None
     plan_interest: Optional[str] = None  # free | pro | business | enterprise
     referrer: Optional[str] = None
+    # Attribution (populated from client's captureAttribution() cache)
+    source: Optional[str] = None
+    medium: Optional[str] = None
+    campaign: Optional[str] = None
+    variant: Optional[str] = None  # A/B variant at time of signup
 
 
 @api.post("/waitlist")
@@ -272,6 +277,10 @@ async def waitlist_join(payload: WaitlistIn, request: Request):
         "use_case": payload.use_case,
         "plan_interest": payload.plan_interest or "free",
         "referrer": payload.referrer,
+        "source": payload.source or "direct",
+        "medium": payload.medium,
+        "campaign": payload.campaign,
+        "variant": payload.variant,
         "position": count + 1,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "ip": request.client.host if request.client else None,
@@ -292,11 +301,64 @@ async def waitlist_join(payload: WaitlistIn, request: Request):
 
 
 @api.get("/admin/waitlist")
-async def admin_waitlist(_admin=Depends(require_admin)):
-    rows = await db.waitlist.find({}, {"_id": 0}).sort("position", 1).to_list(2000)
+async def admin_waitlist(_admin=Depends(require_admin),
+                         source: Optional[str] = None,
+                         plan: Optional[str] = None,
+                         q: Optional[str] = None):
+    match: dict = {}
+    if source:
+        match["source"] = source
+    if plan:
+        match["plan_interest"] = plan
+    if q:
+        rx = {"$regex": re.escape(q), "$options": "i"}
+        match["$or"] = [{"email": rx}, {"name": rx}, {"use_case": rx}]
+    rows = await db.waitlist.find(match, {"_id": 0}).sort("position", 1).to_list(2000)
+
+    # Unfiltered facets (so the UI can show counts even after filtering)
     by_plan_cur = db.waitlist.aggregate([{"$group": {"_id": "$plan_interest", "n": {"$sum": 1}}}])
     by_plan = {d["_id"] or "unspecified": d["n"] async for d in by_plan_cur}
-    return {"count": len(rows), "by_plan_interest": by_plan, "entries": rows}
+    by_source_cur = db.waitlist.aggregate([{"$group": {"_id": "$source", "n": {"$sum": 1}}}, {"$sort": {"n": -1}}])
+    by_source = [{"source": d["_id"] or "direct", "n": d["n"]} async for d in by_source_cur]
+    total = await db.waitlist.count_documents({})
+    return {
+        "count": len(rows),
+        "total": total,
+        "by_plan_interest": by_plan,
+        "by_source": by_source,
+        "filters": {"source": source, "plan": plan, "q": q},
+        "entries": rows,
+    }
+
+
+@api.get("/admin/waitlist.csv")
+async def admin_waitlist_csv(_admin=Depends(require_admin),
+                             source: Optional[str] = None,
+                             plan: Optional[str] = None,
+                             q: Optional[str] = None):
+    match: dict = {}
+    if source: match["source"] = source
+    if plan: match["plan_interest"] = plan
+    if q:
+        rx = {"$regex": re.escape(q), "$options": "i"}
+        match["$or"] = [{"email": rx}, {"name": rx}, {"use_case": rx}]
+    rows = await db.waitlist.find(match, {"_id": 0}).sort("position", 1).to_list(5000)
+    import csv, io
+    buf = io.StringIO()
+    cols = ["position", "email", "name", "plan_interest", "source", "medium",
+            "campaign", "variant", "use_case", "referrer", "created_at"]
+    w = csv.writer(buf)
+    w.writerow(cols)
+    for r in rows:
+        w.writerow([r.get(c, "") if r.get(c) is not None else "" for c in cols])
+    fname = "waitlist"
+    if source: fname += f"-{source}"
+    if plan: fname += f"-{plan}"
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{fname}.csv"'},
+    )
 
 
 # --------------------------- Analytics ---------------------------
@@ -843,6 +905,35 @@ async def utm_list(_admin=Depends(require_admin), days: int = 30):
 async def utm_delete(link_id: str, _admin=Depends(require_admin)):
     r = await db.utm_links.delete_one({"id": link_id})
     return {"deleted": r.deleted_count}
+
+
+@api.get("/admin/utm-links.csv")
+async def utm_export_csv(_admin=Depends(require_admin), days: int = 30):
+    since = _iso_ago_days(days)
+    rows = await db.utm_links.find({}, {"_id": 0}).sort("created_at", -1).to_list(2000)
+    import csv, io
+    buf = io.StringIO()
+    cols = ["name", "url", "utm_source", "utm_medium", "utm_campaign",
+            "utm_content", "utm_term", "sessions", "demo_clicks", "signups",
+            "conversion_pct", "created_at"]
+    w = csv.writer(buf)
+    w.writerow(cols)
+    for r in rows:
+        st = await _link_stats(r, since)
+        p = r.get("params", {})
+        w.writerow([
+            r.get("name", ""), r.get("url", ""),
+            p.get("utm_source") or "", p.get("utm_medium") or "",
+            p.get("utm_campaign") or "", p.get("utm_content") or "",
+            p.get("utm_term") or "",
+            st["sessions"], st["demo_clicks"], st["signups"], st["conversion_pct"],
+            r.get("created_at", ""),
+        ])
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="utm-campaigns.csv"'},
+    )
 
 
 # --------------------------- Digest ---------------------------

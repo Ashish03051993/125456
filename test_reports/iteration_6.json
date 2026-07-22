@@ -1,0 +1,74 @@
+{
+  "summary": "Phase 6 — CSV exports (waitlist + utm-links) and Segment Compare (?source filter) verified end-to-end. Backend: 12/12 new tests PASS in /app/backend/tests/test_csv_and_segments.py; full regression 68/68 across (test_csv_and_segments + test_phase1 + test_phase1_ab_digest + test_phase1_demo + test_utm_links). POST /api/waitlist accepts {source, medium, campaign, variant} and persists them on the doc; missing source falls back to 'direct' (verified via admin lookup). GET /api/admin/waitlist returns the new shape {count, total, by_plan_interest, by_source:[{source,n}], filters, entries[]}; total stays constant across filters while count reflects filtered rows. ?source=/?plan=/?q= filters work. Unauthenticated → 401; non-admin user → 403 (require_admin). GET /api/admin/waitlist.csv returns text/csv with Content-Disposition attachment filename encoding the filter (waitlist.csv → waitlist-linkedin.csv); header row matches spec exactly (position,email,name,plan_interest,source,medium,campaign,variant,use_case,referrer,created_at); rows respect filters. GET /api/admin/utm-links.csv returns utm-campaigns.csv with expected columns (name,url,utm_source,utm_medium,utm_campaign,utm_content,utm_term,sessions,demo_clicks,signups,conversion_pct,created_at) and row count matches JSON /admin/utm-links. Frontend Playwright: /admin?tab=waitlist renders waitlist-section, segment-chips, segment-all, one segment-{source} chip per unique source, and segment-count. Clicking segment-linkedin refetches with ?source=linkedin, count drops from 39→12, header text switches from '39 people on the waitlist' to '12 from Linkedin of 39 total', new Source column shows chip 'Linkedin · post' and Campaign column shows 'beta_dec' (mono). export-csv-btn click triggers a download named waitlist-linkedin.csv (filter respected). /admin?tab=utm renders utm-export-csv wrapped in an <a href='/api/admin/utm-links.csv' download> — click triggers download named utm-campaigns.csv. End-to-end attribution flow verified: localStorage.clear() → visit /?utm_source=linkedin&utm_medium=post&utm_campaign=beta_dec → avs_attribution captured → submit waitlist → GET /api/admin/waitlist?source=linkedin&q=<email> returns the new row with source=linkedin, medium=post, campaign=beta_dec.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/admin/waitlist by_source aggregation",
+        "issue": "Duplicate 'direct' bucket. Aggregation groups by $source but then maps _id (null OR literal 'direct') → 'direct' key WITHOUT merging. Older seed rows have source=null (n=17), newer rows created after this phase have source='direct' (n=6) — both appear separately in by_source as two entries both labelled 'direct'. Result: (a) segment chips render TWO 'Direct' chips (Direct(17) & Direct(6)) with the same data-testid=segment-direct and same React key='direct' (console warning: 'Encountered two children with the same key `direct`'); (b) clicking either Direct chip sends ?source=direct which matches only the 6 literal rows on the backend — the chip claims 17 but the table shows 6, breaking the mental model of 'segment size == filtered rows'. Fix: in the aggregation $group by {$ifNull:['$source','direct']}, OR normalize null→'direct' in Python and dedupe by summing before returning. Also, in ?source=direct the match should include {$or:[{source:'direct'},{source:{$in:[null]}}]} OR permanently migrate null-source rows to 'direct' on read.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "GET /api/admin/waitlist",
+        "issue": "Spec calls out 'Non-admin gets 401' but the backend returns 403 for authenticated non-admin (require_admin raises 403). 401 only fires when no cookie/token is presented. Test allows either — but recommend picking one (either normalize require_admin to 401 for consistency with the spec, or update the spec)."
+      },
+      {
+        "endpoint": "GET /api/admin/waitlist.csv",
+        "issue": "For rows created before the attribution feature (source is missing/None on the doc), the CSV emits an empty 'source' column instead of 'direct'. The listing UI shows 'direct' via `{r.source || 'direct'}` fallback but the CSV export does not apply the same fallback. Consider `row.get('source') or 'direct'` in the csv writer for parity."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AdminPanel Waitlist segment-chips",
+        "issue": "Two 'Direct' chips render side-by-side because backend by_source returns two 'direct' entries (see backend critical bug). Also causes React key collision warning in console. Fix depends on backend fix; alternatively, frontend can dedupe by summing entries with same source key before rendering.",
+        "selector": "[data-testid=segment-chips] [data-testid=segment-direct]",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Segment Compare — clicking Direct chip",
+        "issue": "Chip shows 'Direct (17)' but clicking it sends ?source=direct and returns count=6 (only literal-'direct' rows; the 17 null-source rows are invisible under this filter). Header updates to '6 from Direct of 39 total' — inconsistent with the chip's claim.",
+        "affected_selectors": ["[data-testid=segment-direct]", "[data-testid=segment-count]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_csv_and_segments.py",
+    "/app/test_reports/pytest/phase6_results.xml",
+    "/app/test_reports/pytest/full_results.xml"
+  ],
+  "action_items": [
+    "HIGH: Merge null-source rows into the 'direct' bucket in GET /api/admin/waitlist by_source. Two approaches: (1) $group by {$ifNull:['$source','direct']}, or (2) in Python, aggregate by key `d['_id'] or 'direct'` into a dict then convert to list — dedupe before returning. Same normalization must apply to the ?source=direct filter (match null OR 'direct') OR run a one-time migration `db.waitlist.updateMany({source:null},{$set:{source:'direct'}})`.",
+    "MINOR: In /api/admin/waitlist.csv writer, fall back missing source to 'direct' to match the UI table's fallback.",
+    "MINOR: Decide 401 vs 403 for authenticated non-admin — require_admin currently returns 403 while spec says 401.",
+    "OPTIONAL (pre-existing): Duplicate-detection on POST /api/admin/utm-links (utm_source, utm_medium, utm_campaign) still not implemented (from iteration 5).",
+    "OPTIONAL (pre-existing): navigator.clipboard.writeText in UtmLinksTab.copy() not wrapped in try/catch (from iteration 5)."
+  ],
+  "critical_code_review_comments": [
+    "server.py line 322: `by_source = [{'source': d['_id'] or 'direct', 'n': d['n']} async for d in by_source_cur]` produces duplicate 'direct' entries when both null and literal 'direct' _id buckets exist. Aggregate should coalesce at the $group stage: `{'$group': {'_id': {'$ifNull':['$source','direct']}, 'n':{'$sum':1}}}`.",
+    "server.py line 310: `match['source'] = source` — when a client filters by 'direct', legacy null-source rows are excluded. Either normalize on write (default 'direct' has already been added at line 280 for new rows) AND run a one-time migration for pre-existing rows, or expand the match to `{'$or':[{'source':source},{'source':None}]}` when source == 'direct'.",
+    "server.py lines 348-353 CSV writer: `r.get(c, '') if r.get(c) is not None else ''` collapses None to '' — good — but doesn't apply the 'source or direct' fallback that the UI applies (AdminPanel.jsx L235). CSVs of old-seed data will therefore differ from what the admin sees on-screen.",
+    "AdminPanel.jsx lines 196-204: The React key={s.source} + data-testid={`segment-${s.source}`} both collide when backend returns two 'direct' entries. Even after backend fix, consider defensive dedupe: `Array.from(new Map(by_source.map(s=>[s.source, s])).values())` — but ideally the backend is the single source of truth.",
+    "AdminPanel.jsx line 51: filter reload is fine (useEffect on sourceFilter) but note the top-level load() is called on every filter change which also re-fetches /admin/stats, /analytics, /experiments, /digest, /digest/config, /digest/preview — 6 unrelated network calls per chip click. Consider a dedicated `loadWaitlist()` that only calls /admin/waitlist when only sourceFilter changed.",
+    "WaitlistForm.jsx line 27-29: JSON.parse(localStorage) inside try/catch swallows the error silently — fine, but variant lookup is coupled to the 'landing_hero' key. If a second experiment is added, this needs a lookup by experiment id passed via props.",
+    "Consistency: /api/admin/utm-links.csv ignores the `days` query param for filtering rows (all rows returned) but honors it for stats aggregation (via `since = _iso_ago_days(days)`). Consider filtering `db.utm_links.find({created_at: {'$gte': since}})` too, OR document that days only affects stats window."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_csv_and_segments.py (new — 12 tests across TestWaitlistAttribution / TestAdminWaitlistListing / TestWaitlistCsvExport / TestUtmLinksCsvExport)"
+  ],
+  "success_rate": {
+    "backend": "100% (12/12 phase6 tests; 68/68 across full non-generation suite)",
+    "frontend": "85% (waitlist-section + segment chips + linkedin filter + waitlist CSV download + utm CSV download + E2E attribution all pass; segment-direct chip is buggy — HIGH-severity — because backend returns duplicate buckets)"
+  },
+  "test_credentials": "Admin cookie session_token=test_admin_1784712404860 (admin@videostudio.ai). Bearer variant of same token also works. Same as prior passes.",
+  "seed_data_creation": "test_csv_and_segments.py created ~8 TEST_seg6_* waitlist rows across linkedin/twitter/direct sources for filter/csv verification. Playwright created ~2 additional rows during segment-chips test and 1 during the E2E attribution flow test (source=linkedin,campaign=beta_dec). No production/seeded data mutated. Note: earlier iterations left db.waitlist at total=17 (all null-source). This iteration bumped it to 40 rows across 3 sources (linkedin, twitter, direct-literal, and legacy null=direct).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "CSV exports for waitlist + utm-links are green. Segment Compare is 90% green — the ONLY remaining bug is the duplicate 'direct' bucket (backend by_source aggregation + filter mismatch) which is HIGH severity because it produces a React key warning and makes the Direct chip's count mismatch the filtered rows. Fix requires backend change (see action_items). Explicitly deferred (not tested this pass): QR Codes, Resend email delivery. Attribution end-to-end flow verified via Playwright — no need to re-verify unless the WaitlistForm/BookDemoDialog/analytics.js contract changes. Admin non-admin returns 403 not 401; consider updating spec or code (see minor issue).",
+  "rca of the issue": "Duplicate 'direct' chip RCA: /api/admin/waitlist by_source pipeline `{'$group': {'_id': '$source', 'n': {'$sum': 1}}}` yields two distinct groups when the collection has both source=null (legacy 17 rows) AND source='direct' (6 rows created after Phase 6). Python post-processing `d['_id'] or 'direct'` maps null→'direct' but does NOT merge with the existing literal-'direct' bucket → the returned list contains two entries whose 'source' field is both 'direct'. Frontend renders each as a separate chip (React key/testid collision). Reproduction: (1) `mongosh test_database --eval 'db.waitlist.insertOne({email:\"x@x.x\", source:null})'` then insert another with source='direct'; (2) GET /api/admin/waitlist → by_source returns two objects with source='direct'; (3) open /admin?tab=waitlist → two 'Direct' chips render; (4) click either chip → filter returns only literal-source='direct' rows. Mitigation: change $group to `{$ifNull:['$source','direct']}` (single Mongo change) OR run one-time migration to backfill null → 'direct' AND then keep the current pipeline. Second fix required in match: either migrate all legacy rows so ?source=direct works correctly, or expand the match to include null when source='direct'."
+}

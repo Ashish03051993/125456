@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import { TopBar, Sidebar } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
-import { Users, Video, Mail, TrendingUp, BarChart3, Copy, Search, FlaskConical, Send, Trophy, AlertTriangle, Link as LinkIcon } from "lucide-react";
+import { Users, Video, Mail, TrendingUp, BarChart3, Copy, Search, FlaskConical, Send, Trophy, AlertTriangle, Link as LinkIcon, Download } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, LineChart, Line } from "recharts";
@@ -41,13 +41,14 @@ export default function AdminPanel() {
   const [digestConfig, setDigestConfig] = useState(null);
   const [digestPreview, setDigestPreview] = useState(null);
   const [sendingDigest, setSendingDigest] = useState(false);
+  const [sourceFilter, setSourceFilter] = useState("");
   const [q, setQ] = useState("");
 
   const load = async () => {
     try {
       const [s, w, a, e, d, dc, dp] = await Promise.all([
         api.get("/admin/stats"),
-        api.get("/admin/waitlist"),
+        api.get("/admin/waitlist", { params: sourceFilter ? { source: sourceFilter } : {} }),
         api.get("/admin/analytics"),
         api.get("/admin/experiments"),
         api.get("/admin/digest"),
@@ -59,7 +60,7 @@ export default function AdminPanel() {
       setDigestConfig(dc.data); setDigestPreview(dp.data);
     } catch { toast.error("Could not load admin data"); }
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [sourceFilter]);
 
   const sendDigestNow = async () => {
     setSendingDigest(true);
@@ -90,22 +91,22 @@ export default function AdminPanel() {
   }, [waitlist, q]);
 
   const exportCsv = () => {
-    if (!waitlist?.entries?.length) return;
-    const header = ["position","email","name","plan_interest","use_case","referrer","created_at"];
-    const rows = waitlist.entries.map(r => header.map(h => JSON.stringify(r[h] ?? "")).join(","));
-    const csv = header.join(",") + "\n" + rows.join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
+    const url = new URL(`${process.env.REACT_APP_BACKEND_URL}/api/admin/waitlist.csv`);
+    if (sourceFilter) url.searchParams.set("source", sourceFilter);
+    // Cookie auth is included via credentials on same origin
     const a = document.createElement("a");
-    a.href = url; a.download = "waitlist.csv"; a.click();
-    URL.revokeObjectURL(url);
+    a.href = url.toString();
+    a.download = "";
+    document.body.appendChild(a); a.click(); a.remove();
   };
 
-  const copyEmails = () => {
+  const copyEmails = async () => {
     if (!waitlist?.entries?.length) return;
     const emails = waitlist.entries.map(r => r.email).join(", ");
-    navigator.clipboard.writeText(emails);
-    toast.success(`Copied ${waitlist.entries.length} emails`);
+    try {
+      await navigator.clipboard.writeText(emails);
+      toast.success(`Copied ${waitlist.entries.length} emails`);
+    } catch { toast.error("Copy failed — check browser permissions"); }
   };
 
   return (
@@ -172,13 +173,37 @@ export default function AdminPanel() {
             <div className="mt-6" data-testid="waitlist-section">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="text-ink-500 text-sm">
-                  <span className="font-heading font-bold text-ink-900 text-xl">{waitlist.count}</span> people on the waitlist
+                  <span className="font-heading font-bold text-ink-900 text-xl" data-testid="segment-count">{waitlist.count}</span>
+                  {sourceFilter
+                    ? <> from <span className="font-semibold capitalize text-brand-700">{sourceFilter}</span> of {waitlist.total} total</>
+                    : <> people on the waitlist</>}
                 </div>
                 <div className="flex items-center gap-2">
                   <Button variant="outline" onClick={copyEmails} data-testid="copy-emails-btn"><Copy className="w-4 h-4 mr-2" /> Copy emails</Button>
-                  <Button onClick={exportCsv} className="bg-brand-600 hover:bg-brand-700 text-white" data-testid="export-csv-btn">Export CSV</Button>
+                  <Button onClick={exportCsv} className="bg-brand-600 hover:bg-brand-700 text-white" data-testid="export-csv-btn">
+                    <Download className="w-4 h-4 mr-2" /> Export CSV
+                  </Button>
                 </div>
               </div>
+              <div className="mt-4 flex flex-wrap items-center gap-2" data-testid="segment-chips">
+                <span className="text-xs text-ink-500 font-semibold uppercase tracking-widest mr-1">Segment:</span>
+                <button onClick={() => setSourceFilter("")} data-testid="segment-all"
+                  className={`text-xs font-semibold rounded-full px-3 py-1.5 border transition-colors ${
+                    !sourceFilter ? "bg-brand-600 text-white border-brand-600" : "bg-white text-ink-700 border-ink-200 hover:border-brand-600"
+                  }`}>
+                  All <span className="opacity-70 ml-1">({waitlist.total})</span>
+                </button>
+                {(waitlist.by_source || []).map((s) => (
+                  <button key={s.source} onClick={() => setSourceFilter(s.source)}
+                    data-testid={`segment-${s.source}`}
+                    className={`text-xs font-semibold rounded-full px-3 py-1.5 border transition-colors capitalize ${
+                      sourceFilter === s.source ? "bg-brand-600 text-white border-brand-600" : "bg-white text-ink-700 border-ink-200 hover:border-brand-600"
+                    }`}>
+                    {s.source} <span className="opacity-70 ml-1">({s.n})</span>
+                  </button>
+                ))}
+              </div>
+
               <div className="mt-4 relative max-w-sm">
                 <Search className="w-4 h-4 text-ink-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <Input placeholder="Search email, name or use case" value={q} onChange={(e)=>setQ(e.target.value)}
@@ -186,12 +211,13 @@ export default function AdminPanel() {
               </div>
               <div className="mt-4 bg-white border border-ink-200 rounded-2xl overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm min-w-[720px]">
+                  <table className="w-full text-sm min-w-[840px]">
                     <thead className="bg-ink-50 text-ink-500 text-xs uppercase tracking-widest">
                       <tr>
                         <th className="text-left px-3 py-3 font-semibold">#</th>
                         <th className="text-left px-3 py-3 font-semibold">Email</th>
-                        <th className="text-left px-3 py-3 font-semibold">Name</th>
+                        <th className="text-left px-3 py-3 font-semibold">Source</th>
+                        <th className="text-left px-3 py-3 font-semibold">Campaign</th>
                         <th className="text-left px-3 py-3 font-semibold">Plan</th>
                         <th className="text-left px-3 py-3 font-semibold">Use case</th>
                         <th className="text-left px-3 py-3 font-semibold">When</th>
@@ -201,15 +227,22 @@ export default function AdminPanel() {
                       {filteredWaitlist.map((r) => (
                         <tr key={r.id} className="border-t border-ink-100 hover:bg-ink-50/50" data-testid={`waitlist-row-${r.id}`}>
                           <td className="px-3 py-2.5 font-mono text-ink-500">{r.position}</td>
-                          <td className="px-3 py-2.5 font-semibold">{r.email}</td>
-                          <td className="px-3 py-2.5">{r.name || "—"}</td>
+                          <td className="px-3 py-2.5">
+                            <div className="font-semibold">{r.email}</div>
+                            {r.name && <div className="text-[11px] text-ink-500">{r.name}</div>}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span className="text-xs font-semibold rounded-full px-2 py-1 bg-ink-100 text-ink-700 capitalize">{r.source || "direct"}</span>
+                            {r.medium && <span className="text-[11px] text-ink-500 ml-1">· {r.medium}</span>}
+                          </td>
+                          <td className="px-3 py-2.5 font-mono text-xs text-ink-500">{r.campaign || "—"}</td>
                           <td className="px-3 py-2.5"><span className="text-xs font-semibold rounded-full px-2 py-1 bg-brand-50 text-brand-700 capitalize">{r.plan_interest}</span></td>
                           <td className="px-3 py-2.5 text-ink-500 max-w-[220px] truncate" title={r.use_case}>{r.use_case || "—"}</td>
                           <td className="px-3 py-2.5 text-ink-500 whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</td>
                         </tr>
                       ))}
                       {filteredWaitlist.length === 0 && (
-                        <tr><td colSpan={6} className="px-3 py-10 text-center text-ink-400">No entries match your search.</td></tr>
+                        <tr><td colSpan={7} className="px-3 py-10 text-center text-ink-400">No entries match this filter.</td></tr>
                       )}
                     </tbody>
                   </table>

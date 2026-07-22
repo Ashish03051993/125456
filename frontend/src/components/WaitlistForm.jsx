@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sparkles, CheckCircle2, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
-import { track } from "@/lib/analytics";
+import { track, getAttribution } from "@/lib/analytics";
 import { toast } from "sonner";
 
 export default function WaitlistForm({ compact = false, source = "landing_hero" }) {
@@ -21,9 +21,17 @@ export default function WaitlistForm({ compact = false, source = "landing_hero" 
     track("waitlist_button_click", { source });
     track("waitlist_submit", { source, plan_interest: plan });
     try {
+      const attr = getAttribution();
+      let variant = null;
+      try {
+        const cached = JSON.parse(localStorage.getItem("avs_exp_landing_hero") || "null");
+        variant = cached?.variant || null;
+      } catch { /* ignore */ }
       const { data } = await api.post("/waitlist", {
         email, name: name || undefined, use_case: useCase || undefined,
         plan_interest: plan, referrer: document.referrer || undefined,
+        source: attr?.source, medium: attr?.medium, campaign: attr?.campaign,
+        variant,
       });
       setJoined(data);
       track("waitlist_success", { source, position: data.position, already: !!data.already_joined });

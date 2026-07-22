@@ -3,7 +3,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Copy, Link as LinkIcon, Trash2, Plus, TrendingUp, Linkedin, Mail, MessageSquare, Megaphone, Sparkles, Globe } from "lucide-react";
+import { Copy, Link as LinkIcon, Trash2, Plus, TrendingUp, Linkedin, Mail, MessageSquare, Megaphone, Sparkles, Globe, Download } from "lucide-react";
 import { toast } from "sonner";
 
 const PRESETS = [
@@ -196,8 +196,15 @@ export default function UtmLinksTab() {
             <div className="font-heading font-bold text-lg">Saved campaign links</div>
             <div className="text-xs text-ink-500 mt-0.5">Performance is measured on the last 30 days.</div>
           </div>
-          <div className="inline-flex items-center gap-2 text-xs text-brand-700 font-semibold bg-brand-50 rounded-full px-2.5 py-1 border border-brand-100">
-            <TrendingUp className="w-3.5 h-3.5" /> Auto-tracked via utm_* params
+          <div className="flex items-center gap-2">
+            <div className="hidden sm:inline-flex items-center gap-2 text-xs text-brand-700 font-semibold bg-brand-50 rounded-full px-2.5 py-1 border border-brand-100">
+              <TrendingUp className="w-3.5 h-3.5" /> Auto-tracked via utm_* params
+            </div>
+            <a href={`${process.env.REACT_APP_BACKEND_URL}/api/admin/utm-links.csv`} download>
+              <Button variant="outline" data-testid="utm-export-csv">
+                <Download className="w-4 h-4 mr-2" /> Export CSV
+              </Button>
+            </a>
           </div>
         </div>
         <div className="overflow-x-auto">

@@ -5,7 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { CalendarClock, Loader2, Sparkles, CheckCircle2 } from "lucide-react";
 import { api } from "@/lib/api";
-import { track } from "@/lib/analytics";
+import { track, getAttribution } from "@/lib/analytics";
 import { toast } from "sonner";
 
 export default function BookDemoDialog({ open, onOpenChange, source = "unknown" }) {
@@ -22,6 +22,7 @@ export default function BookDemoDialog({ open, onOpenChange, source = "unknown" 
     setBusy(true);
     track("book_demo_submit", { source, company, seats });
     try {
+      const attr = getAttribution();
       // We piggy-back on /waitlist with plan_interest=enterprise + use_case="Demo request"
       await api.post("/waitlist", {
         email,
@@ -29,6 +30,7 @@ export default function BookDemoDialog({ open, onOpenChange, source = "unknown" 
         plan_interest: "enterprise",
         use_case: `DEMO_REQUEST · seats=${seats || "?"} · notes=${notes || "-"}`,
         referrer: document.referrer || undefined,
+        source: attr?.source, medium: attr?.medium, campaign: attr?.campaign,
       });
       track("book_demo_success", { source });
       setDone(true);
