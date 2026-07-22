@@ -361,7 +361,7 @@ async def admin_analytics(_admin=Depends(require_admin), days: int = 14):
     ])
     per_source = {}
     async for d in src_page_cur:
-        per_source[d["_id"] or "direct"] = {"sessions": d["sessions"], "signups": 0}
+        per_source[d["_id"] or "direct"] = {"sessions": d["sessions"], "signups": 0, "demo_views": 0}
 
     src_signup_cur = db.analytics_events.aggregate([
         {"$match": {"created_at": {"$gte": since},
@@ -370,7 +370,7 @@ async def admin_analytics(_admin=Depends(require_admin), days: int = 14):
     ])
     async for d in src_signup_cur:
         key = d["_id"] or "direct"
-        per_source.setdefault(key, {"sessions": 0, "signups": 0})
+        per_source.setdefault(key, {"sessions": 0, "signups": 0, "demo_views": 0})
         per_source[key]["signups"] += d["n"]
 
     src_demo_cur = db.analytics_events.aggregate([
