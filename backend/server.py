@@ -805,6 +805,9 @@ def _ffmpeg_compose_format(project_id: str, fmt_id: str, spec: dict,
 def _ffmpeg_compose_all(project_id: str, scenes: list, images: list,
                         audio_path: Path, total_duration: float) -> dict:
     """Compose every registered format. Returns {format_id: relative_url}."""
+    import shutil
+    if not shutil.which("ffmpeg"):
+        raise RuntimeError("FFmpeg not installed on server. Install with `apt-get install -y ffmpeg`.")
     from formats import FORMATS
     urls: dict = {}
     for fid, spec in FORMATS.items():

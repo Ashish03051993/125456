@@ -15,6 +15,7 @@ export default function ProjectView() {
   const [p, setP] = useState(null);
   const [formats, setFormats] = useState([]);
   const [selected, setSelected] = useState(null);
+  const [videoMissing, setVideoMissing] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -46,6 +47,11 @@ export default function ProjectView() {
   const active = selected
     ? availableFormats.find((f) => f.id === selected) || availableFormats[0]
     : availableFormats[0];
+
+  // Reset the "video file missing" warning whenever the active format changes.
+  // MUST be declared before any conditional/early returns to respect the
+  // Rules of Hooks.
+  useEffect(() => { setVideoMissing(false); }, [active?.id]);
 
   if (!p) return (
     <div className="min-h-screen bg-ink-50">
@@ -141,8 +147,19 @@ export default function ProjectView() {
               <div className={`bg-black rounded-2xl overflow-hidden border border-ink-200 mx-auto ${
                 active.aspect === "9:16" ? "max-w-[400px] aspect-[9/16]" : "aspect-video"
               }`}>
-                <video src={videoSrc} controls key={active.id} className="w-full h-full object-contain" data-testid="video-player" />
+                <video src={videoSrc} controls key={active.id}
+                       onError={() => setVideoMissing(true)}
+                       className="w-full h-full object-contain" data-testid="video-player" />
               </div>
+              {videoMissing && (
+                <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" data-testid="video-missing-warning">
+                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <div>
+                    <div className="font-semibold">Video file not found</div>
+                    <div className="text-xs mt-0.5">This project is marked ready but the {active.aspect} file is missing on disk. Please regenerate from the dashboard.</div>
+                  </div>
+                </div>
+              )}
               {active.platforms?.length > 0 && (
                 <div className="mt-3 text-center text-xs text-ink-500">
                   Ready for: {active.platforms.map(pl => (

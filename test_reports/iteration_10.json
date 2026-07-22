@@ -1,0 +1,48 @@
+{
+  "summary": "Iter-10 delta verification for 3 additive changes on top of iter-9. Backend: 13/13 pytest cases pass in test_iter10_ffmpeg_and_video_missing.py — ffmpeg 5.1.9 and ffprobe both on PATH (fixing iter-9 ENV blocker), fonts-dejavu installed, defensive RuntimeError in _ffmpeg_compose_all fires with exact expected message when shutil.which('ffmpeg') is monkeypatched to None, /api/formats + /api/admin/attribution-matrix regressions clean. Frontend: FOUND & FIXED a CRITICAL React hooks-order regression in ProjectView.jsx (added change #3 placed useState(videoMissing)+useEffect AFTER the `if (!p) return` early return, violating Rules of Hooks — ESLint compile error + runtime crash 'Rendered more hooks than during the previous render' + entire /project/{id} page unrenderable, regressing iter-9 baseline). After moving the two hooks above the early return, verified: (a) broken project shows 'Video file not found' amber-styled warning with data-testid='video-missing-warning', (b) format switcher renders both landscape+vertical chips, (c) switching format resets the warning and re-fires onError for the new format, (d) legitimate ready project renders title/video/script/scenes normally, (e) attribution matrix on /admin?tab=experiments still renders with matrix-grand + matrix-cell testids intact.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "ProjectView video-missing-warning",
+        "issues": [
+          "Warning copy says 'the {aspect} file is missing on disk' but the <video> onError handler actually fires on ANY load/decode failure (404, corrupt bytes, unsupported codec, network error). Consider softening the copy to 'This project is marked ready but the {aspect} video failed to load' — same UX intent, doesn't lie when the failure is a decode error rather than a 404. Not a functional bug, just precision of wording."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter10_ffmpeg_and_video_missing.py",
+    "/app/test_reports/pytest/iter10_results.xml"
+  ],
+  "action_items": [
+    "REVIEW my hooks-order fix in /app/frontend/src/pages/ProjectView.jsx — I moved `const [videoMissing, setVideoMissing] = useState(false)` up to the other useState declarations (line 17), and moved `useEffect(() => { setVideoMissing(false); }, [active?.id]);` to just before the `if (!p) return` early return (now line ~50). This is a mechanical Rules-of-Hooks fix. Behavior of the warning is unchanged; only the hook ORDER was corrected. Verified via Playwright with a synthetic broken project.",
+    "OPTIONAL polish (design): consider softening the warning copy from 'file is missing on disk' to 'video failed to load' since the onError event covers more failure modes than just a missing file. Non-blocking."
+  ],
+  "critical_code_review_comments": [
+    "REGRESSION FIXED — ProjectView.jsx iter-10 diff had useState(videoMissing) + reset useEffect declared AFTER an early return (`if (!p) return ...`). This violates React's Rules of Hooks: on first render p is null so both hooks are skipped, on second render p is loaded so hook count increases. React throws 'Rendered more hooks than during the previous render' and the page fails to render at all. This regression would have affected 100% of /project/{id} loads, not just missing-video projects — it makes the iter-9 baseline unreachable. Fix: move both hooks above the early return.",
+    "server.py:805-810 _ffmpeg_compose_all guard — clean, correct implementation. shutil.which('ffmpeg') is the right idiom, message is user-friendly ('FFmpeg not installed on server. Install with `apt-get install -y ffmpeg`.'). Note: the guard only covers the compose_all entry; the two individual subprocess.run(['ffmpeg', ...]) calls in _ffmpeg_compose_format (lines 780 & 787 & 791) would still raise raw FileNotFoundError if ffmpeg disappears mid-execution — extremely unlikely scenario but for defence-in-depth you could either pass the ffmpeg binary path down (from shutil.which result) or replicate the guard. Non-blocking.",
+    "ProjectView.jsx `onError={() => setVideoMissing(true)}` fires for any video load/decode failure, not just HTTP 404s. Combined with the current copy 'file is missing on disk' this is slightly misleading in edge cases (corrupt mp4, unsupported codec). Consider either soften copy OR head-request the video URL and only show warning when status !== 200.",
+    "ProjectView.jsx uses `key={active.id}` on <video> — good pattern; forces React to remount on format switch. Combined with the reset useEffect, warning correctly toggles per format.",
+    "Font install (fonts-dejavu) confirmed via fc-list — DejaVu Sans present. This is required for ffmpeg's drawtext subtitle filter (formats.py subtitle_font references). Good."
+  ],
+  "updated_files": [
+    "/app/frontend/src/pages/ProjectView.jsx (fixed hooks-order violation — moved useState(videoMissing) to line 17 with other useStates, and reset useEffect to just before the early return on line ~50)",
+    "/app/backend/tests/test_iter10_ffmpeg_and_video_missing.py (NEW — 13 tests: 5 infra + 2 ffmpeg guard + 3 formats regression + 3 attribution-matrix regression)"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13 pass — ffmpeg/ffprobe present, RuntimeError guard verified via monkeypatch, formats + attribution-matrix regressions clean)",
+    "frontend": "100% AFTER the hooks-order fix (video-missing-warning renders with amber styling on broken project, format switcher works, legitimate project renders normally, attribution matrix regression clean). BEFORE the fix: 0% — page crashed on any /project/{id} load."
+  },
+  "test_credentials": "Admin session_token=test_admin_1784712404860 (unchanged from iter-9). Injected via Playwright add_cookies for the preview host.",
+  "seed_data_creation": "Two synthetic ready projects inserted into Mongo for Playwright: proj_iter10broken (video_urls point to non-existent /api/media/videos/does_not_exist_iter10_{landscape,vertical}.mp4) and proj_iter10good (with 2KB ftyp-box mp4 stubs written to /app/backend/storage/videos/). Both projects + stub files removed in teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iter-10 additive changes all shipped and verified GREEN after fixing a critical Rules-of-Hooks regression in ProjectView.jsx. The fix moved 2 hooks (useState+useEffect) above an early return. ffmpeg 5.1.9 + ffprobe now present on the container so the full video-generation E2E (POST /api/projects/{id}/generate → run_pipeline → _ffmpeg_compose_all) is UNBLOCKED from the ffmpeg side — if EMERGENT_LLM_KEY has budget, a next agent can now run an actual end-to-end generation test and assert both _landscape.mp4 and _vertical.mp4 exist on disk after status='ready'. Do this only when explicitly asked (LLM cost). The stub-mp4 approach used in test_iter9/iter10 files is fine for URL/contract testing but browser can't decode the stubs so <video> fires onError — for pure browser regression of 'good project shows no warning', use a real ffmpeg-generated mp4 or head-check the file endpoint instead of loading it in a <video>.",
+  "rca of the issue": "ROOT CAUSE (frontend hooks bug): iter-10 additive change #3 was applied by placing `const [videoMissing, setVideoMissing] = useState(false)` on line 58 and `useEffect(() => { setVideoMissing(false); }, [active?.id])` on line 59 — both AFTER `if (!p) return (...)` on lines 50-55. React requires hooks to be called in the same order on every render. On mount, `p` is null → early return → the two new hooks are NOT called. When the /api/projects/{id} fetch resolves and setP triggers a re-render, `p` is truthy → all 6+ hooks execute → React detects a mismatch in hook count vs the previous render and throws 'Rendered more hooks than during the previous render.' ESLint (react-hooks/rules-of-hooks) also flags it at compile time. REPRODUCTION: Navigate to any /project/{id} in a browser — the entire page fails to render, replaced by CRA's 'Compiled with problems' overlay (in dev) or React error boundary output (in prod). Because Sean's server was already ready when we loaded, this triggered on ALL projects, not just broken ones. MITIGATION: Move both hooks above the early return. React re-orders are safe because setVideoMissing(false) is a no-op when videoMissing is already false, and the useEffect dep [active?.id] gracefully evaluates to undefined when active is undefined (initial render with no project). Applied and verified."
+}
