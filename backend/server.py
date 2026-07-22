@@ -246,22 +246,141 @@ async def admin_set_credits(user_id: str, credits: int,
     return {"updated": r.modified_count}
 
 
+# --------------------------- Waitlist ---------------------------
+class WaitlistIn(BaseModel):
+    email: str
+    name: Optional[str] = None
+    use_case: Optional[str] = None
+    plan_interest: Optional[str] = None  # free | pro | business | enterprise
+    referrer: Optional[str] = None
+
+
+@api.post("/waitlist")
+async def waitlist_join(payload: WaitlistIn, request: Request):
+    email = payload.email.strip().lower()
+    if "@" not in email or "." not in email:
+        raise HTTPException(400, "Invalid email")
+    existing = await db.waitlist.find_one({"email": email})
+    if existing:
+        return {"ok": True, "already_joined": True, "position": existing.get("position")}
+    count = await db.waitlist.count_documents({})
+    doc = {
+        "id": f"wl_{uuid.uuid4().hex[:12]}",
+        "email": email,
+        "name": payload.name,
+        "use_case": payload.use_case,
+        "plan_interest": payload.plan_interest or "free",
+        "referrer": payload.referrer,
+        "position": count + 1,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "ip": request.client.host if request.client else None,
+        "user_agent": request.headers.get("user-agent", "")[:200],
+    }
+    await db.waitlist.insert_one(doc)
+    await db.analytics_events.insert_one({
+        "id": f"evt_{uuid.uuid4().hex[:12]}",
+        "event": "waitlist_signup",
+        "properties": {
+            "email": email,
+            "plan_interest": doc["plan_interest"],
+            "use_case": payload.use_case,
+        },
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"ok": True, "already_joined": False, "position": doc["position"]}
+
+
+@api.get("/admin/waitlist")
+async def admin_waitlist(_admin=Depends(require_admin)):
+    rows = await db.waitlist.find({}, {"_id": 0}).sort("position", 1).to_list(2000)
+    by_plan_cur = db.waitlist.aggregate([{"$group": {"_id": "$plan_interest", "n": {"$sum": 1}}}])
+    by_plan = {d["_id"] or "unspecified": d["n"] async for d in by_plan_cur}
+    return {"count": len(rows), "by_plan_interest": by_plan, "entries": rows}
+
+
+# --------------------------- Analytics ---------------------------
+class AnalyticsEvent(BaseModel):
+    event: str
+    properties: Optional[dict] = None
+    session_id: Optional[str] = None
+    path: Optional[str] = None
+
+
+@api.post("/analytics/track")
+async def track(payload: AnalyticsEvent, request: Request):
+    if not payload.event or len(payload.event) > 60:
+        raise HTTPException(400, "Invalid event")
+    doc = {
+        "id": f"evt_{uuid.uuid4().hex[:12]}",
+        "event": payload.event,
+        "properties": payload.properties or {},
+        "session_id": payload.session_id,
+        "path": payload.path,
+        "referrer": request.headers.get("referer", ""),
+        "user_agent": request.headers.get("user-agent", "")[:200],
+        "ip": request.client.host if request.client else None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.analytics_events.insert_one(doc)
+    return {"ok": True}
+
+
+@api.get("/admin/analytics")
+async def admin_analytics(_admin=Depends(require_admin), days: int = 14):
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    total = await db.analytics_events.count_documents({"created_at": {"$gte": since}})
+    by_event_cur = db.analytics_events.aggregate([
+        {"$match": {"created_at": {"$gte": since}}},
+        {"$group": {"_id": "$event", "n": {"$sum": 1}}},
+        {"$sort": {"n": -1}},
+    ])
+    by_event = [{"event": d["_id"], "count": d["n"]} async for d in by_event_cur]
+
+    by_day_cur = db.analytics_events.aggregate([
+        {"$match": {"created_at": {"$gte": since}}},
+        {"$group": {
+            "_id": {"day": {"$substr": ["$created_at", 0, 10]}, "event": "$event"},
+            "n": {"$sum": 1}
+        }},
+        {"$sort": {"_id.day": 1}},
+    ])
+    by_day = [{"day": d["_id"]["day"], "event": d["_id"]["event"], "count": d["n"]}
+              async for d in by_day_cur]
+
+    # Unique sessions
+    sess = await db.analytics_events.distinct("session_id",
+                                              {"created_at": {"$gte": since}})
+    unique_sessions = len([s for s in sess if s])
+    waitlist_total = await db.waitlist.count_documents({})
+    return {
+        "days": days,
+        "total_events": total,
+        "unique_sessions": unique_sessions,
+        "waitlist_total": waitlist_total,
+        "by_event": by_event,
+        "by_day": by_day,
+    }
+
+
 @api.get("/admin/stats")
 async def admin_stats(_admin=Depends(require_admin)):
     total_users = await db.users.count_documents({})
     total_projects = await db.projects.count_documents({})
     ready = await db.projects.count_documents({"status": "ready"})
-    plans_cur = db.users.aggregate([{"$group": {"_id": "$plan", "n": {"$sum": 1}}}])
-    plans = {d["_id"] or "free": d["n"] async for d in plans_cur}
-    # Fake revenue calc
-    price = {"free": 0, "pro": 999, "business": 4999}
-    revenue = sum(price.get(k, 0) * v for k, v in plans.items())
+    waitlist_total = await db.waitlist.count_documents({})
+    since_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    signups_24h = await db.waitlist.count_documents({"created_at": {"$gte": since_24h}})
+    events_24h = await db.analytics_events.count_documents({"created_at": {"$gte": since_24h}})
+    plans_cur = db.waitlist.aggregate([{"$group": {"_id": "$plan_interest", "n": {"$sum": 1}}}])
+    plans = {d["_id"] or "unspecified": d["n"] async for d in plans_cur}
     return {
         "total_users": total_users,
         "total_projects": total_projects,
         "videos_ready": ready,
-        "plans": plans,
-        "monthly_revenue_inr": revenue,
+        "waitlist_total": waitlist_total,
+        "waitlist_24h": signups_24h,
+        "events_24h": events_24h,
+        "waitlist_by_plan": plans,
     }
 
 
@@ -507,6 +626,9 @@ async def root():
 
 
 app.include_router(api)
+# Phase 1 stub: architecture only, no live payments. See /app/backend/billing.py
+from billing import router as billing_router  # noqa: E402
+app.include_router(billing_router)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

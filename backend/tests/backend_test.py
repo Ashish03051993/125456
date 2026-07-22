@@ -157,7 +157,9 @@ class TestAdmin:
         r = http.get(f"{API}/admin/stats", headers=hdr(ADMIN_TOK))
         assert r.status_code == 200
         s = r.json()
-        for k in ("total_users", "total_projects", "videos_ready", "plans", "monthly_revenue_inr"):
+        # Phase 1 pivot: `plans`/`monthly_revenue_inr` removed; waitlist_* added.
+        for k in ("total_users", "total_projects", "videos_ready",
+                  "waitlist_total", "waitlist_24h", "events_24h", "waitlist_by_plan"):
             assert k in s
 
     def test_admin_set_credits(self, http):
