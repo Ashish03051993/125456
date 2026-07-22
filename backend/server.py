@@ -700,6 +700,41 @@ async def admin_attribution_matrix(_admin=Depends(require_admin)):
     }
 
 
+@api.get("/admin/attribution-matrix.csv")
+async def admin_attribution_matrix_csv(_admin=Depends(require_admin)):
+    """CSV export of the Source × Variant attribution matrix.
+
+    Columns: source, variant, sessions, signups, conversion_pct.
+    Includes one row per (source, variant) cell + a `__total__` variant per
+    source (row totals) + a `__total__` source per variant (col totals) +
+    a final grand total row. Ready to open in Sheets/Excel.
+    """
+    data = await admin_attribution_matrix(_admin=_admin)
+    import csv, io
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["source", "variant", "sessions", "signups", "conversion_pct"])
+    for r in data["rows"]:
+        for c in r["cells"]:
+            w.writerow([r["source"], c["variant"], c["sessions"],
+                        c["signups"], c["conversion_pct"]])
+        w.writerow([r["source"], "__total__", r["totals"]["sessions"],
+                    r["totals"]["signups"], r["totals"]["conversion_pct"]])
+    for c in data["col_totals"]:
+        w.writerow(["__total__", c["variant"], c["sessions"],
+                    c["signups"], c["conversion_pct"]])
+    w.writerow(["__total__", "__total__", data["grand"]["sessions"],
+                data["grand"]["signups"], data["grand"]["conversion_pct"]])
+
+    from datetime import date
+    fname = f"attribution-matrix-{date.today().isoformat()}.csv"
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 # --------------------------- Analytics ---------------------------
 class AnalyticsEvent(BaseModel):
     event: str
