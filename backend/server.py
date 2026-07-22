@@ -352,6 +352,50 @@ async def admin_analytics(_admin=Depends(require_admin), days: int = 14):
                                               {"created_at": {"$gte": since}})
     unique_sessions = len([s for s in sess if s])
     waitlist_total = await db.waitlist.count_documents({})
+
+    # Conversion by source: sessions per source vs waitlist_signups per source
+    src_page_cur = db.analytics_events.aggregate([
+        {"$match": {"created_at": {"$gte": since}, "event": "page_view"}},
+        {"$group": {"_id": {"src": "$properties.source", "sid": "$session_id"}}},
+        {"$group": {"_id": "$_id.src", "sessions": {"$sum": 1}}},
+    ])
+    per_source = {}
+    async for d in src_page_cur:
+        per_source[d["_id"] or "direct"] = {"sessions": d["sessions"], "signups": 0}
+
+    src_signup_cur = db.analytics_events.aggregate([
+        {"$match": {"created_at": {"$gte": since},
+                    "event": {"$in": ["waitlist_signup", "waitlist_success"]}}},
+        {"$group": {"_id": "$properties.source", "n": {"$sum": 1}}},
+    ])
+    async for d in src_signup_cur:
+        key = d["_id"] or "direct"
+        per_source.setdefault(key, {"sessions": 0, "signups": 0})
+        per_source[key]["signups"] += d["n"]
+
+    src_demo_cur = db.analytics_events.aggregate([
+        {"$match": {"created_at": {"$gte": since}, "event": "demo_video_view"}},
+        {"$group": {"_id": "$properties.source", "n": {"$sum": 1}}},
+    ])
+    async for d in src_demo_cur:
+        key = d["_id"] or "direct"
+        per_source.setdefault(key, {"sessions": 0, "signups": 0, "demo_views": 0})
+        per_source[key]["demo_views"] = d["n"]
+
+    conv_by_source = []
+    for src, v in per_source.items():
+        sess_n = v.get("sessions", 0) or 0
+        sign_n = v.get("signups", 0) or 0
+        demo_n = v.get("demo_views", 0) or 0
+        conv_by_source.append({
+            "source": src,
+            "sessions": sess_n,
+            "signups": sign_n,
+            "demo_views": demo_n,
+            "conversion_pct": round((sign_n / sess_n) * 100, 2) if sess_n else 0.0,
+        })
+    conv_by_source.sort(key=lambda r: r["sessions"], reverse=True)
+
     return {
         "days": days,
         "total_events": total,
@@ -359,6 +403,7 @@ async def admin_analytics(_admin=Depends(require_admin), days: int = 14):
         "waitlist_total": waitlist_total,
         "by_event": by_event,
         "by_day": by_day,
+        "conversion_by_source": conv_by_source,
     }
 
 
@@ -371,6 +416,10 @@ async def admin_stats(_admin=Depends(require_admin)):
     since_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     signups_24h = await db.waitlist.count_documents({"created_at": {"$gte": since_24h}})
     events_24h = await db.analytics_events.count_documents({"created_at": {"$gte": since_24h}})
+    demo_views = await db.analytics_events.count_documents({"event": "demo_video_view"})
+    demo_impressions = await db.analytics_events.count_documents({"event": "demo_video_impression"})
+    book_demo_clicks = await db.analytics_events.count_documents({"event": "book_demo_click"})
+    waitlist_clicks = await db.analytics_events.count_documents({"event": "waitlist_button_click"})
     plans_cur = db.waitlist.aggregate([{"$group": {"_id": "$plan_interest", "n": {"$sum": 1}}}])
     plans = {d["_id"] or "unspecified": d["n"] async for d in plans_cur}
     return {
@@ -380,12 +429,17 @@ async def admin_stats(_admin=Depends(require_admin)):
         "waitlist_total": waitlist_total,
         "waitlist_24h": signups_24h,
         "events_24h": events_24h,
+        "demo_views": demo_views,
+        "demo_impressions": demo_impressions,
+        "book_demo_clicks": book_demo_clicks,
+        "waitlist_clicks": waitlist_clicks,
         "waitlist_by_plan": plans,
     }
 
 
 # --------------------------- Media static ---------------------------
-app.mount("/media", StaticFiles(directory=str(STORAGE_DIR)), name="media")
+# Mount under /api so Kubernetes ingress routes it to the backend
+app.mount("/api/media", StaticFiles(directory=str(STORAGE_DIR)), name="media")
 
 
 # --------------------------- Pipeline ---------------------------
@@ -579,15 +633,15 @@ async def run_pipeline(project_id: str):
                 "subtitle": sc["subtitle"],
                 "image_prompt": sc["image_prompt"],
                 "video_prompt": sc.get("video_prompt", sc["image_prompt"]),
-                "image_url": f"/media/images/{project_id}/s{i}.png",
+                "image_url": f"/api/media/images/{project_id}/s{i}.png",
                 "duration": per,
             })
         await upd(
             stage="done", progress=100, status="ready",
             title=script.get("title"), hook=script.get("hook"),
             script=full_narration, scenes=final_scenes,
-            audio_url=f"/media/audio/{project_id}.mp3",
-            video_url=f"/media/videos/{project_id}.mp4",
+            audio_url=f"/api/media/audio/{project_id}.mp3",
+            video_url=f"/api/media/videos/{project_id}.mp4",
         )
         logger.info("Project %s ready", project_id)
     except Exception as e:

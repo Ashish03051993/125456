@@ -1,13 +1,14 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Video, LayoutDashboard, Settings, Shield, LogOut, Sparkles, Coins, Users, BarChart3 } from "lucide-react";
+import { Video, LayoutDashboard, Shield, LogOut, Sparkles, Users, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
-import { login } from "@/pages/AuthCallback";
+import { track } from "@/lib/analytics";
 
 export function TopBar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const gotoWaitlist = () => {
+    track("waitlist_button_click", { source: "top_nav" });
     if (window.location.pathname === "/") {
       document.getElementById("waitlist")?.scrollIntoView({ behavior: "smooth" });
     } else {

@@ -1,9 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Check, Sparkles } from "lucide-react";
+import { Check, Sparkles, CalendarClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TopBar } from "@/components/Layout";
 import { track } from "@/lib/analytics";
+import BookDemoDialog from "@/components/BookDemoDialog";
 
 const TIERS = [
   { id: "free", name: "Free", price: "₹0", period: "forever", credits: "1 video / month", features: ["720p export", "5 scene max", "Watermark"], cta: "Start free", primary: false },
@@ -14,6 +15,7 @@ const TIERS = [
 
 export default function Pricing() {
   const nav = useNavigate();
+  const [demoOpen, setDemoOpen] = useState(false);
   const fired = useRef(false);
   useEffect(() => {
     if (fired.current) return;
@@ -23,7 +25,12 @@ export default function Pricing() {
 
   const onCta = (id) => {
     track("pricing_cta_click", { plan: id });
-    if (id === "enterprise") { window.location.href = "mailto:sales@videostudio.ai"; return; }
+    if (id === "enterprise") {
+      track("book_demo_click", { source: "pricing_enterprise" });
+      setDemoOpen(true);
+      return;
+    }
+    track("waitlist_button_click", { source: `pricing_${id}` });
     nav("/#waitlist");
     setTimeout(() => document.getElementById("waitlist")?.scrollIntoView({ behavior: "smooth" }), 120);
   };
@@ -66,7 +73,22 @@ export default function Pricing() {
             </div>
           ))}
         </div>
+        <div className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-4 bg-white border border-ink-200 rounded-2xl p-6 sm:p-8 max-w-3xl mx-auto">
+          <div className="w-11 h-11 rounded-lg bg-brand-600 flex items-center justify-center shrink-0">
+            <CalendarClock className="w-5 h-5 text-white" />
+          </div>
+          <div className="flex-1 text-center sm:text-left">
+            <div className="font-heading font-bold text-lg">Agency or team of 5+?</div>
+            <div className="text-ink-500 text-sm mt-0.5">Get a walkthrough and volume pricing before public launch.</div>
+          </div>
+          <Button onClick={() => { track("book_demo_click", { source: "pricing_footer_cta" }); setDemoOpen(true); }}
+            className="rounded-full bg-ink-900 hover:bg-ink-700 text-white h-11 px-5"
+            data-testid="pricing-book-demo-btn">
+            Book a demo
+          </Button>
+        </div>
       </section>
+      <BookDemoDialog open={demoOpen} onOpenChange={setDemoOpen} source="pricing" />
     </div>
   );
 }

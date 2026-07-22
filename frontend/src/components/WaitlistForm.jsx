@@ -18,6 +18,7 @@ export default function WaitlistForm({ compact = false, source = "landing_hero" 
     e?.preventDefault?.();
     if (!email.trim() || !email.includes("@")) return toast.error("Enter a valid email");
     setBusy(true);
+    track("waitlist_button_click", { source });
     track("waitlist_submit", { source, plan_interest: plan });
     try {
       const { data } = await api.post("/waitlist", {

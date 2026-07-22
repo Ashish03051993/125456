@@ -113,6 +113,12 @@ export default function AdminPanel() {
                 <StatCard label="Events · 24h" value={stats.events_24h} icon={BarChart3} testid="stat-events-24h" />
                 <StatCard label="Users" value={stats.total_users} icon={Users} testid="stat-users" />
               </div>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <StatCard label="Waitlist clicks" value={stats.waitlist_clicks || 0} icon={TrendingUp} testid="stat-waitlist-clicks" />
+                <StatCard label="Demo views" value={stats.demo_views || 0} icon={BarChart3} testid="stat-demo-views" />
+                <StatCard label="Demo impressions" value={stats.demo_impressions || 0} icon={BarChart3} testid="stat-demo-impressions" />
+                <StatCard label="Book demo clicks" value={stats.book_demo_clicks || 0} icon={Mail} testid="stat-book-demo-clicks" />
+              </div>
               <div className="bg-white border border-ink-200 rounded-2xl p-6">
                 <div className="text-xs uppercase tracking-widest text-ink-500 font-semibold">Waitlist interest by plan</div>
                 <div className="mt-4 grid sm:grid-cols-4 gap-3">
@@ -216,6 +222,41 @@ export default function AdminPanel() {
                       <Line type="monotone" dataKey="count" stroke="#4F46E5" strokeWidth={2} dot={{ r: 3 }} />
                     </LineChart>
                   </ResponsiveContainer>
+                </div>
+              </div>
+              <div className="bg-white border border-ink-200 rounded-2xl overflow-hidden" data-testid="conversion-source-table">
+                <div className="p-4 sm:p-6 border-b border-ink-100">
+                  <div className="text-xs uppercase tracking-widest text-ink-500 font-semibold">Conversion by traffic source</div>
+                  <div className="mt-1 text-sm text-ink-500">Sessions → waitlist signups, split by where visitors came from.</div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm min-w-[560px]">
+                    <thead className="bg-ink-50 text-ink-500 text-xs uppercase tracking-widest">
+                      <tr>
+                        <th className="text-left px-4 py-3 font-semibold">Source</th>
+                        <th className="text-right px-4 py-3 font-semibold">Sessions</th>
+                        <th className="text-right px-4 py-3 font-semibold">Demo views</th>
+                        <th className="text-right px-4 py-3 font-semibold">Signups</th>
+                        <th className="text-right px-4 py-3 font-semibold">Conv.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(analytics.conversion_by_source || []).map((r) => (
+                        <tr key={r.source} className="border-t border-ink-100" data-testid={`conv-row-${r.source}`}>
+                          <td className="px-4 py-3">
+                            <span className="text-xs font-semibold rounded-full px-2 py-1 bg-brand-50 text-brand-700 capitalize">{r.source}</span>
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono">{r.sessions}</td>
+                          <td className="px-4 py-3 text-right font-mono">{r.demo_views}</td>
+                          <td className="px-4 py-3 text-right font-mono">{r.signups}</td>
+                          <td className="px-4 py-3 text-right font-mono font-semibold text-brand-700">{r.conversion_pct}%</td>
+                        </tr>
+                      ))}
+                      {(!analytics.conversion_by_source || analytics.conversion_by_source.length === 0) && (
+                        <tr><td colSpan={5} className="px-4 py-8 text-center text-ink-400">No traffic yet.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>

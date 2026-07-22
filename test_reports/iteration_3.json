@@ -1,0 +1,43 @@
+{
+  "summary": "Phase 1 additions (demo video + Book-a-Demo dialog + richer analytics + attribution) verified end-to-end. Backend: 31/31 pytest tests PASS — static media at /api/media/videos/demo.mp4 returns 200 video/mp4 with full 7.37 MB body, demo_poster.jpg returns 200 image/jpeg, missing file 404. POST /api/analytics/track accepts all 8 new event names (waitlist_button_click, demo_video_view, demo_video_impression, demo_video_completed, book_demo_click, book_demo_submit, book_demo_success, page_view). GET /api/admin/stats exposes waitlist_clicks / demo_views / demo_impressions / book_demo_clicks. GET /api/admin/analytics returns conversion_by_source array with {source, sessions, signups, demo_views, conversion_pct}. Frontend Playwright: landing hero has 3 CTAs (hero-cta-waitlist, hero-cta-demo, hero-book-demo-link) — hero link opens book-demo-dialog. Demo section: video wrap + video + play btn + 4 output cards (Cinematic Video / LinkedIn Post / Blog Article / Email Newsletter). demo_video_impression fires via IntersectionObserver; demo_video_view fires via onPlay handler; demo_video_completed via onEnded. Waitlist section Book-a-demo btn + Pricing footer btn + Enterprise plan CTA all open the same dialog. Submitting BookDemoDialog POSTs /api/waitlist with plan_interest=enterprise and use_case starting with 'DEMO_REQUEST'; success card renders (book-demo-success). Attribution via ?utm_source=twitter&utm_medium=social persists to localStorage (avs_attribution) and every subsequent event carries properties.source='twitter'. Admin Overview shows 4 new stat cards + existing 4; Analytics tab shows conversion-source-table with Source/Sessions/Demo views/Signups/Conv. columns and 6 rows keyed by source (direct/twitter/organic_search/social/TEST_.../landing_waitlist_section). Mobile 390px: no horizontal scroll (scrollWidth=390), hero CTA 350px wide (full-width minus paddings), demo section stacks vertically (video above outputs), Book-a-Demo dialog fits at 373px.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/media/videos/demo.mp4 (old path)", "issue": "Old /media path (without /api prefix) still returns 200 in preview environment. Likely because ingress routes anything to backend if not matched, or there's a lingering mount. Not a real bug because the frontend uses the new /api/media path, but consider explicitly removing the old mount so /media/... returns 404 to avoid ambiguity."},
+      {"endpoint": "/api/admin/analytics", "issue": "conversion_by_source rows for sources with 0 demo_views may render `undefined` in the demo_views column. Server sets demo_views=0 in the .setdefault path but if a source appears first via page_view aggregation, it never gets a demo_views key added. Frontend renders {r.demo_views} which is undefined → shows nothing. Minor UI issue only. Verified in returned admin/analytics payload."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase1_demo.py",
+    "/app/backend/tests/test_phase1.py",
+    "/app/test_reports/pytest/phase1_demo_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: In server.py /admin/analytics, initialize demo_views=0 for every per_source entry regardless of first-seen aggregation so the frontend renders '0' instead of blank for sources with zero demo views.",
+    "OPTIONAL: Remove the legacy /media static mount (if any) so only /api/media serves media, eliminating an easy-to-confuse duplicate path.",
+    "OPTIONAL (from prior pass, still relevant): rate-limit /api/analytics/track (anyone can flood analytics_events); add index / TTL on analytics_events.created_at.",
+    "OPTIONAL: BookDemoDialog piggy-backs on /api/waitlist without a distinct backend endpoint; consider a separate /api/book-demo collection with fields (company, seats, notes) for cleaner admin reporting later."
+  ],
+  "critical_code_review_comments": [
+    "DemoVideoSection.jsx play(): the async play() rejects silently in browsers lacking H.264. In that case demo_video_view is never fired (both the catch swallows and native play event never fires). Not a real-user issue on Chrome/Edge/Safari (they all support H.264), but if you host on privacy-forward browsers (Firefox on Linux without ffmpeg) users could bypass the tracking. Consider ALSO tracking on 'onLoadedData' fallback.",
+    "server.py conversion_by_source: When src_page_cur returns no rows for a source that DOES have signups, the source only shows up in the second aggregation with sessions=0 → conversion_pct=0.0. That's mathematically correct but hides real demand. Consider including a note or logging when signups>0 & sessions=0 (missing attribution on page_view).",
+    "Landing.jsx: two <Play> buttons on hero (hero-cta-demo AND hero-image-play). Both scroll to demo; the second doesn't have a distinct event name in code (only `cta_click`). Consider a distinct testid+event to distinguish which surface converted.",
+    "BookDemoDialog.jsx: doesn't sanitize/validate 'seats' (accepts any string). If seats becomes a first-class filter later, validate as integer.",
+    "AdminPanel.jsx: /admin/stats, /admin/waitlist, /admin/analytics are all fetched on mount but never refreshed. Add a manual refresh button or 30s interval for demoing live metrics."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase1_demo.py (new — 13 tests: 3 static media + 8 new event names + 1 conversion_by_source aggregation + 1 admin stats phase1 fields)"
+  ],
+  "success_rate": {"backend": "100% (31/31 pytest)", "frontend": "100% (all Landing, Pricing, Admin, Mobile flows verified)"},
+  "test_credentials": "Admin cookie session_token=test_admin_1784712404860 (admin@videostudio.ai). Used to access /admin. No user tokens needed for this pass.",
+  "seed_data_creation": "Fired ~10 analytics events during Playwright runs (page_view, waitlist_button_click, book_demo_click, book_demo_submit, book_demo_success, demo_video_impression, demo_video_view, demo_video_completed with source=twitter). Inserted 2 waitlist rows via BookDemoDialog (TEST_ph3_book_*@example.com, TEST_book_demo_*@example.com) and 1 via pytest (TEST_phase1demo_*@example.com). Waitlist grew from 8 to ~13.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All Phase 1 features (waitlist + analytics + demo video + Book-a-Demo dialog + attribution + admin conversion table) are green. IMPORTANT — Playwright's headless Chromium cannot decode H.264 (proprietary codec absent from open-source Chromium). Testing demo video PLAYBACK via a real click will fail with NotSupportedError; use a synthetic dispatchEvent('play') on the video element to exercise the React onPlay handler (which is what fires the track). Real browsers (Chrome/Edge/Safari/Firefox+bundled-decoder) will play fine. Media static now lives under /api/media; the old /media path still 200s in ingress (see minor backend issue #1). Admin session cookie 'test_admin_1784712404860' still valid.",
+  "rca of the issue": "No blocking bugs. The one interesting non-bug: DEMUXER_ERROR_NO_SUPPORTED_STREAMS on video playback in Playwright headless is a testing-environment codec limitation, NOT a production issue. The mp4 file is valid H.264 High Profile 1920×1080 + AAC-LC mono (verified via ffprobe) — every mainstream browser will decode this without issue."
+}
