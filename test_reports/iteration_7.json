@@ -1,0 +1,48 @@
+{
+  "summary": "Iteration 7 — HIGH-severity duplicate 'direct' bucket bug from iteration 6 is FIXED and verified end-to-end. DB state confirmed clean via mongosh: db.waitlist.count_documents({source:null})=0 and count({source:{$exists:false}})=0 after startup migration ran. All legacy null-source rows are now source='direct' (23 rows) + 1 newly created row = 24 direct. Distinct sources: ['direct','linkedin','twitter']. Backend: 4/4 new focused tests PASS in /app/backend/tests/test_direct_bucket_fix.py — (1) by_source returns exactly ONE 'direct' entry; (2) sum(by_source.n)==total (46); (3) count(?source=direct)==by_source[direct].n (24==24); (4) CSV export ?source=direct returns count+1 rows and every 'source' column cell is literal 'direct' (never blank). Full test_csv_and_segments.py: 11/12 pass — 1 flaky failure due to pytest-xdist parallel worker race where another test inserts a row between two calls to /api/admin/waitlist inside the same test (total 41→42); passes cleanly when run in a single worker. Frontend Playwright: /admin?tab=waitlist renders EXACTLY ONE segment-direct chip labelled 'direct (24)'; zero React key warnings; zero console errors; clicking the chip refetches ?source=direct → segment-count shows '24' matching the chip's number; UI table's Source column shows 'Direct' badge for all rows (no blanks). Screenshot confirms segments 'All(46) Direct(24) Linkedin(17) Twitter(5)' — no duplicate chip.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/admin/waitlist (test-only flakiness)",
+        "issue": "test_source_filter_returns_only_matching in test_csv_and_segments.py has a race condition when tests run under pytest-xdist: it asserts that data['total'] stays constant across two sequential API calls, but other parallel-worker tests insert new waitlist rows between the calls, causing the total to change by 1. Purely a test-side issue (not a product bug). Fix: either serialize by loadscope on the class, seed a fixed total inside the test, or relax the assertion to '>= previous total'."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_direct_bucket_fix.py",
+    "/app/test_reports/pytest/iter7_direct_bucket.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: Reduce flakiness of TestAdminWaitlistListing.test_source_filter_returns_only_matching (test-only race under pytest-xdist).",
+    "OPTIONAL (from iter 6, unchanged): decide 401 vs 403 for authenticated non-admin (spec vs implementation mismatch).",
+    "OPTIONAL (pre-existing from iter 5): duplicate-detection on POST /api/admin/utm-links (utm_source, utm_medium, utm_campaign).",
+    "OPTIONAL (pre-existing from iter 5): wrap navigator.clipboard.writeText in UtmLinksTab.copy() in try/catch."
+  ],
+  "critical_code_review_comments": [
+    "Fix quality is good — three-layer defense: (a) one-time startup migration db.waitlist.update_many({source:null OR missing}, {$set:{source:'direct'}}); (b) $group uses $ifNull for defensive coalescing even if new null rows appear later; (c) ?source=direct filter uses $or with null/missing/'direct' as belt-and-suspenders. All three layers currently agree.",
+    "server.py:1028-1032 migration runs on EVERY app startup (not just first-time). It's idempotent so this is safe, but the write is unnecessary once the collection is clean. Consider gating on 'if await db.waitlist.count_documents({source: None}) > 0' to skip the write, or moving it to a versioned migrations table.",
+    "server.py:309-311 and 350-352 duplicate the ?source=direct match-expansion logic. Once the migration guarantees no null-source rows exist, this $or clause is redundant. Consider dropping it in a future cleanup (or wrapping in a small helper _source_match(source) shared by both endpoints).",
+    "server.py:328-332 by_source aggregation is now correct with $ifNull. Good.",
+    "server.py:373-374 CSV writer correctly falls back missing/blank source → 'direct'. Since the migration guarantees no blanks in the DB, this fallback is defensive-only, but it's harmless and matches the UI table's fallback behavior (parity restored).",
+    "Suggest a short comment above the migration explaining it's idempotent and one-time-per-startup; will help future devs decide whether to keep or remove it."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_direct_bucket_fix.py (new — 4 tests covering the exact iter-6 HIGH bug)"
+  ],
+  "success_rate": {
+    "backend": "100% (4/4 targeted retest; 11/12 phase6 regression — 1 flake is test-race not product bug)",
+    "frontend": "100% (single direct chip, no React key warnings, chip count == filtered count, all Source column cells show 'Direct')"
+  },
+  "test_credentials": "Admin bearer/cookie session_token=test_admin_1784712404860 (admin@videostudio.ai). Same as prior iterations.",
+  "seed_data_creation": "test_direct_bucket_fix.py creates NO new waitlist rows — pure read/verification tests. Playwright run did not insert new rows. DB state: total=46 (24 direct, 17 linkedin, 5 twitter) at end of run; unchanged by this iteration except for 1 row added by an earlier phase6 test invocation during regression.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "iter-6 HIGH bug (duplicate 'direct' bucket + Direct-chip count mismatching filtered rows) is closed. Verified against migration-clean DB (0 null-source rows). If future work adds a new source field mutation (e.g., allowing source updates), keep the $ifNull + $or defense-in-depth. Deferred not-yet-tested surfaces: QR Codes, Resend email delivery. Attribution E2E flow was retested in iter 6 — no need to re-run.",
+  "rca of the issue": "RCA (confirmed): The iter-6 duplicate was caused by two distinct storage states co-existing — 17 legacy rows with source=null and 6 new rows with source='direct'. The aggregation grouped them separately then Python `d['_id'] or 'direct'` mapped both to key 'direct' without merging → two buckets in the response. Fix applied by main agent uses three layers: (1) startup migration converts null→'direct' in DB; (2) $ifNull in the $group so the aggregation itself coalesces if any nulls slip in later; (3) $or expansion in the ?source=direct filter for defense-in-depth. Verification: mongosh count({source:null})=0, GET /api/admin/waitlist → by_source contains exactly one {source:'direct',n:24}, GET /api/admin/waitlist?source=direct → count=24 (matches), CSV export → 24 data rows + header, all source cells = 'direct'. Frontend renders one chip, no React key warning."
+}

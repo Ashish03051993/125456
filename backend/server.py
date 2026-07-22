@@ -306,20 +306,30 @@ async def admin_waitlist(_admin=Depends(require_admin),
                          plan: Optional[str] = None,
                          q: Optional[str] = None):
     match: dict = {}
-    if source:
+    if source == "direct":
+        # Match both explicit 'direct' and legacy null/missing rows
+        match["$or"] = [{"source": "direct"}, {"source": None}, {"source": {"$exists": False}}]
+    elif source:
         match["source"] = source
     if plan:
         match["plan_interest"] = plan
     if q:
         rx = {"$regex": re.escape(q), "$options": "i"}
-        match["$or"] = [{"email": rx}, {"name": rx}, {"use_case": rx}]
+        q_or = [{"email": rx}, {"name": rx}, {"use_case": rx}]
+        if "$or" in match:
+            match = {"$and": [{"$or": match.pop("$or")}, {"$or": q_or}], **match}
+        else:
+            match["$or"] = q_or
     rows = await db.waitlist.find(match, {"_id": 0}).sort("position", 1).to_list(2000)
 
-    # Unfiltered facets (so the UI can show counts even after filtering)
+    # Unfiltered facets — coalesce null/missing source into 'direct'
     by_plan_cur = db.waitlist.aggregate([{"$group": {"_id": "$plan_interest", "n": {"$sum": 1}}}])
     by_plan = {d["_id"] or "unspecified": d["n"] async for d in by_plan_cur}
-    by_source_cur = db.waitlist.aggregate([{"$group": {"_id": "$source", "n": {"$sum": 1}}}, {"$sort": {"n": -1}}])
-    by_source = [{"source": d["_id"] or "direct", "n": d["n"]} async for d in by_source_cur]
+    by_source_cur = db.waitlist.aggregate([
+        {"$group": {"_id": {"$ifNull": ["$source", "direct"]}, "n": {"$sum": 1}}},
+        {"$sort": {"n": -1}},
+    ])
+    by_source = [{"source": d["_id"], "n": d["n"]} async for d in by_source_cur]
     total = await db.waitlist.count_documents({})
     return {
         "count": len(rows),
@@ -337,11 +347,18 @@ async def admin_waitlist_csv(_admin=Depends(require_admin),
                              plan: Optional[str] = None,
                              q: Optional[str] = None):
     match: dict = {}
-    if source: match["source"] = source
+    if source == "direct":
+        match["$or"] = [{"source": "direct"}, {"source": None}, {"source": {"$exists": False}}]
+    elif source:
+        match["source"] = source
     if plan: match["plan_interest"] = plan
     if q:
         rx = {"$regex": re.escape(q), "$options": "i"}
-        match["$or"] = [{"email": rx}, {"name": rx}, {"use_case": rx}]
+        q_or = [{"email": rx}, {"name": rx}, {"use_case": rx}]
+        if "$or" in match:
+            match = {"$and": [{"$or": match.pop("$or")}, {"$or": q_or}], **match}
+        else:
+            match["$or"] = q_or
     rows = await db.waitlist.find(match, {"_id": 0}).sort("position", 1).to_list(5000)
     import csv, io
     buf = io.StringIO()
@@ -350,7 +367,13 @@ async def admin_waitlist_csv(_admin=Depends(require_admin),
     w = csv.writer(buf)
     w.writerow(cols)
     for r in rows:
-        w.writerow([r.get(c, "") if r.get(c) is not None else "" for c in cols])
+        line = []
+        for c in cols:
+            v = r.get(c)
+            if c == "source" and not v:
+                v = "direct"
+            line.append(v if v is not None else "")
+        w.writerow(line)
     fname = "waitlist"
     if source: fname += f"-{source}"
     if plan: fname += f"-{plan}"
@@ -1002,6 +1025,11 @@ async def startup():
             "credits": 9999,
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
+    # One-time migration: legacy waitlist rows had no `source` — treat them as 'direct'.
+    await db.waitlist.update_many(
+        {"$or": [{"source": None}, {"source": {"$exists": False}}]},
+        {"$set": {"source": "direct"}},
+    )
     # Kick off the daily digest scheduler (08:00 IST)
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.cron import CronTrigger
