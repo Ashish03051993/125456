@@ -26,6 +26,15 @@ Dashboard, credit system, projects, download, admin panel, pricing.
 - Landing, Pricing, Dashboard, Wizard, Project View, Settings, Admin Panel
 - Blue & white professional theme (Canva/InVideo inspired)
 
+## Phase 7 (2026-02) — Multi-Chip Filters + Short URLs
+- ✅ **Tri-chip filters** on Admin Waitlist tab: Source / Plan / Variant chip rows combine via AND. Header renders active-filter chips + "Clear filters" button. `variant='unassigned'` bucket matches null/missing rows.
+- ✅ Backend `/api/admin/waitlist` now returns three facets (`by_source`, `by_plan`, `by_variant`) with counts, accepts `?variant=` filter combinable with `source` and `plan`.
+- ✅ Waitlist table gained a `Variant` column (violet chip when set).
+- ✅ **Short URLs** — UTM builder now has an optional `slug` field with a live hostname/l/ prefix; auto-derives kebab slug from name if blank; duplicate slugs get `-2` suffix. Saved links table shows the short URL below the name with copy button.
+- ✅ Frontend `/l/:slug` route resolves to `/api/short/{slug}` → `window.location.replace(target)` so LinkedIn users see a clean short URL while the destination still receives full utm_* attribution.
+- ✅ Each `/l/:slug` hit records a `short_link_hit` analytics event with utm_source + campaign.
+- ✅ Testing pass 8/8 — 16/16 new + 42/42 combined regression, 100% green (backend + frontend Playwright).
+
 ## Phase 6 (2026-02) — CSV Export + Segment Compare
 - ✅ **Waitlist CSV export** — `/api/admin/waitlist.csv` streams CSV with position/email/name/plan/source/medium/campaign/variant/use_case/referrer/created_at; filename encodes the active filter (e.g. `waitlist-linkedin.csv`)
 - ✅ **UTM Links CSV export** — `/api/admin/utm-links.csv` with per-link stats (sessions, demo_clicks, signups, conversion_pct) rolled up over 30 days
