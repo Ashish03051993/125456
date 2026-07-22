@@ -26,6 +26,11 @@ Dashboard, credit system, projects, download, admin panel, pricing.
 - Landing, Pricing, Dashboard, Wizard, Project View, Settings, Admin Panel
 - Blue & white professional theme (Canva/InVideo inspired)
 
+## Phase 11 (2026-02) — Attribution Matrix CSV Export
+- ✅ **CSV export** — new `GET /api/admin/attribution-matrix.csv` (admin-only) delegates to the JSON endpoint for numeric consistency and streams a CSV: header row + one line per cell + `__total__` variant lines for row totals + `__total__` source lines for col totals + a final grand total. Filename encodes today's date.
+- ✅ **Frontend Export CSV button** on the Attribution Matrix panel header (data-testid=`matrix-export-csv-btn`). Uses `<a download>` synthesis so the server-supplied Content-Disposition filename is honored. Toast confirmation. Mobile-safe at 390px (flex-wrap + shrink-0).
+- ✅ Testing iter-13: 23/23 backend + full frontend green, including a strict JSON↔CSV round-trip test that verifies every cell + row-total + col-total + grand-total is numerically identical between the two endpoints.
+
 ## Phase 10 (2026-02) — Untagged Drilldown + Waitlist Referral Loop
 - ✅ **Untagged Session Drilldown** — new `GET /api/admin/sanity/untagged` endpoint returns {total, sessions[], top_referrer_hosts[], top_landing_paths[]}. Rollups computed over ALL untagged sessions (not just paginated slice), capped at 15 entries each. Sanity Panel's "Untagged sessions" card is now a clickable button that opens a shadcn Dialog with rollup panels + a session table + a "Recommended: use tracked UTM link" banner that jumps to /admin?tab=utm.
 - ✅ **Waitlist Position Badge + Referral Share Loop** — success screen now shows a large gradient position badge (`#N`) plus 3 share CTAs (LinkedIn native share dialog, X/Twitter intent, Copy referral link). Referral URL carries `utm_source=referral&utm_medium=share&utm_campaign=waitlist&ref={position}` so downstream signups auto-attribute back to the referrer channel in the attribution matrix. Every share click fires a `waitlist_share_click` analytics event tagged with channel + position.
