@@ -155,8 +155,8 @@ export default function ProjectView() {
                 <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" data-testid="video-missing-warning">
                   <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                   <div>
-                    <div className="font-semibold">Video file not found</div>
-                    <div className="text-xs mt-0.5">This project is marked ready but the {active.aspect} file is missing on disk. Please regenerate from the dashboard.</div>
+                    <div className="font-semibold">Video failed to load</div>
+                    <div className="text-xs mt-0.5">The {active.aspect} file couldn&apos;t be played — this may be a network, decoding or storage issue. Please regenerate from the dashboard.</div>
                   </div>
                 </div>
               )}

@@ -61,6 +61,7 @@ export default function AdminPanel() {
   const [analytics, setAnalytics] = useState(null);
   const [experiments, setExperiments] = useState(null);
   const [attribution, setAttribution] = useState(null);
+  const [sanity, setSanity] = useState(null);
   const [digestList, setDigestList] = useState(null);
   const [digestConfig, setDigestConfig] = useState(null);
   const [digestPreview, setDigestPreview] = useState(null);
@@ -76,18 +77,20 @@ export default function AdminPanel() {
       if (sourceFilter)  wParams.source = sourceFilter;
       if (planFilter)    wParams.plan = planFilter;
       if (variantFilter) wParams.variant = variantFilter;
-      const [s, w, a, e, matrix, d, dc, dp] = await Promise.all([
+      const [s, w, a, e, matrix, san, d, dc, dp] = await Promise.all([
         api.get("/admin/stats"),
         api.get("/admin/waitlist", { params: wParams }),
         api.get("/admin/analytics"),
         api.get("/admin/experiments"),
         api.get("/admin/attribution-matrix"),
+        api.get("/admin/sanity"),
         api.get("/admin/digest"),
         api.get("/admin/digest/config"),
         api.get("/admin/digest/preview"),
       ]);
       setStats(s.data); setWaitlist(w.data); setAnalytics(a.data);
       setExperiments(e.data); setAttribution(matrix.data);
+      setSanity(san.data);
       setDigestList(d.data);
       setDigestConfig(dc.data); setDigestPreview(dp.data);
     } catch { toast.error("Could not load admin data"); }
@@ -205,11 +208,150 @@ export default function AdminPanel() {
                   })}
                 </div>
               </div>
+
+              {/* Analytics Sanity Panel */}
+              {sanity && (
+                <div className="bg-white border border-ink-200 rounded-2xl p-6" data-testid="sanity-panel">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div>
+                      <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">Analytics sanity</div>
+                      <div className="font-heading font-bold text-xl mt-1">Data-quality check</div>
+                      <div className="text-sm text-ink-500 mt-1 max-w-xl">
+                        Quick health signals so you can trust the numbers before scaling acquisition. Zero warnings = analytics is clean.
+                      </div>
+                    </div>
+                    <div className={`text-xs font-semibold rounded-full px-3 py-1.5 ${
+                      (sanity.orphan_signups.count + sanity.duplicate_emails.count === 0 && sanity.unattributed_sessions.pct < 25)
+                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                        : "bg-amber-50 text-amber-700 border border-amber-200"
+                    }`} data-testid="sanity-verdict">
+                      {(sanity.orphan_signups.count + sanity.duplicate_emails.count === 0 && sanity.unattributed_sessions.pct < 25)
+                        ? "✓ Analytics healthy"
+                        : "⚠ Review recommended"}
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid sm:grid-cols-3 gap-3">
+                    {/* Orphan signups */}
+                    <div className="rounded-xl border border-ink-200 p-4" data-testid="sanity-orphans">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs uppercase tracking-widest text-ink-500 font-semibold">Orphan signups</div>
+                        <AlertTriangle className={`w-4 h-4 ${sanity.orphan_signups.count > 0 ? "text-amber-600" : "text-ink-300"}`} />
+                      </div>
+                      <div className="mt-2 font-heading text-3xl font-extrabold tracking-tighter">{sanity.orphan_signups.count}</div>
+                      <div className="text-xs text-ink-500 mt-1">
+                        of {sanity.totals.waitlist} signups have no matching page_view session — visitor arrived before analytics loaded or was untagged.
+                      </div>
+                    </div>
+
+                    {/* Unattributed sessions */}
+                    <div className="rounded-xl border border-ink-200 p-4" data-testid="sanity-unattributed">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs uppercase tracking-widest text-ink-500 font-semibold">Untagged sessions</div>
+                        <AlertTriangle className={`w-4 h-4 ${sanity.unattributed_sessions.pct >= 25 ? "text-amber-600" : "text-ink-300"}`} />
+                      </div>
+                      <div className="mt-2 font-heading text-3xl font-extrabold tracking-tighter">
+                        {sanity.unattributed_sessions.count}
+                        <span className="text-base text-ink-500 font-mono ml-2">{sanity.unattributed_sessions.pct}%</span>
+                      </div>
+                      <div className="text-xs text-ink-500 mt-1">
+                        of {sanity.unattributed_sessions.total_sessions} sessions have no <span className="font-mono">utm_source</span>. Use tracked UTM links when sharing.
+                      </div>
+                    </div>
+
+                    {/* Duplicate emails */}
+                    <div className="rounded-xl border border-ink-200 p-4" data-testid="sanity-duplicates">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs uppercase tracking-widest text-ink-500 font-semibold">Duplicate emails</div>
+                        <AlertTriangle className={`w-4 h-4 ${sanity.duplicate_emails.count > 0 ? "text-amber-600" : "text-ink-300"}`} />
+                      </div>
+                      <div className="mt-2 font-heading text-3xl font-extrabold tracking-tighter">{sanity.duplicate_emails.count}</div>
+                      <div className="text-xs text-ink-500 mt-1">
+                        {sanity.duplicate_emails.count === 0
+                          ? "No duplicate signups — unique-email guard is working."
+                          : "email(s) appear more than once. Investigate before running a paid campaign."}
+                      </div>
+                    </div>
+                  </div>
+
+                  {sanity.duplicate_emails.count > 0 && (
+                    <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs" data-testid="sanity-dup-list">
+                      <div className="font-semibold text-amber-800 mb-1">Duplicated:</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {sanity.duplicate_emails.sample.slice(0, 10).map((d) => (
+                          <span key={d.email} className="rounded-full bg-white border border-amber-200 px-2 py-0.5 font-mono text-amber-800">
+                            {d.email} <span className="text-amber-600">×{d.count}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Waitlist — empty state */}
+          {activeTab === "waitlist" && waitlist && waitlist.total === 0 && (
+            <div className="mt-8" data-testid="waitlist-empty">
+              <div className="bg-gradient-to-br from-brand-50 via-white to-violet-50 border border-brand-100 rounded-3xl p-8 sm:p-12 text-center">
+                <div className="mx-auto w-16 h-16 rounded-2xl bg-brand-600/10 flex items-center justify-center">
+                  <Mail className="w-8 h-8 text-brand-600" />
+                </div>
+                <h2 className="mt-5 font-heading text-2xl sm:text-3xl font-extrabold tracking-tighter">No signups yet — let&apos;s change that</h2>
+                <p className="mt-2 text-ink-500 max-w-lg mx-auto text-sm sm:text-base">
+                  Your waitlist is ready. Share your beta once on LinkedIn to seed the first cohort — most founders see their first 5-10 signups from the announcement post alone.
+                </p>
+                <div className="mt-6 flex flex-wrap justify-center gap-3">
+                  <Button
+                    className="rounded-full bg-brand-600 hover:bg-brand-700 text-white"
+                    data-testid="empty-share-linkedin-btn"
+                    onClick={() => {
+                      const url = `${window.location.origin}/?utm_source=linkedin&utm_medium=organic&utm_campaign=launch`;
+                      const text = "I&apos;m building AI Video Studio — turn any topic into a ready-to-post video (16:9 for YouTube + 9:16 for LinkedIn/Reels) in minutes. Reserve your spot 👇";
+                      window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}&summary=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+                    }}>
+                    <LinkIcon className="w-4 h-4 mr-2" /> Share beta on LinkedIn
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="rounded-full"
+                    data-testid="empty-copy-link-btn"
+                    onClick={async () => {
+                      const url = `${window.location.origin}/?utm_source=linkedin&utm_medium=organic&utm_campaign=launch`;
+                      try { await navigator.clipboard.writeText(url); toast.success("Launch link copied"); }
+                      catch { toast.error("Copy failed — please copy manually"); }
+                    }}>
+                    <Copy className="w-4 h-4 mr-2" /> Copy launch link
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="rounded-full"
+                    data-testid="empty-utm-tab-btn"
+                    onClick={() => setParams({ tab: "utm" })}>
+                    <LinkIcon className="w-4 h-4 mr-2" /> Build tracked UTM link
+                  </Button>
+                </div>
+                <div className="mt-8 grid sm:grid-cols-3 gap-3 max-w-xl mx-auto text-left">
+                  <div className="rounded-xl bg-white border border-ink-200 p-3 text-xs">
+                    <div className="font-semibold text-ink-900">1. Announce</div>
+                    <div className="text-ink-500 mt-0.5">Post on LinkedIn with the tracked link above.</div>
+                  </div>
+                  <div className="rounded-xl bg-white border border-ink-200 p-3 text-xs">
+                    <div className="font-semibold text-ink-900">2. DM 10 people</div>
+                    <div className="text-ink-500 mt-0.5">Personal invites convert 5-10× higher than posts.</div>
+                  </div>
+                  <div className="rounded-xl bg-white border border-ink-200 p-3 text-xs">
+                    <div className="font-semibold text-ink-900">3. Watch this tab</div>
+                    <div className="text-ink-500 mt-0.5">Signups show up here in real time.</div>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
           {/* Waitlist */}
-          {activeTab === "waitlist" && waitlist && (
+          {activeTab === "waitlist" && waitlist && waitlist.total > 0 && (
             <div className="mt-6" data-testid="waitlist-section">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="text-ink-500 text-sm">
@@ -455,14 +597,28 @@ export default function AdminPanel() {
                             <td className="px-4 py-3">
                               <span className="text-xs font-semibold rounded-full px-2 py-1 bg-ink-100 text-ink-700 capitalize">{r.source}</span>
                             </td>
-                            {r.cells.map((c) => (
-                              <td key={c.variant} className="px-4 py-3 text-right" data-testid={`matrix-cell-${r.source}-${c.variant}`}>
-                                <div className="font-heading font-bold text-base">{c.signups}</div>
-                                <div className={`text-[11px] font-mono ${c.conversion_pct >= 20 ? "text-emerald-700 font-semibold" : "text-ink-400"}`}>
-                                  {c.sessions ? `${c.conversion_pct}%` : "—"}
-                                </div>
-                              </td>
-                            ))}
+                            {r.cells.map((c) => {
+                              const overflow = c.signups > c.sessions && c.sessions > 0;
+                              const tt = c.sessions
+                                ? (overflow
+                                    ? `${c.signups} signups from ${c.sessions} sessions — conversion >100% means some visitors signed up before analytics loaded (e.g. direct POST to /api/waitlist) or arrived from a channel we didn't tag.`
+                                    : `${c.signups} signups from ${c.sessions} sessions · ${c.conversion_pct}% conversion`)
+                                : (c.signups > 0
+                                    ? `${c.signups} signups but no page_view sessions captured — visitor arrived before analytics started tracking.`
+                                    : "No sessions, no signups.");
+                              return (
+                                <td key={c.variant} className="px-4 py-3 text-right" data-testid={`matrix-cell-${r.source}-${c.variant}`} title={tt}>
+                                  <div className="font-heading font-bold text-base">{c.signups}</div>
+                                  <div className={`text-[11px] font-mono cursor-help ${
+                                    overflow ? "text-amber-700 font-semibold" :
+                                    c.conversion_pct >= 20 ? "text-emerald-700 font-semibold" : "text-ink-400"
+                                  }`}>
+                                    {c.sessions ? `${c.conversion_pct}%` : "—"}
+                                    {overflow && <span className="ml-1" aria-hidden="true">⚠</span>}
+                                  </div>
+                                </td>
+                              );
+                            })}
                             <td className="px-4 py-3 text-right bg-brand-50/40">
                               <div className="font-heading font-bold text-base text-brand-800">{r.totals.signups}</div>
                               <div className="text-[11px] text-brand-700 font-mono">{r.totals.sessions ? `${r.totals.conversion_pct}%` : "—"}</div>
@@ -485,8 +641,10 @@ export default function AdminPanel() {
                       </tbody>
                     </table>
                   </div>
-                  <div className="p-4 border-t border-ink-100 text-xs text-ink-500">
-                    Rows with 0 sessions but &gt; 0 signups mean the visitor arrived before analytics started or hit /api/waitlist directly. Signup numbers remain accurate.
+                  <div className="p-4 border-t border-ink-100 text-xs text-ink-500 space-y-1">
+                    <div><span className="font-semibold text-ink-700">Reading this table:</span> each cell shows <span className="font-mono">signups</span> on top and <span className="font-mono">conversion %</span> below (signups ÷ sessions). Hover any % for a plain-English breakdown.</div>
+                    <div><span className="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-1.5 align-middle" /> Green ≥ 20% conversion — a strong performing combo, worth doubling down.</div>
+                    <div><span className="inline-block w-2 h-2 rounded-full bg-amber-500 mr-1.5 align-middle" /> Amber (with ⚠) means signups exceeded tracked sessions — usually a visitor who signed up before analytics loaded, or via a channel we didn&apos;t tag. Signup counts remain accurate; conversion % is directional.</div>
                   </div>
                 </div>
               )}

@@ -1,0 +1,47 @@
+{
+  "summary": "Iter-11 delta verification for 4 additive improvements — all green. Backend: 19/19 pytest cases pass in test_iter11_sanity_and_regression.py: (a) GET /api/admin/sanity 200 for admin / 401 for anon, correct top-level shape {orphan_signups, unattributed_sessions, duplicate_emails, totals}, sample caps enforced (≤25 orphans / ≤50 duplicates), pct = round((count/total)*100, 2), orphan sample entries carry {email, position, source, created_at, reason}; (b) case-insensitive dup detection verified end-to-end by seeding 'CaseTest_xxxx@x.com' + 'casetest_xxxx@x.com' directly in Mongo — both group under the lowercased key with count>=2; (c) regressions clean for /api/formats, /api/admin/attribution-matrix, /api/admin/waitlist (with source=direct filter), /api/admin/experiments, /api/admin/utm-links, /api/short/{slug}, /api/analytics/track. Frontend: (d) sanity-panel renders on /admin overview with header 'Data-quality check', 3 sub-cards, sanity-verdict badge showed '⚠ Review recommended' correctly (1 seeded dup + 26.23% untagged sessions on live DB), sanity-dup-list appeared only when count>0 with 'email ×2' chip format. (e) All 12 matrix-cell testids on /admin?tab=experiments carry a plain-English title tooltip; overflow cells (signups>sessions, e.g. Direct×unassigned = 27 signups / 23 sessions = 117.39%) render in amber text with the ⚠ suffix; 3-row footnote confirmed (Reading this table / green ≥20% / amber ⚠ explainer). (g) ProjectView.jsx warning now reads 'Video failed to load' + 'network, decoding or storage issue' (old 'Video file not found' / 'missing on disk' copy removed); verified via synthetic ready project with non-existent mp4 URL. (h) /admin?tab=waitlist correctly toggles between waitlist-section (total>0) and waitlist-empty (stubbed total=0 via Playwright route interception) — headline 'No signups yet — let's change that', 3 buttons all present, LinkedIn share opens https://www.linkedin.com/sharing/share-offsite/... with encoded launch URL + summary (stubbed window.open verified), copy-link button shows 'Launch link copied' toast, UTM tab button navigates to ?tab=utm, three step cards (1.Announce / 2.DM 10 people / 3.Watch this tab) present. Zero console errors on landing / analytics / utm / digest / experiments tabs.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "AdminPanel.jsx waitlist-empty LinkedIn share",
+        "issues": [
+          "Line 311: the share `text` JS string contains the JSX-encoded entity `I&apos;m building AI Video Studio` — because it's inside a plain JS string literal (not JSX), the literal characters 'I&apos;m' get URL-encoded into the LinkedIn summary rather than being rendered as an apostrophe. LinkedIn users will see 'I&apos;m building…' as raw text in the pre-filled post. Fix: change `I&apos;m` to `I'm` (escape the JS quote with backticks or a backslash — the surrounding literal is a backtick template so a plain apostrophe is safe). Same issue applies to the H2 headline on line 301 `let&apos;s change that` — but there it IS inside JSX so it renders correctly; only line 311's occurrence is a bug."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter11_sanity_and_regression.py",
+    "/app/test_reports/pytest/iter11_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL polish (non-blocking, cosmetic on LinkedIn share preview): in /app/frontend/src/pages/AdminPanel.jsx line 311, replace the two occurrences of the string `I&apos;m` inside the `text` template literal with a plain apostrophe `I'm`. The HTML entity is meaningless inside a JS string (only meaningful in JSX/HTML) and will URL-encode as literal 'I&apos;m' in the LinkedIn share summary. Everything else is green."
+  ],
+  "critical_code_review_comments": [
+    "server.py /api/admin/sanity (lines 426-515) — clean impl. Uses $toLower for case-insensitive dup grouping ($group._id = {$toLower: '$email'}), properly caps sample arrays ($limit 50 for dups; orphans capped via Python slice [:25]), pct math uses round(x, 2) with a zero-guard on total_sessions. The orphan detection joins waitlist.email ↔ analytics_events(waitlist_submit|waitlist_success).properties.email (lowercased on both sides) and checks that at least one of the collected session_ids appears in the set of page_view session_ids — correct. Only minor smell: the endpoint loads ALL waitlist rows into memory to compute orphans; fine at current scale (~60 rows) but consider a pipeline aggregation once scale grows past a few thousand.",
+    "AdminPanel.jsx sanity-verdict threshold logic (line 224/228) — the healthy condition is `orphans + duplicates == 0 AND unattributed_pct < 25`. This matches the spec. UX-wise: with the current live DB (0 orphans, 0 dups, 26.23% untagged) the verdict correctly shows '⚠ Review recommended', because 26.23 ≥ 25 — the threshold is inclusive-of-25 on the amber side. That's a reasonable choice but worth documenting; a founder seeing exactly 25.00% would find it counter-intuitive that it's flagged. Consider `<= 25` if you want to be lenient at the boundary. Non-blocking.",
+    "AdminPanel.jsx line 311 — `I&apos;m` inside a JS string (not JSX) is a subtle bug (see design_issues). No functional impact on click routing, only affects the LinkedIn share preview text. Also on line 301 the JSX `let&apos;s` is correct (JSX context).",
+    "AdminPanel.jsx attribution matrix tooltips (lines 601-609) — nice UX: 3 distinct tooltip templates covering (a) overflow (signups > sessions), (b) normal cells, and (c) sessions==0 but signups>0 or both zero. Plain-English wording is clear. Green ≥ 20% threshold and amber overflow visual mapping are consistent with the footnote legend.",
+    "ProjectView.jsx warning copy (lines 154-160) — softening from 'Video file not found' → 'Video failed to load' + 'network, decoding or storage issue' is exactly right; the <video onError> handler fires for ALL load failures (404, decode error, network error, unsupported codec), so the previous copy was misleading in edge cases. Iter-9/10 hooks-order regression stays fixed — useState(videoMissing) and the reset useEffect remain above the `if (!p) return` early return.",
+    "server.py /api/admin/sanity does not gate the aggregation on a `since` window — with 6+ months of data at scale, the analytics_events $group over all page_view events could get expensive. Consider a default 90-day window with a `days` query param."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter11_sanity_and_regression.py (NEW — 19 tests: 8 sanity endpoint + 11 regression)"
+  ],
+  "success_rate": {
+    "backend": "100% (19/19 pass — sanity endpoint auth+shape+cap+pct-math+case-insensitive dup detection + 7 regression endpoints all green)",
+    "frontend": "100% (sanity panel + 3 sub-cards + verdict + dup-list, attribution matrix tooltips on all 12 cells + amber overflow + 3-row footnote, softened video-missing warning, waitlist filled+empty states with LinkedIn share + copy-link toast + UTM navigation, zero console errors on landing/analytics/utm/digest/experiments)"
+  },
+  "test_credentials": "Admin session_token=test_admin_1784712404860 (unchanged from iter-9/10, still valid in Mongo). Also injected disposable user session test_user_iter11_1784736583287 for the /project/{id} video-warning test (cleaned up in teardown).",
+  "seed_data_creation": "Ephemeral test data (all cleaned up in teardown): (1) pytest class TestDuplicateDetectionCaseInsensitive inserted 2 Mongo waitlist rows with mixed-case emails (wl_test_dupA_/wl_test_dupB_) then deleted them in setup/teardown_class. (2) Playwright sanity test inserted+deleted 2 duplicate waitlist rows (wl_test_pwdupA / wl_test_pwdupB with emails 'PWDup@x.com'/'pwdup@x.com') to drive the sanity-dup-list conditional-render path. (3) One synthetic ready project (proj_iter11broken) + user (user_iter11_test) + session for the video-missing warning test — deleted at end. Post-teardown waitlist total restored to 59 (matches pre-test baseline).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iter-11 all 4 additive improvements are shipped and green with zero regressions. Only cosmetic follow-up is the `I&apos;m` → `I'm` fix in AdminPanel.jsx line 311's LinkedIn share summary — non-blocking. Live DB currently has 0 orphans / 0 duplicates / 26.23% untagged sessions, so the sanity-verdict badge shows amber '⚠ Review recommended' by design (26.23 ≥ 25 threshold). For future waitlist-empty tests, using Playwright's page.route to stub /api/admin/waitlist with {total:0} is the safest approach (avoids deleting the 59 real waitlist rows). Admin session_token=test_admin_1784712404860 is still valid.",
+  "rca of the issue": "No issues to RCA — all iter-11 changes verified working end-to-end. The one minor cosmetic issue (AdminPanel.jsx line 311 `I&apos;m` inside JS string literal) has a trivial 1-char fix: replace `I&apos;m` with `I'm` (or use `I\\u2019m` for the curly apostrophe). Root cause is the same JSX-vs-JS confusion that produced iter-10's hooks-order violation — a copy-paste of an HTML entity from a JSX context into a plain JavaScript template literal. No user-visible impact until someone actually clicks 'Share beta on LinkedIn' from the waitlist empty state (which requires the founder to have 0 signups)."
+}

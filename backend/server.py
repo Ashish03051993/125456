@@ -423,6 +423,98 @@ async def formats_list():
     return list_formats()
 
 
+@api.get("/admin/sanity")
+async def admin_sanity(_admin=Depends(require_admin)):
+    """Analytics sanity check — flags data-quality issues before scaling acquisition.
+
+    Returns:
+      - orphan_signups: waitlist rows with no matching page_view session_id in analytics_events
+      - unattributed_sessions: unique page_view session_ids where properties.source is missing/null
+      - duplicate_emails: waitlist emails appearing more than once (case-insensitive)
+      - totals: {waitlist, sessions} for context
+    """
+    # 1) Duplicate emails (case-insensitive)
+    dup_cur = db.waitlist.aggregate([
+        {"$group": {"_id": {"$toLower": "$email"}, "n": {"$sum": 1},
+                    "positions": {"$push": "$position"}}},
+        {"$match": {"n": {"$gt": 1}}},
+        {"$sort": {"n": -1}},
+        {"$limit": 50},
+    ])
+    duplicate_emails = [
+        {"email": d["_id"], "count": d["n"], "positions": sorted(d.get("positions", []))[:10]}
+        async for d in dup_cur
+    ]
+
+    # 2) Unique page_view session_ids (all + unattributed)
+    all_sess_cur = db.analytics_events.aggregate([
+        {"$match": {"event": "page_view"}},
+        {"$group": {"_id": "$session_id"}},
+    ])
+    all_sids = {d["_id"] async for d in all_sess_cur if d["_id"]}
+
+    unattr_cur = db.analytics_events.aggregate([
+        {"$match": {"event": "page_view",
+                    "$or": [{"properties.source": {"$in": [None, ""]}},
+                            {"properties.source": {"$exists": False}}]}},
+        {"$group": {"_id": "$session_id"}},
+    ])
+    unattr_sids = {d["_id"] async for d in unattr_cur if d["_id"]}
+
+    # 3) Orphan signups — waitlist emails whose session_id (if captured) has no page_view,
+    #    OR waitlist rows with no session_id linkage at all.
+    # We look up analytics_events matching properties.email == waitlist.email (waitlist_submit event).
+    submit_cur = db.analytics_events.aggregate([
+        {"$match": {"event": {"$in": ["waitlist_submit", "waitlist_success"]}}},
+        {"$group": {"_id": {"$toLower": {"$ifNull": ["$properties.email", ""]}},
+                    "sids": {"$addToSet": "$session_id"}}},
+    ])
+    submit_sids_by_email: dict = {}
+    async for d in submit_cur:
+        submit_sids_by_email[d["_id"]] = set(s for s in d.get("sids", []) if s)
+
+    wl_cur = db.waitlist.find({}, {"_id": 0, "id": 1, "email": 1, "position": 1,
+                                    "created_at": 1, "source": 1})
+    orphans = []
+    total_wl = 0
+    async for w in wl_cur:
+        total_wl += 1
+        em = (w.get("email") or "").lower()
+        sids = submit_sids_by_email.get(em, set())
+        has_pv = bool(sids & all_sids)
+        if not has_pv:
+            orphans.append({
+                "email": w.get("email"),
+                "position": w.get("position"),
+                "source": w.get("source") or "direct",
+                "created_at": w.get("created_at"),
+                "reason": "no matching page_view session" if sids else "no analytics session captured",
+            })
+
+    # Cap the returned list; frontend shows count + first N
+    orphans_sorted = sorted(orphans, key=lambda o: o.get("position") or 10**9)
+
+    return {
+        "orphan_signups": {
+            "count": len(orphans_sorted),
+            "sample": orphans_sorted[:25],
+        },
+        "unattributed_sessions": {
+            "count": len(unattr_sids),
+            "total_sessions": len(all_sids),
+            "pct": round((len(unattr_sids) / len(all_sids)) * 100, 2) if all_sids else 0.0,
+        },
+        "duplicate_emails": {
+            "count": len(duplicate_emails),
+            "sample": duplicate_emails,
+        },
+        "totals": {
+            "waitlist": total_wl,
+            "sessions": len(all_sids),
+        },
+    }
+
+
 @api.get("/admin/attribution-matrix")
 async def admin_attribution_matrix(_admin=Depends(require_admin)):
     """Signup Attribution Matrix: sources × variants → signups & conversion.
