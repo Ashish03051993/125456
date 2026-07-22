@@ -26,6 +26,16 @@ Dashboard, credit system, projects, download, admin panel, pricing.
 - Landing, Pricing, Dashboard, Wizard, Project View, Settings, Admin Panel
 - Blue & white professional theme (Canva/InVideo inspired)
 
+## Phase 8 (2026-02) — Dual-Format Video Export + Signup Attribution Matrix
+- ✅ **Dual-format ffmpeg pipeline** — `/app/backend/formats.py` registers `landscape` (16:9, 1920x1080, cover-crop) and `vertical` (9:16, 1080x1920, pad-blur). `_ffmpeg_compose_all` iterates FORMATS and produces `{project_id}_{fid}.mp4` for each. Adding a new aspect ratio is one declarative entry.
+- ✅ Project response persists both `video_url` (backwards-compat, points to default landscape) and `video_urls: {landscape, vertical}` dict.
+- ✅ **Format Switcher** in `ProjectView.jsx` — chips render only when >1 format available. Clicking swaps `<video>` src (via key remount), toggles container aspect class (`aspect-video` vs `aspect-[9/16]`), updates Download button label, and lists target platforms.
+- ✅ **Video-missing warning** — amber banner (data-testid=`video-missing-warning`) fires on `<video onError>` when file 404s.
+- ✅ **Signup Attribution Matrix** — `GET /api/admin/attribution-matrix` returns Source × Variant → {signups, sessions, conversion_pct} with row/col/grand totals. Admin panel (Experiments tab) renders a matrix table with per-cell testids.
+- ✅ Public `GET /api/formats` endpoint exposing the format registry to the frontend.
+- ✅ **Infra**: `apt-get install -y ffmpeg fonts-dejavu` (5.1.9) installed on preview container. Defensive `shutil.which("ffmpeg")` guard in `_ffmpeg_compose_all` raises a friendly `RuntimeError` if binary missing.
+- ✅ Testing pass iter-9 (100% — 22/22 backend + 100% frontend) + iter-10 delta (100% — 13/13 backend + 100% frontend, after a critical Rules-of-Hooks regression in ProjectView.jsx was caught and fixed by testing agent).
+
 ## Phase 7 (2026-02) — Multi-Chip Filters + Short URLs
 - ✅ **Tri-chip filters** on Admin Waitlist tab: Source / Plan / Variant chip rows combine via AND. Header renders active-filter chips + "Clear filters" button. `variant='unassigned'` bucket matches null/missing rows.
 - ✅ Backend `/api/admin/waitlist` now returns three facets (`by_source`, `by_plan`, `by_variant`) with counts, accepts `?variant=` filter combinable with `source` and `plan`.
