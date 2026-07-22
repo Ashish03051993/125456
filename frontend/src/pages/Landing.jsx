@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { Sparkles, Zap, Palette, Layers, Video, Check, Play, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,12 @@ const scrollToWaitlist = () => {
 };
 
 export default function Landing() {
-  useEffect(() => { track("page_view", { page: "landing" }); }, []);
+  const fired = useRef(false);
+  useEffect(() => {
+    if (fired.current) return;
+    fired.current = true;
+    track("page_view", { page: "landing" });
+  }, []);
 
   return (
     <div className="min-h-screen bg-ink-50 text-ink-900 overflow-x-hidden">

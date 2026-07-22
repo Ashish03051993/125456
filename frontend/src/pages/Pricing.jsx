@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Check, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,12 @@ const TIERS = [
 
 export default function Pricing() {
   const nav = useNavigate();
-  useEffect(() => { track("page_view", { page: "pricing" }); }, []);
+  const fired = useRef(false);
+  useEffect(() => {
+    if (fired.current) return;
+    fired.current = true;
+    track("page_view", { page: "pricing" });
+  }, []);
 
   const onCta = (id) => {
     track("pricing_cta_click", { plan: id });

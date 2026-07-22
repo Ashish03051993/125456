@@ -26,6 +26,20 @@ Dashboard, credit system, projects, download, admin panel, pricing.
 - Landing, Pricing, Dashboard, Wizard, Project View, Settings, Admin Panel
 - Blue & white professional theme (Canva/InVideo inspired)
 
+## Phase 2 — Market validation (2026-02, current)
+- ✅ Waitlist collection: `POST /api/waitlist` with position tracking, duplicate detection, plan interest and use-case capture
+- ✅ Analytics tracking: `POST /api/analytics/track` with per-session `session_id` (localStorage-persisted) — `page_view`, `cta_click`, `pricing_cta_click`, `waitlist_submit`, `waitlist_success` events
+- ✅ Landing pivot: waitlist-first hero, "Reserve my spot" CTA, dedicated waitlist section, footer marked "Private beta"
+- ✅ Pricing page: CTAs now funnel to the waitlist (no live checkout)
+- ✅ Admin dashboard tabs: **Overview** (waitlist + signups 24h + events 24h + users), **Waitlist** (searchable table, Copy emails, Export CSV), **Analytics** (recharts BarChart of events + LineChart of daily activity)
+- ✅ Stripe stub `/app/backend/billing.py` mounted at `/api/billing` — status endpoint returns `{enabled:false, phase:"waitlist"}`, checkout/webhook return 501 (architecture only, no payments)
+- ✅ Mobile responsiveness: landing, pricing, admin all verified at 390px viewport
+- ✅ Testing pass 2/2: 34/34 backend tests + 4/4 Playwright frontend flows PASS
+
+## Deferred (unchanged from Phase 1)
+- Wire real Stripe checkout when payments are ready
+- Timeline editor / scene regeneration / YouTube & Instagram publish
+
 ## Implemented (2026-02)
 - ✅ Emergent Google Auth (cookie + Authorization Bearer support)
 - ✅ Full generation pipeline (script + images + TTS + ffmpeg MP4) — validated E2E in ~90s for 1-min video
