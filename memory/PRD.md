@@ -26,6 +26,13 @@ Dashboard, credit system, projects, download, admin panel, pricing.
 - Landing, Pricing, Dashboard, Wizard, Project View, Settings, Admin Panel
 - Blue & white professional theme (Canva/InVideo inspired)
 
+## Phase 9 (2026-02) — Analytics Trust + Waitlist Empty-State
+- ✅ **Analytics Sanity Panel** on Admin → Overview — new `GET /api/admin/sanity` endpoint returning: orphan_signups (waitlist rows with no matching page_view session), unattributed_sessions (page_views with no utm_source, with pct), duplicate_emails (case-insensitive `$toLower` grouping). Panel renders 3 sub-cards + verdict badge (✓ Analytics healthy / ⚠ Review recommended) with thresholds (orphans+dups==0 AND untagged<25%).
+- ✅ **Attribution Matrix UX** — every cell now has a plain-English `title` tooltip explaining the numbers. Overflow cells (signups > sessions) render in amber with a ⚠ suffix. New 3-row footnote with a color legend (green ≥ 20%, amber ⚠ explainer).
+- ✅ **Video warning copy softened** — "Video failed to load" + "network, decoding or storage issue" (was: "Video file not found" / "missing on disk"). Matches the actual set of failure modes covered by `<video onError>`.
+- ✅ **Waitlist empty-state** — when 0 signups, Admin → Waitlist shows a friendly gradient card with 3 CTAs: Share on LinkedIn (opens native LinkedIn share with pre-filled launch URL + summary), Copy launch link (clipboard + toast), Build tracked UTM link (tab jump). Plus a 3-step playbook (Announce / DM 10 / Watch).
+- ✅ Testing iter-11: 19/19 backend + 100% frontend. Zero regressions.
+
 ## Phase 8 (2026-02) — Dual-Format Video Export + Signup Attribution Matrix
 - ✅ **Dual-format ffmpeg pipeline** — `/app/backend/formats.py` registers `landscape` (16:9, 1920x1080, cover-crop) and `vertical` (9:16, 1080x1920, pad-blur). `_ffmpeg_compose_all` iterates FORMATS and produces `{project_id}_{fid}.mp4` for each. Adding a new aspect ratio is one declarative entry.
 - ✅ Project response persists both `video_url` (backwards-compat, points to default landscape) and `video_urls: {landscape, vertical}` dict.
