@@ -3,16 +3,18 @@ import { useSearchParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import { TopBar, Sidebar } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
-import { Users, Video, Mail, TrendingUp, BarChart3, Copy, Search, FlaskConical, Send, Trophy, AlertTriangle } from "lucide-react";
+import { Users, Video, Mail, TrendingUp, BarChart3, Copy, Search, FlaskConical, Send, Trophy, AlertTriangle, Link as LinkIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, LineChart, Line } from "recharts";
+import UtmLinksTab from "@/pages/admin/UtmLinksTab";
 
 const TABS = [
   { id: "overview",   label: "Overview",    icon: BarChart3 },
   { id: "waitlist",   label: "Waitlist",    icon: Mail },
   { id: "analytics",  label: "Analytics",   icon: TrendingUp },
   { id: "experiments",label: "A/B Tests",   icon: FlaskConical },
+  { id: "utm",        label: "UTM Links",   icon: LinkIcon },
   { id: "digest",     label: "Daily Digest",icon: Send },
 ];
 
@@ -347,6 +349,9 @@ export default function AdminPanel() {
               </div>
             </div>
           )}
+
+          {/* UTM Links */}
+          {activeTab === "utm" && <UtmLinksTab />}
 
           {/* Daily Digest */}
           {activeTab === "digest" && digestConfig && digestPreview && (

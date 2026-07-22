@@ -13,6 +13,7 @@ import base64
 import json
 import logging
 import os
+import re
 import subprocess
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -739,6 +740,109 @@ async def admin_experiments(_admin=Depends(require_admin), experiment: str = "la
 
 def _iso_ago_days(n: int) -> str:
     return (datetime.now(timezone.utc) - timedelta(days=n)).isoformat()
+
+
+# --------------------------- UTM Campaign Links ---------------------------
+class UtmLinkIn(BaseModel):
+    name: str
+    base_url: Optional[str] = None
+    source: str
+    medium: Optional[str] = None
+    campaign: Optional[str] = None
+    content: Optional[str] = None
+    term: Optional[str] = None
+
+
+def _clean_slug(s: Optional[str]) -> Optional[str]:
+    if not s:
+        return None
+    s = s.strip().lower()
+    s = re.sub(r"[^a-z0-9_\-]+", "-", s)
+    return s.strip("-") or None
+
+
+def _compose_url(base: str, params: dict) -> str:
+    from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
+    parts = urlparse(base)
+    q = dict(parse_qsl(parts.query))
+    for k, v in params.items():
+        if v:
+            q[k] = v
+    return urlunparse(parts._replace(query=urlencode(q)))
+
+
+@api.post("/admin/utm-links")
+async def utm_create(payload: UtmLinkIn, request: Request, _admin=Depends(require_admin)):
+    if not payload.source.strip():
+        raise HTTPException(400, "source is required")
+    base = payload.base_url or (str(request.base_url).rstrip("/").replace(
+        "http://", "https://").replace(":8001", ""))
+    # Strip our own /api path if it accidentally came in
+    if base.endswith("/api"):
+        base = base[:-4]
+    params = {
+        "utm_source": _clean_slug(payload.source),
+        "utm_medium": _clean_slug(payload.medium),
+        "utm_campaign": _clean_slug(payload.campaign),
+        "utm_content": _clean_slug(payload.content),
+        "utm_term": _clean_slug(payload.term),
+    }
+    doc = {
+        "id": f"utm_{uuid.uuid4().hex[:12]}",
+        "name": payload.name.strip(),
+        "base_url": base,
+        "params": params,
+        "url": _compose_url(base, params),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.utm_links.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+async def _link_stats(link: dict, since: str) -> dict:
+    p = link["params"]
+    match = {"created_at": {"$gte": since}}
+    # Match on utm_source at minimum; add utm_campaign/medium if present for precision
+    if p.get("utm_source"):
+        match["properties.source"] = p["utm_source"]
+    if p.get("utm_medium"):
+        match["properties.medium"] = p["utm_medium"]
+    if p.get("utm_campaign"):
+        match["properties.campaign"] = p["utm_campaign"]
+
+    sessions = await db.analytics_events.distinct(
+        "session_id", {**match, "event": "page_view"}
+    )
+    sess_n = len([s for s in sessions if s])
+    signups = await db.analytics_events.count_documents(
+        {**match, "event": {"$in": ["waitlist_submit", "waitlist_success"]}}
+    )
+    demo_clicks = await db.analytics_events.count_documents(
+        {**match, "event": "book_demo_click"}
+    )
+    conv_pct = round((signups / sess_n) * 100, 2) if sess_n else 0.0
+    return {
+        "sessions": sess_n,
+        "signups": signups,
+        "demo_clicks": demo_clicks,
+        "conversion_pct": conv_pct,
+    }
+
+
+@api.get("/admin/utm-links")
+async def utm_list(_admin=Depends(require_admin), days: int = 30):
+    since = _iso_ago_days(days)
+    rows = await db.utm_links.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    for r in rows:
+        r["stats"] = await _link_stats(r, since)
+    return {"days": days, "rows": rows}
+
+
+@api.delete("/admin/utm-links/{link_id}")
+async def utm_delete(link_id: str, _admin=Depends(require_admin)):
+    r = await db.utm_links.delete_one({"id": link_id})
+    return {"deleted": r.deleted_count}
 
 
 # --------------------------- Digest ---------------------------

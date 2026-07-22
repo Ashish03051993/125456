@@ -1,5 +1,5 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Video, LayoutDashboard, Shield, LogOut, Sparkles, Users, BarChart3, FlaskConical, Send } from "lucide-react";
+import { Video, LayoutDashboard, Shield, LogOut, Sparkles, Users, BarChart3, FlaskConical, Send, Link as LinkIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 import { track } from "@/lib/analytics";
@@ -58,6 +58,7 @@ export function Sidebar() {
     { to: "/admin?tab=waitlist", label: "Waitlist", icon: Users, testId: "side-waitlist" },
     { to: "/admin?tab=analytics", label: "Analytics", icon: BarChart3, testId: "side-analytics" },
     { to: "/admin?tab=experiments", label: "A/B Tests", icon: FlaskConical, testId: "side-experiments" },
+    { to: "/admin?tab=utm", label: "UTM Links", icon: LinkIcon, testId: "side-utm" },
     { to: "/admin?tab=digest", label: "Daily Digest", icon: Send, testId: "side-digest" },
   ];
   return (
