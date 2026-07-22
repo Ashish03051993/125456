@@ -88,7 +88,7 @@ class TestAdminWaitlistListing:
         assert isinstance(b["by_source"], list)
         for row in b["by_source"]:
             assert "source" in row and "n" in row
-        assert b["filters"] == {"source": None, "plan": None, "q": None}
+        assert b["filters"] == {"source": None, "plan": None, "variant": None, "q": None}
         assert b["count"] == b["total"]  # unfiltered
 
     def test_source_filter_returns_only_matching(self, http):

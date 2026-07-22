@@ -30,6 +30,29 @@ function StatCard({ label, value, icon: Icon, testid }) {
   );
 }
 
+function ChipRow({ label, items, active, onSelect, testidPrefix, testid }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2" data-testid={testid}>
+      <span className="text-[10px] text-ink-500 font-semibold uppercase tracking-widest mr-1 w-16 shrink-0">{label}</span>
+      {items.map((it, i) => {
+        const key = it.key || "";
+        const isActive = active === key;
+        const testId = key ? `${testidPrefix}-${key}` : `${testidPrefix}-all`;
+        return (
+          <button key={`${testidPrefix}-${key || "all"}-${i}`}
+            onClick={() => onSelect(key)}
+            data-testid={testId}
+            className={`text-xs font-semibold rounded-full px-3 py-1.5 border transition-colors capitalize ${
+              isActive ? "bg-brand-600 text-white border-brand-600" : "bg-white text-ink-700 border-ink-200 hover:border-brand-600"
+            }`}>
+            {key || "All"} <span className="opacity-70 ml-1">({it.n})</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function AdminPanel() {
   const [params, setParams] = useSearchParams();
   const activeTab = params.get("tab") || "overview";
@@ -42,13 +65,19 @@ export default function AdminPanel() {
   const [digestPreview, setDigestPreview] = useState(null);
   const [sendingDigest, setSendingDigest] = useState(false);
   const [sourceFilter, setSourceFilter] = useState("");
+  const [planFilter, setPlanFilter] = useState("");
+  const [variantFilter, setVariantFilter] = useState("");
   const [q, setQ] = useState("");
 
   const load = async () => {
     try {
+      const wParams = {};
+      if (sourceFilter)  wParams.source = sourceFilter;
+      if (planFilter)    wParams.plan = planFilter;
+      if (variantFilter) wParams.variant = variantFilter;
       const [s, w, a, e, d, dc, dp] = await Promise.all([
         api.get("/admin/stats"),
-        api.get("/admin/waitlist", { params: sourceFilter ? { source: sourceFilter } : {} }),
+        api.get("/admin/waitlist", { params: wParams }),
         api.get("/admin/analytics"),
         api.get("/admin/experiments"),
         api.get("/admin/digest"),
@@ -60,7 +89,14 @@ export default function AdminPanel() {
       setDigestConfig(dc.data); setDigestPreview(dp.data);
     } catch { toast.error("Could not load admin data"); }
   };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [sourceFilter]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [sourceFilter, planFilter, variantFilter]);
+
+  const activeFilters = [
+    ...(sourceFilter  ? [{ label: `Source: ${sourceFilter}`,    clear: () => setSourceFilter("") }]  : []),
+    ...(planFilter    ? [{ label: `Plan: ${planFilter}`,        clear: () => setPlanFilter("") }]    : []),
+    ...(variantFilter ? [{ label: `Variant: ${variantFilter}`,  clear: () => setVariantFilter("") }] : []),
+  ];
+  const clearAllFilters = () => { setSourceFilter(""); setPlanFilter(""); setVariantFilter(""); };
 
   const sendDigestNow = async () => {
     setSendingDigest(true);
@@ -92,8 +128,9 @@ export default function AdminPanel() {
 
   const exportCsv = () => {
     const url = new URL(`${process.env.REACT_APP_BACKEND_URL}/api/admin/waitlist.csv`);
-    if (sourceFilter) url.searchParams.set("source", sourceFilter);
-    // Cookie auth is included via credentials on same origin
+    if (sourceFilter)  url.searchParams.set("source", sourceFilter);
+    if (planFilter)    url.searchParams.set("plan", planFilter);
+    if (variantFilter) url.searchParams.set("variant", variantFilter);
     const a = document.createElement("a");
     a.href = url.toString();
     a.download = "";
@@ -174,34 +211,32 @@ export default function AdminPanel() {
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="text-ink-500 text-sm">
                   <span className="font-heading font-bold text-ink-900 text-xl" data-testid="segment-count">{waitlist.count}</span>
-                  {sourceFilter
-                    ? <> from <span className="font-semibold capitalize text-brand-700">{sourceFilter}</span> of {waitlist.total} total</>
+                  {activeFilters.length > 0
+                    ? <> of {waitlist.total} <span className="text-brand-700">·</span> filtered by <span className="font-semibold">{activeFilters.map(f => f.label).join(", ")}</span></>
                     : <> people on the waitlist</>}
                 </div>
                 <div className="flex items-center gap-2">
+                  {activeFilters.length > 0 && (
+                    <Button variant="outline" onClick={clearAllFilters} data-testid="clear-filters-btn">Clear filters</Button>
+                  )}
                   <Button variant="outline" onClick={copyEmails} data-testid="copy-emails-btn"><Copy className="w-4 h-4 mr-2" /> Copy emails</Button>
                   <Button onClick={exportCsv} className="bg-brand-600 hover:bg-brand-700 text-white" data-testid="export-csv-btn">
                     <Download className="w-4 h-4 mr-2" /> Export CSV
                   </Button>
                 </div>
               </div>
-              <div className="mt-4 flex flex-wrap items-center gap-2" data-testid="segment-chips">
-                <span className="text-xs text-ink-500 font-semibold uppercase tracking-widest mr-1">Segment:</span>
-                <button onClick={() => setSourceFilter("")} data-testid="segment-all"
-                  className={`text-xs font-semibold rounded-full px-3 py-1.5 border transition-colors ${
-                    !sourceFilter ? "bg-brand-600 text-white border-brand-600" : "bg-white text-ink-700 border-ink-200 hover:border-brand-600"
-                  }`}>
-                  All <span className="opacity-70 ml-1">({waitlist.total})</span>
-                </button>
-                {(waitlist.by_source || []).map((s) => (
-                  <button key={s.source} onClick={() => setSourceFilter(s.source)}
-                    data-testid={`segment-${s.source}`}
-                    className={`text-xs font-semibold rounded-full px-3 py-1.5 border transition-colors capitalize ${
-                      sourceFilter === s.source ? "bg-brand-600 text-white border-brand-600" : "bg-white text-ink-700 border-ink-200 hover:border-brand-600"
-                    }`}>
-                    {s.source} <span className="opacity-70 ml-1">({s.n})</span>
-                  </button>
-                ))}
+
+              {/* Filter chip rows */}
+              <div className="mt-4 space-y-2" data-testid="filter-chips">
+                <ChipRow label="Source" testid="segment-chips"
+                  items={[{ key: "", n: waitlist.total }, ...(waitlist.by_source || []).map(s => ({ key: s.source, n: s.n }))]}
+                  active={sourceFilter} onSelect={setSourceFilter} testidPrefix="segment" />
+                <ChipRow label="Plan" testid="plan-chips"
+                  items={[{ key: "", n: waitlist.total }, ...(waitlist.by_plan || []).map(p => ({ key: p.plan, n: p.n }))]}
+                  active={planFilter} onSelect={setPlanFilter} testidPrefix="plan" />
+                <ChipRow label="Variant" testid="variant-chips"
+                  items={[{ key: "", n: waitlist.total }, ...(waitlist.by_variant || []).map(v => ({ key: v.variant, n: v.n }))]}
+                  active={variantFilter} onSelect={setVariantFilter} testidPrefix="variant" />
               </div>
 
               <div className="mt-4 relative max-w-sm">
@@ -219,6 +254,7 @@ export default function AdminPanel() {
                         <th className="text-left px-3 py-3 font-semibold">Source</th>
                         <th className="text-left px-3 py-3 font-semibold">Campaign</th>
                         <th className="text-left px-3 py-3 font-semibold">Plan</th>
+                        <th className="text-left px-3 py-3 font-semibold">Variant</th>
                         <th className="text-left px-3 py-3 font-semibold">Use case</th>
                         <th className="text-left px-3 py-3 font-semibold">When</th>
                       </tr>
@@ -237,12 +273,17 @@ export default function AdminPanel() {
                           </td>
                           <td className="px-3 py-2.5 font-mono text-xs text-ink-500">{r.campaign || "—"}</td>
                           <td className="px-3 py-2.5"><span className="text-xs font-semibold rounded-full px-2 py-1 bg-brand-50 text-brand-700 capitalize">{r.plan_interest}</span></td>
+                          <td className="px-3 py-2.5">
+                            {r.variant
+                              ? <span className="text-xs font-mono font-bold rounded-full px-2 py-1 bg-violet-50 text-violet-700">{r.variant}</span>
+                              : <span className="text-[11px] text-ink-400">—</span>}
+                          </td>
                           <td className="px-3 py-2.5 text-ink-500 max-w-[220px] truncate" title={r.use_case}>{r.use_case || "—"}</td>
                           <td className="px-3 py-2.5 text-ink-500 whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</td>
                         </tr>
                       ))}
                       {filteredWaitlist.length === 0 && (
-                        <tr><td colSpan={7} className="px-3 py-10 text-center text-ink-400">No entries match this filter.</td></tr>
+                        <tr><td colSpan={8} className="px-3 py-10 text-center text-ink-400">No entries match this filter.</td></tr>
                       )}
                     </tbody>
                   </table>

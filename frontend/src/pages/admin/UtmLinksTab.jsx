@@ -26,11 +26,13 @@ export default function UtmLinksTab() {
   const [campaign, setCampaign] = useState("");
   const [content, setContent] = useState("");
   const [term, setTerm] = useState("");
+  const [slug, setSlug] = useState("");
   const [rows, setRows] = useState(null);
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const baseUrl = window.location.origin;
+  const autoSlug = kebab(slug || name);
 
   const load = async () => {
     setBusy(true);
@@ -69,9 +71,10 @@ export default function UtmLinksTab() {
         name: name.trim(),
         base_url: baseUrl,
         source, medium, campaign, content, term,
+        slug: slug || undefined,
       });
       toast.success("Campaign link created");
-      setName(""); setCampaign(""); setContent(""); setTerm("");
+      setName(""); setCampaign(""); setContent(""); setTerm(""); setSlug("");
       load();
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Failed to create link");
@@ -167,6 +170,20 @@ export default function UtmLinksTab() {
               placeholder="Keyword or audience"
               className="mt-2 h-11" data-testid="utm-term" />
           </div>
+          <div className="md:col-span-2">
+            <Label className="text-xs uppercase tracking-widest text-ink-500 font-semibold">Short URL slug (optional)</Label>
+            <div className="mt-2 flex items-stretch gap-2">
+              <div className="flex items-center px-3 bg-ink-50 border border-ink-200 rounded-l-md text-sm font-mono text-ink-500 whitespace-nowrap">
+                {baseUrl.replace(/^https?:\/\//, "")}/l/
+              </div>
+              <Input value={slug} onChange={(e)=>setSlug(e.target.value)}
+                placeholder={autoSlug || "beta-post-1"}
+                className="h-11 rounded-l-none flex-1" data-testid="utm-slug" />
+            </div>
+            <div className="mt-1.5 text-xs text-ink-500">
+              Leave blank and we&apos;ll auto-slug from the name. Duplicate slugs get a numeric suffix.
+            </div>
+          </div>
 
           <div className="md:col-span-2">
             <Label className="text-xs uppercase tracking-widest text-ink-500 font-semibold">Preview URL</Label>
@@ -234,7 +251,15 @@ export default function UtmLinksTab() {
                 <tr key={r.id} className="border-t border-ink-100 hover:bg-ink-50/50" data-testid={`utm-row-${r.id}`}>
                   <td className="px-4 py-3">
                     <div className="font-semibold">{r.name}</div>
-                    <div className="text-[11px] text-ink-500 font-mono truncate max-w-[260px]" title={r.url}>{r.url}</div>
+                    {r.slug ? (
+                      <button onClick={() => copy(`${baseUrl}/l/${r.slug}`, "Short URL")}
+                        className="mt-0.5 text-[11px] text-brand-700 font-mono hover:underline inline-flex items-center gap-1"
+                        data-testid={`utm-short-${r.id}`}>
+                        /l/{r.slug} <Copy className="w-3 h-3" />
+                      </button>
+                    ) : (
+                      <div className="text-[11px] text-ink-400 font-mono">no short url</div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
@@ -249,10 +274,11 @@ export default function UtmLinksTab() {
                   <td className="px-4 py-3 text-right font-mono font-semibold text-brand-700">{r.stats.conversion_pct}%</td>
                   <td className="px-4 py-3 text-right">
                     <div className="inline-flex items-center gap-1">
-                      <Button size="sm" variant="outline" onClick={() => copy(r.url, r.name)} data-testid={`utm-copy-${r.id}`}>
+                      <Button size="sm" variant="outline" onClick={() => copy(r.slug ? `${baseUrl}/l/${r.slug}` : r.url, r.name)}
+                        data-testid={`utm-copy-${r.id}`} title={r.slug ? "Copy short URL" : "Copy full URL"}>
                         <Copy className="w-3.5 h-3.5" />
                       </Button>
-                      <a href={r.url} target="_blank" rel="noreferrer">
+                      <a href={r.slug ? `${baseUrl}/l/${r.slug}` : r.url} target="_blank" rel="noreferrer">
                         <Button size="sm" variant="outline" data-testid={`utm-open-${r.id}`}>
                           <LinkIcon className="w-3.5 h-3.5" />
                         </Button>

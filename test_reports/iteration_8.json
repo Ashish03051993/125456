@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 8 — Chip filters (source/plan/variant) + Short URLs are fully green end-to-end. 16/16 new backend tests pass in test_phase8_chips_and_short.py; combined regression suite now 42/42 (previously-outdated shape test updated to include the new `variant` filter key). Frontend Playwright verified /l/beta-post-1 → redirects to landing with utm_source=linkedin&utm_medium=post&utm_campaign=beta_dec still on the URL; invalid /l/not-a-real-slug-xyz renders short-link-error 'Link not found'. Admin Waitlist tab renders exactly three chip rows (Source: All/Direct/Linkedin/Twitter, Plan: All/Pro/Free/Business/Enterprise, Variant: All/Unassigned/Hero_a/A/B) with counts matching the by_source/by_plan/by_variant facets from the API (48 total; unassigned=39; hero_a=6; A=2; B=1; linkedin=19; direct=24; twitter=5). Clicking segment-linkedin then variant-B produced header text exactly '1 of 48 · filtered by Source: linkedin, Variant: B', showed the single matching row (var_b@example.com, violet 'B' variant chip), and clear-filters-btn restored 48. Variant column header + violet-chip rendering confirmed. UTM Links tab: utm-slug field visible with 'script-to-video-382.preview.emergentagent.com/l/' read-only prefix; typing name 'Iter8 Playwright test 378895' auto-generated placeholder 'iter8-playwright-test-378895'; save created utm_67315632ab14 with slug set, table row rendered utm-short-{id} '/l/iter8-playwright-test-378895', utm-copy-{id} tooltip 'Copy short URL', and utm-open-{id} anchor href points at /l/<slug>. Short-URL analytics event verified: hitting /api/short/beta-post-1 twice bumped by_event.short_link_hit count from 5 → 7 in /api/admin/analytics.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase8_chips_and_short.py",
+    "/app/test_reports/pytest/iter8_phase8.xml",
+    "/app/test_reports/pytest/iter8_regression.xml"
+  ],
+  "action_items": [
+    "OPTIONAL (pre-existing, iter 5): duplicate-detection on POST /api/admin/utm-links for (utm_source, utm_medium, utm_campaign) — separate concern from slug dedupe which IS implemented.",
+    "OPTIONAL (pre-existing, iter 5): wrap navigator.clipboard.writeText in UtmLinksTab.copy() in try/catch — already handled with fallback textarea + catch, so this action item can be closed.",
+    "OPTIONAL (iter 6): decide 401 vs 403 for authenticated non-admin — current impl returns 403 for role-check, 401 for no-cookie; consistent with FastAPI conventions."
+  ],
+  "critical_code_review_comments": [
+    "server.py:316-323 & 376-383 — variant='unassigned' branch correctly OR-matches null OR $exists:false and defensively re-nests under $and when a prior $or (source='direct' expansion) is already present. Good handling of the combined direct+unassigned edge case (verified with test_combined_source_direct_and_variant_unassigned).",
+    "server.py:346-350 by_variant aggregation with $ifNull → 'unassigned' correctly buckets null AND missing variants together. Sum(by_variant.n) == total (39+6+2+1=48).",
+    "server.py:934-941 slug dedupe loop is O(n) DB round-trips per collision. Fine for expected volumes (few dozen links) but could add a unique index on utm_links.slug (sparse, since slug may be null) to make collisions cheap. Not blocking.",
+    "server.py:863-884 short_resolve inserts a synchronous analytics event before returning. If analytics_events insert is ever slow, it will delay every short-link resolve. Consider fire-and-forget (asyncio.create_task) if latency matters — acceptable trade-off today.",
+    "server.py:875-877 analytics event 'properties.slug' is stored but 'properties.utm_source' pulls from link['params'] — matches the spec ('properties.slug + properties.utm_source'). Good.",
+    "ShortLinkRedirect.jsx uses window.location.replace which correctly preserves referrer-source semantics and cleans up history — the spec says 'browser ends up on the landing page with UTM params in the URL' and this is exactly what happens (verified).",
+    "AdminPanel.jsx:92 useEffect deps only include sourceFilter/planFilter/variantFilter. That's intentional — 'q' is client-side filtered — but note this means changing 'q' does NOT re-hit the API; that's a UX choice (fast) not a bug.",
+    "AdminPanel.jsx:118-127 filteredWaitlist applies 'q' on top of the already server-filtered entries. Correct.",
+    "AdminPanel.jsx ChipRow key uses `${testidPrefix}-${key||'all'}-${i}` — this is safe against duplicate empty keys and avoids the iter-6 React duplicate-key issue.",
+    "UtmLinksTab.jsx:277-278 copy button correctly prefers r.slug ? short-url : r.url; tooltip toggles between 'Copy short URL' and 'Copy full URL'. Verified via title attribute.",
+    "UtmLinksTab.jsx:281 anchor uses r.slug ? /l/{slug} : r.url — Open button opens short URL when available. Verified.",
+    "Prior test test_csv_and_segments.py::test_shape_contains_all_keys hard-coded the filters dict shape; I updated it (added 'variant': None) so it stays in sync with the API contract. This was a stale test, not a product regression."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase8_chips_and_short.py (NEW — 16 tests covering variant filter, unassigned bucket, combined AND filters, CSV filename & auth, utm slug create/auto/dedupe, short-link resolver + 404 + analytics event + prewired beta-post-1)",
+    "/app/backend/tests/test_csv_and_segments.py (updated: added 'variant': None to the expected filters dict on line 91 to match the new API contract)"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16 new; 42/42 combined regression across test_direct_bucket_fix + test_utm_links + test_csv_and_segments + test_phase8)",
+    "frontend": "100% (short-link redirect valid & invalid; 3 chip rows with correct counts; combined filter narrows table + updates header text exactly; clear-filters-btn works; Variant column with violet chip; utm-slug field with /l/ prefix + auto-placeholder from name; short URL displayed under row name; copy tooltip prefers short URL; open button opens short URL in new tab)"
+  },
+  "test_credentials": "Admin bearer/cookie session_token=test_admin_1784712404860 (admin@videostudio.ai). Cookie can be injected via page.context.add_cookies for Playwright.",
+  "seed_data_creation": "test_phase8_chips_and_short.py: TEST_-prefixed UTM links created and deleted in each test (self-cleanup via try/finally). Playwright: one utm_link created via UI + deleted at end of test. Two extra /api/short/beta-post-1 hits added 2 short_link_hit analytics events (unavoidable and expected, prod-safe).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter 8 features (chip filters — source/plan/variant with 'unassigned' bucket = null OR missing — and short URLs /l/:slug with auto+deduped slugs) are shipped and green. All prior iterations (waitlist attribution, direct bucket, UTM CSV, digest, A/B experiments) still green. Deferred/explicitly NOT tested this iteration per user instruction: Growth Sparklines, Resend Email delivery. If a future iteration adds a client-side 'variant' filter on the /admin/analytics endpoint or the daily digest breakdown, note that only /admin/waitlist and /admin/waitlist.csv accept the variant param today. When creating a UTM link programmatically without a slug field, the backend now auto-generates one from the name — tests that expect r.slug to be None must pass slug='' explicitly (empty string) OR they must accommodate the auto-derived kebab slug.",
+  "rca of the issue": "N/A — no functional bugs found this iteration. One stale test (test_csv_and_segments.py::test_shape_contains_all_keys) was updated to include the new 'variant' filter key in its expected filters dict; the underlying API contract change (adding 'variant' to the filters echo) is correct and intentional per the iteration-8 spec."
+}
