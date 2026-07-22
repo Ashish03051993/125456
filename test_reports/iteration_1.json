@@ -1,0 +1,62 @@
+{
+  "summary": "First full pass: 16/16 fast backend pytest tests pass + long E2E pipeline test passes (script + Nano-Banana images + OpenAI TTS + ffmpeg MP4 in ~93s). All 6 frontend flows verified via Playwright with injected session cookies (landing, pricing, unauth redirects, dashboard, wizard, project view with real video, admin panel).",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "run_pipeline / ffmpeg",
+        "issue": "System dependency 'ffmpeg' (and DejaVu font used by drawtext) was NOT installed in the container, causing every generation to end with status=error 'No such file or directory: ffmpeg' during the 'composing video' stage. Fixed by installing 'ffmpeg' and 'fonts-dejavu' apt packages, but this must be added to the app's install/bootstrap script (Dockerfile/setup) so it survives container rebuilds.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "/api/auth/session",
+        "issue": "expires_at/created_at are stored as ISO strings (via .isoformat()) while the seed script uses real Date objects. current_user() handles both, but persistence format is inconsistent — could bite future queries."
+      },
+      {
+        "endpoint": "/api/projects/{id}/generate",
+        "issue": "Credit is decremented up-front. On success path there is no refund logic if e.g. ffmpeg dependency missing at composing stage — refund only happens in the exception branch (which does work), but there is no locking so a user hitting Generate twice quickly could bypass the 'Already running' guard due to race between find_one and update_one."
+      },
+      {
+        "endpoint": "/api/admin/users/{uid}/credits",
+        "issue": "Query-parameter body (credits=N via ?credits=) with POST is unusual REST; consider JSON body. Also there is no bound-check (credits can be set to negative)."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Landing hero badge", "issues": ["Badge text says 'Powered by GPT-5.2 · Nano Banana · OpenAI TTS' but backend actually uses model id 'gpt-5.4' (see server.py). Marketing/UI copy is inconsistent with implementation."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Add 'ffmpeg' and 'fonts-dejavu' (or bundle a font file) to the container/bootstrap install so video composition works after rebuilds. Right now the video pipeline is completely broken without these system packages.",
+    "Decide canonical model name and fix landing copy vs server.py (GPT-5.2 vs gpt-5.4).",
+    "Persist expires_at/created_at as datetime objects (not ISO strings) for consistency and index-friendliness.",
+    "Consider validating credits >= 0 in /api/admin/users/{uid}/credits and using JSON body instead of query param.",
+    "Optional: add atomic 'status == draft -> generating' update using find_one_and_update to prevent double-generate races."
+  ],
+  "critical_code_review_comments": [
+    "server.py mixes ISO-string and datetime for user_sessions.expires_at — coerced at read-time but should be normalized.",
+    "run_pipeline() does image generation sequentially (comment says so, to respect concurrent_request_limit). Fine, but 5 sequential Nano-Banana calls + TTS + ffmpeg still fit within ~90s for a 1-min video.",
+    "server.py returns fastapi HTTPException with detail as free-text; consider a structured error model.",
+    "Frontend api.js has no interceptor for 401 -> automatic logout/redirect; each protected page relies on /me at mount. Works but produces expected 401 console errors when unauthenticated.",
+    "Pricing.jsx CTA for non-enterprise plans does nothing (only 'sales' email opens). Confirmed acceptable per MVP note ('Upgrade plan CTA (no checkout)') — no action needed."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (new)",
+    "System packages installed via apt: ffmpeg, fonts-dejavu (NOT persisted in code — main agent must ensure Dockerfile/setup installs these)"
+  ],
+  "success_rate": {"backend": "100% (17/17 including E2E pipeline)", "frontend": "100% (all flows PASS)"},
+  "test_credentials": "Injected via mongosh (see /app/auth_testing.md). USER token: test_user_1784715294657 (email TEST_pytestuser@example.com, role=user, credits=5). ADMIN token: test_admin_1784715294652 (email admin@videostudio.ai, role=admin). ZERO token: test_zero_1784715294661 (credits=0). Reset via mongosh if credits are drained.",
+  "seed_data_creation": "Inserted 2 additional test users (TEST_pytestuser@example.com, TEST_zerocredits@example.com) and 3 user_sessions in test_database. Also created several TEST_-prefixed projects. Cleanup on future runs recommended.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "ffmpeg + fonts-dejavu were installed ad-hoc via apt in this container. If the container is rebuilt they will disappear and the E2E pipeline will fail again with 'No such file or directory: ffmpeg'. Confirm main agent has added these to the persistent install path before re-testing. The seeded USER token/session and admin token/session are still valid (7 days). Reset user credits via `mongosh --eval \"use('test_database'); db.users.updateOne({email:'TEST_pytestuser@example.com'},{$set:{credits:5}})\"` before rerunning the wizard flow.",
+  "rca of the issue": "Pipeline generation failed with 100% error rate. RCA: The FastAPI backend shells out to `ffmpeg` (and `ffprobe`) in `_ffmpeg_compose`/`_ffprobe_duration`, but the base container does NOT include ffmpeg. Reproduction: POST /api/projects then POST /api/projects/{id}/generate as an authenticated user; poll GET /api/projects/{id} — status transitions writing script -> generating images -> composing video -> failed with error 'No such file or directory: ffmpeg' (credit is auto-refunded, which does work). Mitigation applied in test container: `apt-get install -y ffmpeg fonts-dejavu`. Permanent fix: add these to the container's install manifest (Dockerfile/apt bootstrap)."
+}
