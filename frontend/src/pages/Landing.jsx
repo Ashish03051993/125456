@@ -26,7 +26,7 @@ export default function Landing() {
         <div className="relative max-w-7xl mx-auto px-6 pt-24 pb-32 grid md:grid-cols-12 gap-12 items-center">
           <div className="md:col-span-7 stagger">
             <div className="inline-flex items-center gap-2 bg-white border border-ink-200 rounded-full px-3 py-1 text-xs font-semibold text-brand-700 shadow-sm">
-              <Sparkles className="w-3.5 h-3.5" /> Powered by GPT-5.2 · Nano Banana · OpenAI TTS
+              <Sparkles className="w-3.5 h-3.5" /> Powered by GPT-5.4 · Nano Banana · OpenAI TTS
             </div>
             <h1 className="mt-6 font-heading font-extrabold text-5xl sm:text-6xl lg:text-7xl tracking-tighter leading-[0.95]">
               Turn a <span className="text-brand-600">topic</span> into a<br />
