@@ -3,11 +3,12 @@ import { useSearchParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import { TopBar, Sidebar } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
-import { Users, Video, Mail, TrendingUp, BarChart3, Copy, Search, FlaskConical, Send, Trophy, AlertTriangle, Link as LinkIcon, Download } from "lucide-react";
+import { Users, Video, Mail, TrendingUp, BarChart3, Copy, Search, FlaskConical, Send, Trophy, AlertTriangle, Link as LinkIcon, Download, ExternalLink } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, LineChart, Line } from "recharts";
 import UtmLinksTab from "@/pages/admin/UtmLinksTab";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 const TABS = [
   { id: "overview",   label: "Overview",    icon: BarChart3 },
@@ -62,6 +63,9 @@ export default function AdminPanel() {
   const [experiments, setExperiments] = useState(null);
   const [attribution, setAttribution] = useState(null);
   const [sanity, setSanity] = useState(null);
+  const [untaggedOpen, setUntaggedOpen] = useState(false);
+  const [untagged, setUntagged] = useState(null);
+  const [untaggedBusy, setUntaggedBusy] = useState(false);
   const [digestList, setDigestList] = useState(null);
   const [digestConfig, setDigestConfig] = useState(null);
   const [digestPreview, setDigestPreview] = useState(null);
@@ -103,6 +107,17 @@ export default function AdminPanel() {
     ...(variantFilter ? [{ label: `Variant: ${variantFilter}`,  clear: () => setVariantFilter("") }] : []),
   ];
   const clearAllFilters = () => { setSourceFilter(""); setPlanFilter(""); setVariantFilter(""); };
+
+  const openUntaggedDrilldown = async () => {
+    setUntaggedOpen(true);
+    if (untagged) return; // cached
+    setUntaggedBusy(true);
+    try {
+      const { data } = await api.get("/admin/sanity/untagged", { params: { limit: 100 } });
+      setUntagged(data);
+    } catch { toast.error("Failed to load untagged sessions"); }
+    finally { setUntaggedBusy(false); }
+  };
 
   const sendDigestNow = async () => {
     setSendingDigest(true);
@@ -245,19 +260,25 @@ export default function AdminPanel() {
                     </div>
 
                     {/* Unattributed sessions */}
-                    <div className="rounded-xl border border-ink-200 p-4" data-testid="sanity-unattributed">
+                    <button type="button"
+                      onClick={openUntaggedDrilldown}
+                      className="text-left rounded-xl border border-ink-200 p-4 hover:border-brand-600 hover:shadow-sm transition-all cursor-pointer group"
+                      data-testid="sanity-unattributed">
                       <div className="flex items-center justify-between">
                         <div className="text-xs uppercase tracking-widest text-ink-500 font-semibold">Untagged sessions</div>
-                        <AlertTriangle className={`w-4 h-4 ${sanity.unattributed_sessions.pct >= 25 ? "text-amber-600" : "text-ink-300"}`} />
+                        <div className="flex items-center gap-1">
+                          <ExternalLink className="w-3.5 h-3.5 text-ink-400 group-hover:text-brand-600" />
+                          <AlertTriangle className={`w-4 h-4 ${sanity.unattributed_sessions.pct >= 25 ? "text-amber-600" : "text-ink-300"}`} />
+                        </div>
                       </div>
                       <div className="mt-2 font-heading text-3xl font-extrabold tracking-tighter">
                         {sanity.unattributed_sessions.count}
                         <span className="text-base text-ink-500 font-mono ml-2">{sanity.unattributed_sessions.pct}%</span>
                       </div>
                       <div className="text-xs text-ink-500 mt-1">
-                        of {sanity.unattributed_sessions.total_sessions} sessions have no <span className="font-mono">utm_source</span>. Use tracked UTM links when sharing.
+                        of {sanity.unattributed_sessions.total_sessions} sessions have no <span className="font-mono">utm_source</span>. <span className="text-brand-600 font-semibold group-hover:underline">Investigate →</span>
                       </div>
-                    </div>
+                    </button>
 
                     {/* Duplicate emails */}
                     <div className="rounded-xl border border-ink-200 p-4" data-testid="sanity-duplicates">
@@ -763,6 +784,104 @@ export default function AdminPanel() {
               </div>
             </div>
           )}
+
+          {/* Untagged Sessions Drilldown Dialog */}
+          <Dialog open={untaggedOpen} onOpenChange={setUntaggedOpen}>
+            <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto" data-testid="untagged-drilldown">
+              <DialogHeader>
+                <DialogTitle className="font-heading text-2xl tracking-tighter">Untagged sessions — drilldown</DialogTitle>
+                <DialogDescription>
+                  Sessions with no <span className="font-mono">utm_source</span>. Use this to find dark traffic and add tracked UTM links to those channels.
+                </DialogDescription>
+              </DialogHeader>
+
+              {untaggedBusy && (
+                <div className="py-12 text-center text-ink-500">Loading untagged sessions…</div>
+              )}
+
+              {untagged && !untaggedBusy && (
+                <div className="space-y-6">
+                  <div className="text-sm text-ink-500">
+                    Showing <span className="font-semibold text-ink-900">{untagged.returned}</span> of{" "}
+                    <span className="font-semibold text-ink-900">{untagged.total}</span> untagged sessions, sorted by most recent.
+                  </div>
+
+                  {/* Rollups */}
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="rounded-xl border border-ink-200 p-4" data-testid="untagged-top-hosts">
+                      <div className="text-xs uppercase tracking-widest text-ink-500 font-semibold mb-3">Top referrer hosts</div>
+                      {untagged.top_referrer_hosts.length === 0 && <div className="text-sm text-ink-400">No data.</div>}
+                      <div className="space-y-1.5">
+                        {untagged.top_referrer_hosts.map((h) => (
+                          <div key={h.host} className="flex items-center justify-between text-sm">
+                            <span className="font-mono text-ink-700 truncate mr-2">{h.host}</span>
+                            <span className="rounded-full bg-brand-50 text-brand-700 font-semibold text-xs px-2 py-0.5">{h.n}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-ink-200 p-4" data-testid="untagged-top-paths">
+                      <div className="text-xs uppercase tracking-widest text-ink-500 font-semibold mb-3">Top landing paths</div>
+                      {untagged.top_landing_paths.length === 0 && <div className="text-sm text-ink-400">No data.</div>}
+                      <div className="space-y-1.5">
+                        {untagged.top_landing_paths.map((p) => (
+                          <div key={p.path} className="flex items-center justify-between text-sm">
+                            <span className="font-mono text-ink-700 truncate mr-2">{p.path || "(unknown)"}</span>
+                            <span className="rounded-full bg-brand-50 text-brand-700 font-semibold text-xs px-2 py-0.5">{p.n}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Recommended fix banner */}
+                  {untagged.top_referrer_hosts.length > 0 && (
+                    <div className="rounded-xl bg-brand-50 border border-brand-100 p-4 text-sm">
+                      <div className="font-semibold text-brand-800">Recommended:</div>
+                      <div className="text-brand-700 mt-1">
+                        Next time you share from <span className="font-mono">{untagged.top_referrer_hosts[0].host}</span>, use a{" "}
+                        <button onClick={() => { setUntaggedOpen(false); setParams({ tab: "utm" }); }}
+                                className="text-brand-700 underline font-semibold">tracked UTM link</button>{" "}
+                        instead of a raw URL — that alone will attribute {untagged.top_referrer_hosts[0].n} of these sessions.
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Session table */}
+                  <div className="rounded-xl border border-ink-200 overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs min-w-[720px]" data-testid="untagged-session-table">
+                        <thead className="bg-ink-50 text-ink-500 uppercase tracking-widest">
+                          <tr>
+                            <th className="text-left px-3 py-2 font-semibold">Session</th>
+                            <th className="text-left px-3 py-2 font-semibold">Referrer host</th>
+                            <th className="text-left px-3 py-2 font-semibold">Landing path</th>
+                            <th className="text-right px-3 py-2 font-semibold">Page views</th>
+                            <th className="text-left px-3 py-2 font-semibold">Last seen</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {untagged.sessions.map((s) => (
+                            <tr key={s.session_id} className="border-t border-ink-100 hover:bg-ink-50/50"
+                                data-testid={`untagged-row-${s.session_id}`}>
+                              <td className="px-3 py-2 font-mono text-ink-500 truncate max-w-[140px]" title={s.session_id}>{s.session_id.slice(0,14)}…</td>
+                              <td className="px-3 py-2 font-mono text-ink-700 truncate max-w-[220px]" title={s.referrer}>{s.referrer_host}</td>
+                              <td className="px-3 py-2 font-mono text-ink-700 truncate max-w-[180px]" title={s.landing_path}>{s.landing_path || "(unknown)"}</td>
+                              <td className="px-3 py-2 text-right font-semibold">{s.page_views}</td>
+                              <td className="px-3 py-2 text-ink-500 whitespace-nowrap">{s.last_seen ? new Date(s.last_seen).toLocaleString() : "—"}</td>
+                            </tr>
+                          ))}
+                          {untagged.sessions.length === 0 && (
+                            <tr><td colSpan={5} className="px-3 py-10 text-center text-ink-400">No untagged sessions 🎉</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
         </main>
       </div>
     </div>

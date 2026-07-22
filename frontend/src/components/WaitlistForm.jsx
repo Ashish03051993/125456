@@ -42,24 +42,85 @@ export default function WaitlistForm({ compact = false, source = "landing_hero" 
   };
 
   if (joined) {
+    const referralUrl = `${window.location.origin}/?utm_source=referral&utm_medium=share&utm_campaign=waitlist&ref=${joined.position}`;
+    const shareText = `I just joined the AI Video Studio private beta at position #${joined.position} — turn any topic into a ready-to-post video (16:9 + 9:16) in minutes. Reserve your spot 👇`;
+    const openLinkedIn = () => {
+      window.open(
+        `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(referralUrl)}&summary=${encodeURIComponent(shareText)}`,
+        "_blank", "noopener,noreferrer",
+      );
+      track("waitlist_share_click", { channel: "linkedin", position: joined.position });
+    };
+    const openTwitter = () => {
+      window.open(
+        `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(referralUrl)}`,
+        "_blank", "noopener,noreferrer",
+      );
+      track("waitlist_share_click", { channel: "twitter", position: joined.position });
+    };
+    const copyReferral = async () => {
+      try {
+        await navigator.clipboard.writeText(referralUrl);
+        toast.success("Your referral link is copied");
+        track("waitlist_share_click", { channel: "copy", position: joined.position });
+      } catch { toast.error("Copy failed — please copy manually"); }
+    };
+
     return (
       <div className="rounded-2xl border-2 border-brand-600/30 bg-white p-6 sm:p-8 max-w-xl" data-testid="waitlist-success">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-full bg-brand-600 flex items-center justify-center shrink-0">
-            <CheckCircle2 className="w-6 h-6 text-white" />
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-full bg-brand-600 flex items-center justify-center shrink-0 shadow-lg shadow-brand-600/30">
+            <CheckCircle2 className="w-7 h-7 text-white" />
           </div>
-          <div>
+          <div className="flex-1">
             <div className="font-heading font-extrabold text-xl sm:text-2xl tracking-tight">You&apos;re in.</div>
             <div className="text-ink-500 text-sm mt-0.5">
-              {joined.already_joined ? "Already on the list — " : "Position "}
-              <span className="text-brand-700 font-bold">#{joined.position}</span>
+              {joined.already_joined ? "Already on the list " : "Reserved seat "}
+              for <span className="font-semibold text-ink-900">{email}</span>
             </div>
           </div>
         </div>
-        <p className="mt-5 text-ink-700 text-sm sm:text-base leading-relaxed">
-          We&apos;ll email <span className="font-semibold">{email}</span> the moment early access opens.
-          In the meantime, share the studio with a friend who ships content.
-        </p>
+
+        {/* Position badge */}
+        <div className="mt-5 rounded-xl bg-gradient-to-br from-brand-600 to-violet-600 text-white p-5 flex items-center justify-between" data-testid="waitlist-position-badge">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest opacity-80 font-semibold">Your position</div>
+            <div className="font-heading font-extrabold text-4xl sm:text-5xl tracking-tighter mt-0.5">
+              #{joined.position}
+            </div>
+          </div>
+          <div className="text-right text-xs opacity-90 max-w-[180px]">
+            We&apos;ll email you the moment early access opens for your slot.
+          </div>
+        </div>
+
+        {/* Share-back CTA */}
+        <div className="mt-5">
+          <div className="text-xs uppercase tracking-widest text-ink-500 font-semibold">Move up the queue</div>
+          <p className="text-sm text-ink-700 mt-1">
+            Share with a founder or creator who ships content — every signup from your link bumps you higher.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button type="button" onClick={openLinkedIn}
+              className="rounded-full bg-brand-600 hover:bg-brand-700 text-white"
+              data-testid="waitlist-share-linkedin">
+              <Sparkles className="w-4 h-4 mr-2" /> Share on LinkedIn
+            </Button>
+            <Button type="button" variant="outline" onClick={openTwitter}
+              className="rounded-full"
+              data-testid="waitlist-share-twitter">
+              Share on X
+            </Button>
+            <Button type="button" variant="outline" onClick={copyReferral}
+              className="rounded-full"
+              data-testid="waitlist-copy-referral">
+              Copy referral link
+            </Button>
+          </div>
+          <div className="mt-3 rounded-lg bg-ink-50 border border-ink-200 px-3 py-2 text-xs font-mono text-ink-500 break-all" data-testid="waitlist-referral-url">
+            {referralUrl}
+          </div>
+        </div>
       </div>
     );
   }

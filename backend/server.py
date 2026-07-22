@@ -515,6 +515,90 @@ async def admin_sanity(_admin=Depends(require_admin)):
     }
 
 
+@api.get("/admin/sanity/untagged")
+async def admin_sanity_untagged(_admin=Depends(require_admin), limit: int = 100):
+    """Drilldown for untagged sessions — sessions with no utm_source but with captured
+    referrer/landing-path/user-agent. Helps diagnose where dark traffic is coming from.
+
+    Returns:
+      - sessions: list of {session_id, first_seen, last_seen, page_views, referrer, referrer_host, landing_path, user_agent}
+      - top_referrer_hosts: rollup [{host, n}] sorted desc
+      - top_landing_paths: rollup [{path, n}] sorted desc
+      - total: total unique untagged sessions
+    """
+    from urllib.parse import urlparse
+    limit = max(1, min(limit, 500))
+
+    # Fetch all page_view events with no source, group by session_id
+    cur = db.analytics_events.aggregate([
+        {"$match": {
+            "event": "page_view",
+            "$or": [
+                {"properties.source": {"$in": [None, ""]}},
+                {"properties.source": {"$exists": False}},
+            ],
+        }},
+        {"$sort": {"created_at": 1}},
+        {"$group": {
+            "_id": "$session_id",
+            "first_seen": {"$first": "$created_at"},
+            "last_seen": {"$last": "$created_at"},
+            "page_views": {"$sum": 1},
+            "referrer": {"$first": "$referrer"},
+            "path": {"$first": "$path"},
+            "user_agent": {"$first": "$user_agent"},
+        }},
+        {"$sort": {"last_seen": -1}},
+    ])
+    all_sessions = [d async for d in cur if d.get("_id")]
+    total = len(all_sessions)
+
+    def _host(url: str) -> str:
+        if not url:
+            return "(direct/none)"
+        try:
+            h = urlparse(url).netloc or url
+            return h.lower() or "(direct/none)"
+        except Exception:
+            return "(unknown)"
+
+    # Rollups over ALL untagged (not just the paginated slice)
+    host_counts: dict = {}
+    path_counts: dict = {}
+    for s in all_sessions:
+        h = _host(s.get("referrer") or "")
+        host_counts[h] = host_counts.get(h, 0) + 1
+        p = s.get("path") or "(unknown)"
+        path_counts[p] = path_counts.get(p, 0) + 1
+
+    top_hosts = sorted(({"host": k, "n": v} for k, v in host_counts.items()),
+                        key=lambda x: -x["n"])[:15]
+    top_paths = sorted(({"path": k, "n": v} for k, v in path_counts.items()),
+                        key=lambda x: -x["n"])[:15]
+
+    sessions_out = []
+    for s in all_sessions[:limit]:
+        ua = (s.get("user_agent") or "")[:120]
+        sessions_out.append({
+            "session_id": s["_id"],
+            "first_seen": s.get("first_seen"),
+            "last_seen": s.get("last_seen"),
+            "page_views": s.get("page_views", 0),
+            "referrer": s.get("referrer") or "",
+            "referrer_host": _host(s.get("referrer") or ""),
+            "landing_path": s.get("path") or "",
+            "user_agent": ua,
+        })
+
+    return {
+        "total": total,
+        "returned": len(sessions_out),
+        "sessions": sessions_out,
+        "top_referrer_hosts": top_hosts,
+        "top_landing_paths": top_paths,
+    }
+
+
 @api.get("/admin/attribution-matrix")
 async def admin_attribution_matrix(_admin=Depends(require_admin)):
     """Signup Attribution Matrix: sources × variants → signups & conversion.

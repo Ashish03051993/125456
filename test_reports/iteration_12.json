@@ -1,0 +1,54 @@
+{
+  "summary": "Iter-12 additive delta verified — 22/22 backend pytest cases pass (test_iter12_untagged_and_regression.py); all iter-12 frontend flows working (untagged drilldown Dialog + waitlist success screen with position badge + 3 share CTAs + encoded referral URL + LinkedIn/X window.open + clipboard write + toast). One design bug found: 'Share on X' and 'Copy referral link' buttons on the LANDING page's success card render white-on-white (invisible) because the parent <section class='bg-ink-900 text-white'> in Landing.jsx cascades text-white into the WaitlistForm success card, and the two variant='outline' buttons don't override their text color. Fully functional (clicks work, testids pass, window.open + clipboard fire correctly) — purely a visibility issue on the landing waitlist section (hero form + admin form not affected).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "WaitlistForm.jsx success screen (used on Landing.jsx line 202)",
+        "issue": "The two variant='outline' buttons ('Share on X' data-testid=waitlist-share-twitter, 'Copy referral link' data-testid=waitlist-copy-referral) render with color: rgb(255,255,255) because they sit inside <section class='bg-ink-900 text-white'> on Landing.jsx line ~170 which cascades text-white down. The outline variant does not set an explicit foreground color, so the buttons appear as empty white pills against the white waitlist-success card (bg-white). Functionality is 100% intact (playwright confirmed innerText='Share on X', width=103, clicks fire window.open with correct URL, clipboard writes correctly, toast appears). Fix: add `text-ink-900` (or similar) to className on the X + copy buttons in WaitlistForm.jsx lines 109-118, e.g. `className='rounded-full text-ink-900'`. The 'Share on LinkedIn' button is unaffected because it explicitly sets `bg-brand-600 ... text-white`.",
+        "selector": "[data-testid='waitlist-share-twitter'], [data-testid='waitlist-copy-referral']",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Landing.jsx early-access waitlist section success card",
+        "issues": [
+          "Outline share buttons on white card inherit text-white from bg-ink-900 parent section — invisible until user hovers. See ui_bugs above for exact fix."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter12_untagged_and_regression.py",
+    "/app/test_reports/pytest/iter12_results.xml"
+  ],
+  "action_items": [
+    "Fix white-on-white outline buttons in /app/frontend/src/components/WaitlistForm.jsx lines 109 (Share on X) and 114 (Copy referral link) — add `text-ink-900` (or `text-ink-700`) to the className so they stay legible when the form is placed inside dark parent sections (Landing.jsx early-access section wraps everything in `bg-ink-900 text-white`). Suggested minimal fix: change `className=\"rounded-full\"` → `className=\"rounded-full text-ink-900\"` on both variant='outline' Buttons."
+  ],
+  "critical_code_review_comments": [
+    "server.py admin_sanity_untagged (lines 518-599) — clean impl. `limit = max(1, min(limit, 500))` correctly clamps in both directions (0/negative → 1, >500 → 500), verified via 3 pytest cases. urlparse(referrer).netloc.lower() with '(direct/none)' fallback for empty is exactly per spec. Rollups aggregated over ALL untagged then capped at 15 (not just the paginated slice) — this is the right behavior for a diagnostic panel. Sort DESC by n verified. Only filters `event=page_view AND (properties.source missing/null/empty)` — verified via seed test injecting a page_view WITH source=google which correctly did NOT appear.",
+    "AdminPanel.jsx openUntaggedDrilldown (lines 111-121) — memoization via `if (untagged) return` is correct: dialog re-open reuses cached data, no re-fetch. State reset on ESC/outside-click handled by <Dialog> onOpenChange. `setUntaggedOpen(true)` fires before the async fetch so user sees the 'Loading…' skeleton immediately (untaggedBusy state) — good UX.",
+    "AdminPanel.jsx recommended banner (lines 838-848) — clicking `setUntaggedOpen(false); setParams({ tab: 'utm' })` closes dialog and navigates via useSearchParams — clean React-Router-6 pattern. Verified: URL becomes /admin?tab=utm and dialog unmounts.",
+    "WaitlistForm.jsx (lines 45-67) — referralUrl builder uses `window.location.origin` + hardcoded UTM params + `ref=${joined.position}` (unencoded integer position is safe). shareText contains an em-dash and #<position>. encodeURIComponent on both url and summary for LinkedIn share; encodeURIComponent on text + url for Twitter intent. Copy button uses navigator.clipboard.writeText with try/catch fallback toast. Three separate track() calls fire waitlist_share_click with channel: 'linkedin' | 'twitter' | 'copy'. This closes the attribution loop cleanly.",
+    "WaitlistForm.jsx (lines 109, 114) — variant='outline' buttons don't set explicit text color; when embedded in Landing.jsx's dark early-access section, `text-white` cascades and makes them invisible on the white card. This is a low-effort fix (add text-ink-900 or text-ink-700 to className).",
+    "Backend regression: /api/admin/sanity, /api/admin/attribution-matrix, /api/formats, /api/admin/waitlist (+source=referral filter), /api/admin/experiments, /api/admin/utm-links, /api/short/{slug}, /api/analytics/track — all green in iter-12 pytest. Referral end-to-end attribution verified by POST /api/waitlist {source:'referral', campaign:'waitlist'} → row appears in /api/admin/waitlist?source=referral with matching fields."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter12_untagged_and_regression.py (NEW — 22 tests: 12 untagged endpoint cases including auth/shape/limit-clamp/seeded-hosts/tagged-not-counted + 8 iter-11 regressions + 1 referral E2E)"
+  ],
+  "success_rate": {
+    "backend": "100% (22/22 pytest pass — untagged auth+shape+limit-clamp+seeded-hosts+only-untagged-counted + iter-11 sanity/attribution/formats/waitlist/experiments/utm-links/short-link/analytics-track regressions + referral E2E)",
+    "frontend": "95% (all functionality green — sanity-unattributed BUTTON, drilldown Dialog with top-hosts/top-paths/session-table/16 untagged-row-*, Recommended banner nav to /admin?tab=utm and dialog close, ESC close, waitlist-success screen with #60 position badge, 3 share CTAs with correct data-testids, referral URL contains utm_source=referral&utm_medium=share&utm_campaign=waitlist&ref=60, LinkedIn window.open with encoded URL, Twitter intent/tweet, clipboard.writeText fires with referral URL, 'Your referral link is copied' toast. -5% for the invisible outline buttons on landing's second waitlist form location — design fix only.)"
+  },
+  "test_credentials": "Admin session_token=test_admin_1784712404860 (still valid, expires 2026-07-29). No new sessions injected in iter-12.",
+  "seed_data_creation": "Ephemeral pytest seed (all cleaned up in teardown_class): (1) TestUntaggedSeededHosts injected 3 page_view events with distinct referrers ('https://linkedin.com/...', 'https://twitter.com/...', empty) and no properties.source, session_ids 's_iter12_{unique}_A/B/C'. (2) test_only_page_view_missing_source_counted injected 1 page_view WITH properties.source=google and verified it did NOT appear in /admin/sanity/untagged. (3) TestWaitlistReferralAttribution injected wl_iter12_{hex}@x.com via POST /api/waitlist with source=referral&campaign=waitlist and cleaned up. (4) Playwright tests inserted 2 waitlist rows via UI form submit (email pattern wl_iter12_*) — cleaned up via mongosh db.waitlist.deleteMany({email:/^wl_iter12_/}) after each test batch. Post-teardown waitlist total restored.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iter-12 feature parity 100% functional. One cosmetic frontend fix outstanding — /app/frontend/src/components/WaitlistForm.jsx lines 109 (Share on X) and 114 (Copy referral link) need `text-ink-900` added to className so they stay legible when placed inside dark parent sections. The FIRST waitlist form on landing (hero, source='landing_hero') is inside a light-bg parent so buttons ARE visible there; only the SECOND landing form (source='landing_waitlist_section', inside <section class='bg-ink-900 text-white'>) shows the bug. Admin session_token still test_admin_1784712404860. Live DB currently has ~60 waitlist rows + 16 untagged sessions across 2 referrer hosts (script-to-video-382.preview.emergentagent.com=10, (direct/none)=6). Iter-11 outstanding cosmetic (`I&apos;m` → `I'm` on AdminPanel.jsx line 311) is UNRELATED to iter-12 and still open — see iter_11 test report action_items.",
+  "rca of the issue": "The invisible-button bug is a CSS cascade / component variant contract issue: WaitlistForm.jsx uses <Button variant='outline'> for the X + Copy actions. The shadcn `outline` variant sets `border-input bg-background hover:bg-accent hover:text-accent-foreground` but does NOT set a base text color — it relies on inherited color. When the parent Landing.jsx section applies `text-white` (line 170: `bg-ink-900 text-white`) that inherited color propagates through the WaitlistForm's success card (bg-white) and into the two outline buttons, making them invisible. The LinkedIn button is unaffected because it explicitly sets `text-white` on `bg-brand-600` (visible). Fix is 1 word per line: add `text-ink-900` (dark gray) to the outline buttons' className so they always render dark-on-light regardless of the ancestor text-color scope."
+}
