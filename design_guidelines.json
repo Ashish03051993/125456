@@ -1,0 +1,113 @@
+{
+  "theme_strategy": "Hybrid Theme (Light Mode for Landing/Dashboard, Dark Mode for Video Editor). Ensures a professional 'Trust' feel for marketing and an 'Immersion' feel for the creator workspace.",
+  "colors": {
+    "archetype": "Swiss & High-Contrast mixed with Organic Trust",
+    "light_theme": {
+      "background": "#F8FAFC",
+      "surface": "#FFFFFF",
+      "primary": "#4F46E5",
+      "primary_hover": "#4338CA",
+      "secondary": "#E0E7FF",
+      "accent": "#06B6D4",
+      "text_main": "#0F172A",
+      "text_muted": "#64748B",
+      "border": "#E2E8F0"
+    },
+    "dark_theme_editor": {
+      "background": "#09090B",
+      "surface": "#18181B",
+      "primary": "#6366F1",
+      "secondary": "#27272A",
+      "accent": "#22D3EE",
+      "text_main": "#FAFAFA",
+      "text_muted": "#A1A1AA",
+      "border": "#27272A"
+    },
+    "rules": [
+      "Never use pure black or pure white without purpose; always use off-tints (e.g., slate-50).",
+      "Buttons must use the primary color with a lighter hue on hover (hover:bg-indigo-600).",
+      "DO NOT use generic full-screen gradients. Use solid colors with localized glowing orbs for accentuation."
+    ]
+  },
+  "typography": {
+    "strategy": "The 'Business/Corporate/Agency' Pair",
+    "headings": {
+      "font_family": "'Cabinet Grotesk', sans-serif",
+      "weights": ["800", "500"],
+      "rules": "Tracking-tight on large headings (H1/H2). Never center align unless explicit visual balance demands it. Forbidden: Inter, Roboto, Space Grotesk."
+    },
+    "body": {
+      "font_family": "'Manrope', sans-serif",
+      "weights": ["400", "500", "600"],
+      "rules": "High legibility, leading-relaxed for long text, leading-normal for UI elements."
+    },
+    "scale": {
+      "h1": "text-5xl sm:text-6xl tracking-tighter font-extrabold",
+      "h2": "text-4xl sm:text-5xl tracking-tight font-bold",
+      "h3": "text-2xl sm:text-3xl font-bold",
+      "body": "text-base",
+      "small_label": "text-xs tracking-widest uppercase font-semibold text-muted"
+    }
+  },
+  "layouts_and_grids": {
+    "marketing": {
+      "spacing": "Generous (py-24, gap-12, p-8).",
+      "structure": "Bento Grid Protocol (Mode A - Tetris Grid) for feature sections. Asymmetric layout, avoiding standard 3-column Bootstrap look."
+    },
+    "dashboard": {
+      "spacing": "Tight and structured (gap-4, p-6).",
+      "structure": "High Density Grid (Mode B). 250px sidebar with a fluid main content area. Flat cards with 1px border and no shadows by default."
+    },
+    "video_editor": {
+      "spacing": "Extremely dense, utility-first.",
+      "structure": "Absolute/Flex combinations to create non-scrolling workspace panels (Timeline at bottom, preview center, assets left, properties right). Use border-collapse style layouts with sharp 1px borders."
+    }
+  },
+  "surfaces_and_visual_enhancers": {
+    "header_nav": "Crystal Glassmorphism: backdrop-blur-xl bg-white/70 (light), 1px border-b border-slate-200/50. NEVER transparent.",
+    "cards": "Neumorphism mix: Flat backgrounds with sharp 1px border-slate-200, hover translates -translate-y-1 with shadow-lg.",
+    "editor_panels": "Retro-Futurism / Technical look: Dark backgrounds (#18181B) with thin, high-contrast borders (#27272A).",
+    "buttons": "Pill-shaped (rounded-full) for landing page CTAs to feel approachable. Sharp (rounded-md) for Dashboard/Editor tools to feel precise."
+  },
+  "component_guidelines": {
+    "forms": "Use customized Shadcn UI primitives. Inputs must have clear focus rings (focus:ring-2 focus:ring-indigo-500).",
+    "modals_dropdowns": "Shadcn UI. Add backdrop-blur-sm to modal overlays. Do NOT build from scratch.",
+    "tables": "Shadcn UI Table component for billing/admin panels. Ensure high contrast text on hover rows.",
+    "video_player_mock": "Aspect-video container with rounded-lg overflow-hidden, relative positioning, custom play button overlay in the center with backdrop-blur."
+  },
+  "motion_and_interactions": {
+    "hover_states": "All interactables must transition smoothly (transition-colors duration-200).",
+    "entrances": "Staggered fade-in-up (Framer Motion) for lists and grids.",
+    "editor_interactions": "Micro-animations on timeline tools. Drag-and-drop visuals need visual scaling (scale-105) when dragging."
+  },
+  "image_urls": {
+    "hero_background": {
+      "url": "https://images.pexels.com/photos/2680270/pexels-photo-2680270.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Smooth blue gradient background for landing page hero section.",
+      "placement": "Landing page hero background (with opacity overlay)"
+    },
+    "editor_preview_mockup": {
+      "url": "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODh8MHwxfHNlYXJjaHwyfHx2aWRlbyUyMGVkaXRvciUyMHN0dWRpb3xlbnwwfHx8fDE3ODQ3MTE5MTV8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Flat screen monitor displaying a video editing timeline.",
+      "placement": "Landing page 'How it works' or Hero floating product preview"
+    },
+    "creator_target_audience": {
+      "url": "https://images.pexels.com/photos/9040531/pexels-photo-9040531.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Young creator working indoors with laptop and camera.",
+      "placement": "Features section or testimonials highlighting the target user"
+    }
+  },
+  "accessibility": {
+    "contrast": "Text must meet 4.5:1 ratio. Large text 3:1.",
+    "testing": "All interactive elements MUST include data-testid attribute formatted as kebab-case, role-based (e.g., data-testid='generate-video-button').",
+    "focus": "Visible focus states for keyboard navigation on all inputs and buttons."
+  },
+  "universal_guidelines_for_main_agent": [
+    "Do not converge toward generic AI slop. Create layered depth.",
+    "Avoid the center-everything disease. Use left-aligned dense layouts for data.",
+    "NEVER use generic placeholder URLs for images. Use the provided image URLs.",
+    "Incorporate Sonner (from shadcn) for all toast notifications.",
+    "Prioritize Shadcn/UI for logic-heavy components like Dropdowns, Datepickers, and Dialogs.",
+    "Include 'lucide-react' for all icons, keeping them consistent in weight."
+  ]
+}
