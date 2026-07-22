@@ -26,6 +26,15 @@ Dashboard, credit system, projects, download, admin panel, pricing.
 - Landing, Pricing, Dashboard, Wizard, Project View, Settings, Admin Panel
 - Blue & white professional theme (Canva/InVideo inspired)
 
+## Phase 6 (2026-02) — CSV Export + Segment Compare
+- ✅ **Waitlist CSV export** — `/api/admin/waitlist.csv` streams CSV with position/email/name/plan/source/medium/campaign/variant/use_case/referrer/created_at; filename encodes the active filter (e.g. `waitlist-linkedin.csv`)
+- ✅ **UTM Links CSV export** — `/api/admin/utm-links.csv` with per-link stats (sessions, demo_clicks, signups, conversion_pct) rolled up over 30 days
+- ✅ **Attribution capture on waitlist** — POST `/api/waitlist` now accepts `source/medium/campaign/variant` in the payload; frontend WaitlistForm and BookDemoDialog send `getAttribution()` on submit so every signup is linked back to its LinkedIn/campaign
+- ✅ **Segment Compare** — Admin Waitlist tab renders segment chips (`All + one per source`) with live counts. Clicking a chip filters the table via `?source=linkedin` and updates the header to "N from linkedin of TOTAL total"
+- ✅ Added Source + Campaign columns to the Waitlist table
+- ✅ Idempotent startup migration coalesces legacy `source=null` rows to `'direct'`, plus `$ifNull` + `$or` defense-in-depth
+- ✅ Testing pass 6+7: 68/68 across full non-generation suite; iter-6 HIGH-severity duplicate-'direct' bucket bug is closed (retested)
+
 ## Phase 5 (2026-02) — UTM Campaign Links
 - ✅ **UTM Builder** in Admin (new tab `UTM Links`) — 7 quick presets: LinkedIn Post / Article / DM / Ad, Cold Email, Community Post, Custom
 - ✅ Form with live-updating kebab-cased preview URL, copy-to-clipboard (with fallback), and save-to-DB
