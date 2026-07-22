@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 9 — Dual-format video pipeline contract + Signup Attribution Matrix both verified end-to-end. Backend: 22/22 pass in test_iter9_formats_and_attribution.py (1 skipped: ffprobe not installed in preview env — env blocker only, does not affect API contract). Frontend Playwright: attribution matrix renders on /admin?tab=experiments with header 'Source × Variant matrix', 3 rows × 4 cols = 12 cells (matrix-cell-{source}-{variant} testids all present), matrix-grand shows '59 signups / 118% conv' (>100% is expected & documented in the matrix footnote — some signups arrived before analytics started). Format switcher on /project/{id} with dual video_urls renders both format-landscape (default, 16:9, aspect-video class, Download 16:9 label) and format-vertical (9:16, aspect-[9/16] class, Download 9:16 label); clicking each button correctly swaps the <video> src between _landscape.mp4 and _vertical.mp4. Legacy single-format project (only video_url, no video_urls dict) correctly hides the format chips (availableFormats.length === 1) while still playing the video. Regression: landing, /admin?tab=waitlist, /admin?tab=utm, /admin?tab=digest all render without any 'Could not load admin data' error toast; /api/admin/{waitlist,experiments,utm-links,stats,analytics,digest} + /api/analytics/track + /api/short/{slug} all return healthy.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter9_formats_and_attribution.py",
+    "/app/test_reports/pytest/iter9_results.xml"
+  ],
+  "action_items": [
+    "ENV BLOCKER (not a regression): ffmpeg / ffprobe are NOT installed in the /app preview container. This means the full video generation pipeline (POST /api/projects/{id}/generate → run_pipeline → _ffmpeg_compose_all) would fail with FileNotFoundError inside subprocess.run(['ffmpeg', ...], check=True). All other iter-9 features work because they operate on already-composed mp4s (or synthetic ones for tests). Recommend main agent either (a) add ffmpeg to the container Dockerfile / apt-get install ffmpeg, or (b) document this as a prod-only path and add a graceful error message when ffmpeg is missing.",
+    "OPTIONAL polish (matches iter-8 comment): if a project's status='ready' but video files are missing from disk, the <video> tag will 404 silently. Consider surfacing a small 'video file missing' warning in ProjectView (not blocking — only affects seed/synthetic edge cases)."
+  ],
+  "critical_code_review_comments": [
+    "server.py:426-524 admin_attribution_matrix — correct handling of null/missing source & variant via $ifNull → 'direct' / 'unassigned'. Row totals, col totals, and grand totals are all computed from the same signups/sessions dicts, so they're guaranteed to be internally consistent (verified by tests test_row_totals_equal_sum_of_cells and test_col_totals_sum_equals_grand).",
+    "server.py:489 conversion_pct math is correct: round((signups/sessions)*100, 2) when sessions>0 else 0.0. Note: signups can exceed sessions when a user POSTs directly to /api/waitlist without a preceding /analytics/track page_view event — this produces >100% conversion which is technically correct but may confuse readers. The AdminPanel already surfaces a footnote explaining this — good UX defense.",
+    "server.py:805-815 _ffmpeg_compose_all iterates FORMATS dict and produces {fid: /api/media/videos/{project_id}_{fid}.mp4}. Adding a third format (square, 4:5) is truly one-line as claimed by formats.py docstring — no other code changes needed. Nice extensibility design.",
+    "server.py:872-878 pipeline persists both video_url (default format for backwards compat) AND video_urls dict. Backwards compat preserved for legacy projects.",
+    "ProjectView.jsx:36-44 availableFormats memo correctly falls back to [{id:'landscape', url:p.video_url}] when video_urls is absent (legacy projects). The filter (formats[].filter((f) => p.video_urls?.[f.id])) is defensive against a video_urls dict that has only a subset of formats (e.g., failed vertical during composition).",
+    "ProjectView.jsx:123 chips are hidden when availableFormats.length <= 1. This is the correct legacy-safe behavior — verified with a synthetic legacy project.",
+    "ProjectView.jsx:141-143 container class toggles between 'aspect-video' and 'max-w-[400px] aspect-[9/16]' based on active.aspect === '9:16'. Verified visually and via className attribute snapshot.",
+    "ProjectView.jsx:144 uses key={active.id} on <video> so React remounts the element when the format changes — this is the correct pattern to force the browser to reload the new src (rather than trying to reuse the same DOM node). Good.",
+    "AdminPanel.jsx:459 matrix-cell-{source}-{variant} testids compose cleanly. Empty variants become 'unassigned' server-side so testids stay stable ('matrix-cell-direct-unassigned' is a valid selector).",
+    "formats.py is a nice registry pattern — adding new aspect ratios is truly declarative. Documented invariants (default=True marker, fit strategies) are respected by build_scene_vf.",
+    "NO ffmpeg fallback: server.py:777 subprocess.run([\"ffmpeg\", ...], check=True) will raise FileNotFoundError on the preview container. Consider wrapping with a friendlier error like 'FFmpeg not installed on server' so the /api/projects/{id} response gets a helpful error message instead of a raw Python traceback."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter9_formats_and_attribution.py (NEW — 23 tests: 3 formats + 5 project-video-urls + 8 attribution-matrix + 7 regression)"
+  ],
+  "success_rate": {
+    "backend": "100% (22/22 pass; 1 skipped for missing ffprobe — env-only, not a product regression)",
+    "frontend": "100% (attribution matrix renders with correct testids & totals; format switcher toggles src + label + container class; legacy project hides chips; admin/waitlist/utm/digest tabs regression clean)"
+  },
+  "test_credentials": "Admin bearer/cookie session_token=test_admin_1784712404860 (admin@videostudio.ai). Same as iter-8. Cookie can be injected via page.context.add_cookies for Playwright.",
+  "seed_data_creation": "Backend tests self-seed & self-clean: (a) synthetic dual-format ready project inserted into projects collection with tiny mp4 stubs written to /app/backend/storage/videos, all removed in teardown_class; (b) 3 TEST_-prefixed waitlist rows (linkedin/A, linkedin/B, direct/unassigned) posted via /api/waitlist to populate the attribution matrix, cleaned in teardown; (c) throwaway non-admin user/session created & deleted inside test_requires_admin_non_admin. For Playwright: a persistent dual-format project + a legacy single-format project were inserted (proj_iter9fe931553, proj_iter9felg170273) and cleaned after the test.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter 9 dual-format video pipeline contract (video_url + video_urls dict) and Signup Attribution Matrix are both shipped and green. When testing the FULL end-to-end generation (POST /api/projects/{id}/generate), be aware ffmpeg is NOT installed in this preview container — this blocks the composition step, but not the API contract. If ffmpeg gets installed, add a test that (i) POSTs a duration_min=1 project, (ii) polls until status='ready' or 'error', (iii) asserts both mp4 files exist on disk with correct resolutions via ffprobe, and (iv) asserts video_urls has both keys. If EMERGENT_LLM_KEY budget is also exhausted, the pipeline will fail earlier during script generation — different error class. Prior tests test_direct_bucket_fix, test_utm_links, test_csv_and_segments, test_phase8_chips_and_short (from iter 5-8) all still green — regression covered.",
+  "rca of the issue": "No product bugs found this iteration. One environment-only issue documented: ffmpeg/ffprobe binaries are missing from the preview container, which would prevent the full generation pipeline from running (but does not affect the API contract, format registry, attribution matrix, static-serving, or any UI). Not a regression — it's an infrastructure gap that predates iter 9. Mitigation: apt-get install ffmpeg (or bake into the container image). One tiny test-authoring hazard resolved: original test tried to use ffmpeg to build fixtures, which failed on the preview container; swapped to a minimal MP4 ftyp box stub since StaticFiles keys content-type off the .mp4 extension, not file contents."
+}
