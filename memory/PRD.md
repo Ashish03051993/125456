@@ -26,6 +26,11 @@ Dashboard, credit system, projects, download, admin panel, pricing.
 - Landing, Pricing, Dashboard, Wizard, Project View, Settings, Admin Panel
 - Blue & white professional theme (Canva/InVideo inspired)
 
+## Phase 10 (2026-02) — Untagged Drilldown + Waitlist Referral Loop
+- ✅ **Untagged Session Drilldown** — new `GET /api/admin/sanity/untagged` endpoint returns {total, sessions[], top_referrer_hosts[], top_landing_paths[]}. Rollups computed over ALL untagged sessions (not just paginated slice), capped at 15 entries each. Sanity Panel's "Untagged sessions" card is now a clickable button that opens a shadcn Dialog with rollup panels + a session table + a "Recommended: use tracked UTM link" banner that jumps to /admin?tab=utm.
+- ✅ **Waitlist Position Badge + Referral Share Loop** — success screen now shows a large gradient position badge (`#N`) plus 3 share CTAs (LinkedIn native share dialog, X/Twitter intent, Copy referral link). Referral URL carries `utm_source=referral&utm_medium=share&utm_campaign=waitlist&ref={position}` so downstream signups auto-attribute back to the referrer channel in the attribution matrix. Every share click fires a `waitlist_share_click` analytics event tagged with channel + position.
+- ✅ Testing iter-12: 22/22 backend + full frontend green. One design regression caught + fixed (outline share buttons invisible inside `bg-ink-900 text-white` landing section — added `text-ink-900`).
+
 ## Phase 9 (2026-02) — Analytics Trust + Waitlist Empty-State
 - ✅ **Analytics Sanity Panel** on Admin → Overview — new `GET /api/admin/sanity` endpoint returning: orphan_signups (waitlist rows with no matching page_view session), unattributed_sessions (page_views with no utm_source, with pct), duplicate_emails (case-insensitive `$toLower` grouping). Panel renders 3 sub-cards + verdict badge (✓ Analytics healthy / ⚠ Review recommended) with thresholds (orphans+dups==0 AND untagged<25%).
 - ✅ **Attribution Matrix UX** — every cell now has a plain-English `title` tooltip explaining the numbers. Overflow cells (signups > sessions) render in amber with a ⚠ suffix. New 3-row footnote with a color legend (green ≥ 20%, amber ⚠ explainer).

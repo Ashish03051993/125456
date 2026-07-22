@@ -107,12 +107,12 @@ export default function WaitlistForm({ compact = false, source = "landing_hero" 
               <Sparkles className="w-4 h-4 mr-2" /> Share on LinkedIn
             </Button>
             <Button type="button" variant="outline" onClick={openTwitter}
-              className="rounded-full"
+              className="rounded-full text-ink-900"
               data-testid="waitlist-share-twitter">
               Share on X
             </Button>
             <Button type="button" variant="outline" onClick={copyReferral}
-              className="rounded-full"
+              className="rounded-full text-ink-900"
               data-testid="waitlist-copy-referral">
               Copy referral link
             </Button>
