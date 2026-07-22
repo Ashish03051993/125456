@@ -416,6 +416,114 @@ async def admin_waitlist_csv(_admin=Depends(require_admin),
     )
 
 
+@api.get("/formats")
+async def formats_list():
+    """Public list of available video output formats."""
+    from formats import list_formats
+    return list_formats()
+
+
+@api.get("/admin/attribution-matrix")
+async def admin_attribution_matrix(_admin=Depends(require_admin)):
+    """Signup Attribution Matrix: sources × variants → signups & conversion.
+
+    Rows: unique source values from waitlist.
+    Cols: unique variant values (plus 'unassigned' for null/missing).
+    Cell: {signups, sessions, conversion_pct}. Also sends `totals` per row/col.
+    """
+    # Load facets first so the matrix has stable row/col order
+    src_cur = db.waitlist.aggregate([
+        {"$group": {"_id": {"$ifNull": ["$source", "direct"]}, "n": {"$sum": 1}}},
+        {"$sort": {"n": -1}},
+    ])
+    sources = [d["_id"] async for d in src_cur]
+
+    var_cur = db.waitlist.aggregate([
+        {"$group": {"_id": {"$ifNull": ["$variant", "unassigned"]}, "n": {"$sum": 1}}},
+        {"$sort": {"n": -1}},
+    ])
+    variants = [d["_id"] async for d in var_cur]
+
+    # Signup counts per (source, variant)
+    sig_cur = db.waitlist.aggregate([
+        {"$group": {
+            "_id": {
+                "s": {"$ifNull": ["$source", "direct"]},
+                "v": {"$ifNull": ["$variant", "unassigned"]},
+            },
+            "n": {"$sum": 1},
+        }}
+    ])
+    signups: dict = {}
+    async for d in sig_cur:
+        signups[(d["_id"]["s"], d["_id"]["v"])] = d["n"]
+
+    # Session (page_view) counts per (source, variant) — unique session_id
+    sess_cur = db.analytics_events.aggregate([
+        {"$match": {"event": "page_view"}},
+        {"$group": {"_id": {
+            "s": {"$ifNull": ["$properties.source", "direct"]},
+            "v": {"$ifNull": ["$properties.variant", "unassigned"]},
+            "sid": "$session_id",
+        }}},
+        {"$group": {"_id": {"s": "$_id.s", "v": "$_id.v"}, "n": {"$sum": 1}}},
+    ])
+    sessions: dict = {}
+    async for d in sess_cur:
+        sessions[(d["_id"]["s"], d["_id"]["v"])] = d["n"]
+
+    rows_out = []
+    col_totals = {v: {"sessions": 0, "signups": 0} for v in variants}
+    grand = {"sessions": 0, "signups": 0}
+    for s in sources:
+        cells = []
+        row_sess = 0
+        row_sig = 0
+        for v in variants:
+            sess_n = sessions.get((s, v), 0)
+            sig_n = signups.get((s, v), 0)
+            cells.append({
+                "variant": v,
+                "sessions": sess_n,
+                "signups": sig_n,
+                "conversion_pct": round((sig_n / sess_n) * 100, 2) if sess_n else 0.0,
+            })
+            row_sess += sess_n
+            row_sig += sig_n
+            col_totals[v]["sessions"] += sess_n
+            col_totals[v]["signups"] += sig_n
+        rows_out.append({
+            "source": s,
+            "cells": cells,
+            "totals": {
+                "sessions": row_sess,
+                "signups": row_sig,
+                "conversion_pct": round((row_sig / row_sess) * 100, 2) if row_sess else 0.0,
+            },
+        })
+        grand["sessions"] += row_sess
+        grand["signups"] += row_sig
+
+    return {
+        "sources": sources,
+        "variants": variants,
+        "rows": rows_out,
+        "col_totals": [
+            {"variant": v,
+             "sessions": col_totals[v]["sessions"],
+             "signups": col_totals[v]["signups"],
+             "conversion_pct": round((col_totals[v]["signups"] / col_totals[v]["sessions"]) * 100, 2)
+                                 if col_totals[v]["sessions"] else 0.0}
+            for v in variants
+        ],
+        "grand": {
+            **grand,
+            "conversion_pct": round((grand["signups"] / grand["sessions"]) * 100, 2)
+                              if grand["sessions"] else 0.0,
+        },
+    }
+
+
 # --------------------------- Analytics ---------------------------
 class AnalyticsEvent(BaseModel):
     event: str
@@ -651,27 +759,21 @@ def _wrap_text(s: str, width: int = 34) -> str:
     return "\n".join(lines[:2])
 
 
-def _ffmpeg_compose(project_id: str, scenes: List[dict], images: List[Path],
-                    audio_path: Path, out_path: Path, total_duration: float):
-    """Build MP4: image slideshow with Ken Burns pan + audio + burned subtitles."""
+def _ffmpeg_compose_format(project_id: str, fmt_id: str, spec: dict,
+                           scenes: list, images: list,
+                           audio_path: Path, out_path: Path,
+                           total_duration: float):
+    """Compose a single output MP4 for one aspect-ratio format spec."""
     per = total_duration / max(len(images), 1)
-    tmp_dir = STORAGE_DIR / "videos" / f"tmp_{project_id}"
+    tmp_dir = STORAGE_DIR / "videos" / f"tmp_{project_id}_{fmt_id}"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     clips = []
-    # Build a per-scene short mp4 with subtitle drawn
+    from formats import build_scene_vf
     for i, (img, sc) in enumerate(zip(images, scenes)):
         clip = tmp_dir / f"c{i}.mp4"
-        sub = _wrap_text(sc.get("subtitle", ""))
-        # escape single quotes for drawtext
+        sub = _wrap_text(sc.get("subtitle", ""), width=spec.get("subtitle_wrap_chars", 34))
         sub_esc = sub.replace(":", "\\:").replace("'", "\u2019")
-        vf = (
-            f"scale=1920:1080:force_original_aspect_ratio=increase,"
-            f"crop=1920:1080,"
-            f"zoompan=z='min(zoom+0.0008,1.12)':d={int(per*30)}:s=1920x1080:fps=30,"
-            f"drawbox=y=ih-160:color=black@0.55:width=iw:height=160:t=fill,"
-            f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-            f"text='{sub_esc}':fontcolor=white:fontsize=44:x=(w-text_w)/2:y=h-130"
-        )
+        vf = build_scene_vf(spec, per, sub_esc)
         subprocess.run([
             "ffmpeg", "-y", "-loop", "1", "-i", str(img), "-t", f"{per:.2f}",
             "-vf", vf, "-r", "30", "-pix_fmt", "yuv420p",
@@ -679,7 +781,6 @@ def _ffmpeg_compose(project_id: str, scenes: List[dict], images: List[Path],
         ], check=True, capture_output=True)
         clips.append(clip)
 
-    # concat list
     concat_txt = tmp_dir / "list.txt"
     concat_txt.write_text("\n".join(f"file '{c}'" for c in clips))
     silent_video = tmp_dir / "video.mp4"
@@ -687,12 +788,10 @@ def _ffmpeg_compose(project_id: str, scenes: List[dict], images: List[Path],
         "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_txt),
         "-c", "copy", str(silent_video)
     ], check=True, capture_output=True)
-    # Mux audio
     subprocess.run([
         "ffmpeg", "-y", "-i", str(silent_video), "-i", str(audio_path),
         "-c:v", "copy", "-c:a", "aac", "-shortest", str(out_path)
     ], check=True, capture_output=True)
-    # Cleanup tmp
     for c in clips:
         c.unlink(missing_ok=True)
     silent_video.unlink(missing_ok=True)
@@ -701,6 +800,19 @@ def _ffmpeg_compose(project_id: str, scenes: List[dict], images: List[Path],
         tmp_dir.rmdir()
     except OSError:
         pass
+
+
+def _ffmpeg_compose_all(project_id: str, scenes: list, images: list,
+                        audio_path: Path, total_duration: float) -> dict:
+    """Compose every registered format. Returns {format_id: relative_url}."""
+    from formats import FORMATS
+    urls: dict = {}
+    for fid, spec in FORMATS.items():
+        out = STORAGE_DIR / "videos" / f"{project_id}_{fid}.mp4"
+        _ffmpeg_compose_format(project_id, fid, spec, scenes, images, audio_path,
+                               out, total_duration)
+        urls[fid] = f"/api/media/videos/{project_id}_{fid}.mp4"
+    return urls
 
 
 async def run_pipeline(project_id: str):
@@ -733,13 +845,16 @@ async def run_pipeline(project_id: str):
         audio_path = STORAGE_DIR / "audio" / f"{project_id}.mp3"
         voice = VOICE_MAP.get(proj["voice"], "nova")
         await _generate_tts(full_narration[:4000], voice, audio_path)
-        # 4) Compose MP4
+        # 4) Compose MP4 in every registered format
         await upd(stage="composing video", progress=80)
         total_dur = _ffprobe_duration(audio_path)
-        out_video = STORAGE_DIR / "videos" / f"{project_id}.mp4"
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _ffmpeg_compose, project_id, scenes,
-                                   image_paths, audio_path, out_video, total_dur)
+        video_urls = await loop.run_in_executor(
+            None, _ffmpeg_compose_all, project_id, scenes, image_paths,
+            audio_path, total_dur,
+        )
+        from formats import default_format
+        primary = default_format()
         # Build final scene list w/ image urls
         final_scenes = []
         per = total_dur / max(len(scenes), 1)
@@ -759,7 +874,8 @@ async def run_pipeline(project_id: str):
             title=script.get("title"), hook=script.get("hook"),
             script=full_narration, scenes=final_scenes,
             audio_url=f"/api/media/audio/{project_id}.mp3",
-            video_url=f"/api/media/videos/{project_id}.mp4",
+            video_url=video_urls[primary],   # backwards-compat: default format
+            video_urls=video_urls,           # dict of {format_id: url}
         )
         logger.info("Project %s ready", project_id)
     except Exception as e:

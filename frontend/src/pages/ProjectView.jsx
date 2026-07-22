@@ -1,16 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { TopBar, Sidebar } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
-import { Loader2, Download, Youtube, Instagram, AlertCircle, ArrowLeft, PlayCircle } from "lucide-react";
+import { Loader2, Download, Youtube, Instagram, AlertCircle, ArrowLeft, PlayCircle, Monitor, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 
 const STAGES = ["writing script","generating images","generating voiceover","composing video","done"];
 
+const FORMAT_ICON = { landscape: Monitor, vertical: Smartphone };
+
 export default function ProjectView() {
   const { id } = useParams();
   const [p, setP] = useState(null);
+  const [formats, setFormats] = useState([]);
+  const [selected, setSelected] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -25,6 +29,24 @@ export default function ProjectView() {
     return () => { alive = false; clearInterval(iv); };
   }, [id, p?.status]);
 
+  useEffect(() => {
+    api.get("/formats").then((r) => setFormats(r.data)).catch(() => setFormats([]));
+  }, []);
+
+  const availableFormats = useMemo(() => {
+    if (!p?.video_urls) {
+      return p?.video_url ? [{ id: "landscape", label: "Video", url: p.video_url, aspect: "16:9" }] : [];
+    }
+    return formats
+      .filter((f) => p.video_urls?.[f.id])
+      .map((f) => ({ id: f.id, label: f.label, url: p.video_urls[f.id], aspect: f.aspect,
+                     width: f.width, height: f.height, platforms: f.platforms }));
+  }, [p, formats]);
+
+  const active = selected
+    ? availableFormats.find((f) => f.id === selected) || availableFormats[0]
+    : availableFormats[0];
+
   if (!p) return (
     <div className="min-h-screen bg-ink-50">
       <TopBar />
@@ -32,7 +54,7 @@ export default function ProjectView() {
     </div>
   );
 
-  const videoUrl = p.video_url ? `${process.env.REACT_APP_BACKEND_URL}${p.video_url}` : null;
+  const videoSrc = active ? `${process.env.REACT_APP_BACKEND_URL}${active.url}` : null;
 
   return (
     <div className="min-h-screen bg-ink-50">
@@ -47,11 +69,11 @@ export default function ProjectView() {
               <h1 className="mt-1 font-heading text-4xl font-extrabold tracking-tighter" data-testid="project-title">{p.title || p.topic}</h1>
               {p.hook && <p className="mt-2 text-ink-500 max-w-2xl italic">{p.hook}</p>}
             </div>
-            {p.status === "ready" && (
+            {p.status === "ready" && active && (
               <div className="flex items-center gap-2 flex-wrap">
-                <a href={videoUrl} download={`${p.id}.mp4`}>
+                <a href={videoSrc} download={`${p.id}_${active.id}.mp4`}>
                   <Button className="rounded-full bg-brand-600 hover:bg-brand-700 text-white" data-testid="download-btn">
-                    <Download className="w-4 h-4 mr-2" /> Download MP4
+                    <Download className="w-4 h-4 mr-2" /> Download {active.aspect}
                   </Button>
                 </a>
                 <Button variant="outline" className="rounded-full" onClick={() => toast.info("YouTube export: connect account in Settings (coming soon)")} data-testid="youtube-btn">
@@ -95,10 +117,39 @@ export default function ProjectView() {
             </div>
           )}
 
-          {/* Video Player */}
-          {p.status === "ready" && (
-            <div className="mt-6 bg-black rounded-2xl overflow-hidden border border-ink-200">
-              <video src={videoUrl} controls className="w-full aspect-video" data-testid="video-player" />
+          {/* Video Player + Format Switcher */}
+          {p.status === "ready" && active && (
+            <div className="mt-6" data-testid="format-switcher-wrap">
+              {availableFormats.length > 1 && (
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <span className="text-xs uppercase tracking-widest text-ink-500 font-semibold mr-1">Format:</span>
+                  {availableFormats.map((f) => {
+                    const Icon = FORMAT_ICON[f.id] || Monitor;
+                    const isActive = active.id === f.id;
+                    return (
+                      <button key={f.id} onClick={() => setSelected(f.id)}
+                        data-testid={`format-${f.id}`}
+                        className={`inline-flex items-center gap-2 text-xs font-semibold rounded-full px-3 py-1.5 border transition-colors ${
+                          isActive ? "bg-brand-600 text-white border-brand-600" : "bg-white text-ink-700 border-ink-200 hover:border-brand-600"
+                        }`}>
+                        <Icon className="w-3.5 h-3.5" /> {f.label} <span className="opacity-70">· {f.aspect}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <div className={`bg-black rounded-2xl overflow-hidden border border-ink-200 mx-auto ${
+                active.aspect === "9:16" ? "max-w-[400px] aspect-[9/16]" : "aspect-video"
+              }`}>
+                <video src={videoSrc} controls key={active.id} className="w-full h-full object-contain" data-testid="video-player" />
+              </div>
+              {active.platforms?.length > 0 && (
+                <div className="mt-3 text-center text-xs text-ink-500">
+                  Ready for: {active.platforms.map(pl => (
+                    <span key={pl} className="inline-block mx-1 px-2 py-0.5 rounded-full bg-ink-100 text-ink-700 font-medium">{pl}</span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

@@ -60,6 +60,7 @@ export default function AdminPanel() {
   const [waitlist, setWaitlist] = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [experiments, setExperiments] = useState(null);
+  const [attribution, setAttribution] = useState(null);
   const [digestList, setDigestList] = useState(null);
   const [digestConfig, setDigestConfig] = useState(null);
   const [digestPreview, setDigestPreview] = useState(null);
@@ -75,17 +76,19 @@ export default function AdminPanel() {
       if (sourceFilter)  wParams.source = sourceFilter;
       if (planFilter)    wParams.plan = planFilter;
       if (variantFilter) wParams.variant = variantFilter;
-      const [s, w, a, e, d, dc, dp] = await Promise.all([
+      const [s, w, a, e, matrix, d, dc, dp] = await Promise.all([
         api.get("/admin/stats"),
         api.get("/admin/waitlist", { params: wParams }),
         api.get("/admin/analytics"),
         api.get("/admin/experiments"),
+        api.get("/admin/attribution-matrix"),
         api.get("/admin/digest"),
         api.get("/admin/digest/config"),
         api.get("/admin/digest/preview"),
       ]);
       setStats(s.data); setWaitlist(w.data); setAnalytics(a.data);
-      setExperiments(e.data); setDigestList(d.data);
+      setExperiments(e.data); setAttribution(matrix.data);
+      setDigestList(d.data);
       setDigestConfig(dc.data); setDigestPreview(dp.data);
     } catch { toast.error("Could not load admin data"); }
   };
@@ -421,6 +424,72 @@ export default function AdminPanel() {
                 Statistical note: results below ~200 sessions per variant are directional only.
                 Wait until each variant has enough traffic before declaring a definitive winner.
               </div>
+
+              {/* Signup Attribution Matrix */}
+              {attribution && (
+                <div className="bg-white border border-ink-200 rounded-2xl overflow-hidden" data-testid="attribution-matrix">
+                  <div className="p-5 border-b border-ink-100">
+                    <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">Signup Attribution</div>
+                    <div className="font-heading font-bold text-xl mt-1">Source × Variant matrix</div>
+                    <div className="text-sm text-ink-500 mt-1">
+                      Cells show <span className="font-mono">signups</span> and conversion % (signups ÷ sessions).
+                      Use this to see which channel + message combo converts best.
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm min-w-[640px]">
+                      <thead className="bg-ink-50 text-ink-500 text-xs uppercase tracking-widest">
+                        <tr>
+                          <th className="text-left px-4 py-3 font-semibold">Source ↓ / Variant →</th>
+                          {attribution.variants.map((v) => (
+                            <th key={v} className="text-right px-4 py-3 font-semibold" data-testid={`matrix-col-${v}`}>
+                              {v}
+                            </th>
+                          ))}
+                          <th className="text-right px-4 py-3 font-semibold bg-brand-50 text-brand-700">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {attribution.rows.map((r) => (
+                          <tr key={r.source} className="border-t border-ink-100 hover:bg-ink-50/50" data-testid={`matrix-row-${r.source}`}>
+                            <td className="px-4 py-3">
+                              <span className="text-xs font-semibold rounded-full px-2 py-1 bg-ink-100 text-ink-700 capitalize">{r.source}</span>
+                            </td>
+                            {r.cells.map((c) => (
+                              <td key={c.variant} className="px-4 py-3 text-right" data-testid={`matrix-cell-${r.source}-${c.variant}`}>
+                                <div className="font-heading font-bold text-base">{c.signups}</div>
+                                <div className={`text-[11px] font-mono ${c.conversion_pct >= 20 ? "text-emerald-700 font-semibold" : "text-ink-400"}`}>
+                                  {c.sessions ? `${c.conversion_pct}%` : "—"}
+                                </div>
+                              </td>
+                            ))}
+                            <td className="px-4 py-3 text-right bg-brand-50/40">
+                              <div className="font-heading font-bold text-base text-brand-800">{r.totals.signups}</div>
+                              <div className="text-[11px] text-brand-700 font-mono">{r.totals.sessions ? `${r.totals.conversion_pct}%` : "—"}</div>
+                            </td>
+                          </tr>
+                        ))}
+                        <tr className="border-t border-ink-200 bg-brand-50/40 font-semibold">
+                          <td className="px-4 py-3 text-brand-800">Total</td>
+                          {attribution.col_totals.map((c) => (
+                            <td key={c.variant} className="px-4 py-3 text-right" data-testid={`matrix-coltotal-${c.variant}`}>
+                              <div className="font-heading font-bold text-brand-800">{c.signups}</div>
+                              <div className="text-[11px] font-mono text-brand-700">{c.sessions ? `${c.conversion_pct}%` : "—"}</div>
+                            </td>
+                          ))}
+                          <td className="px-4 py-3 text-right" data-testid="matrix-grand">
+                            <div className="font-heading font-bold text-brand-900">{attribution.grand.signups}</div>
+                            <div className="text-[11px] font-mono text-brand-700">{attribution.grand.sessions ? `${attribution.grand.conversion_pct}%` : "—"}</div>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="p-4 border-t border-ink-100 text-xs text-ink-500">
+                    Rows with 0 sessions but &gt; 0 signups mean the visitor arrived before analytics started or hit /api/waitlist directly. Signup numbers remain accurate.
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
