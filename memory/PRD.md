@@ -26,7 +26,17 @@ Dashboard, credit system, projects, download, admin panel, pricing.
 - Landing, Pricing, Dashboard, Wizard, Project View, Settings, Admin Panel
 - Blue & white professional theme (Canva/InVideo inspired)
 
-## Phase 1 Additions (2026-02, this iteration)
+## Phase 1 Additions #2 (2026-02, this iteration) — A/B Testing + Daily Digest
+
+- ✅ **A/B Testing** on landing hero (`landing_hero` experiment) — two variants (A/B) with distinct **eyebrow / headline / subtitle / primary CTA / secondary CTA**. Deterministic per-client assignment via SHA-256 (client_id persisted in `localStorage.avs_client_id`). Every subsequent analytics event carries `properties.variant`.
+- ✅ Backend endpoints: `GET /api/experiments/{exp}/{client_id}` (returns content + writes an exposure event), `GET /api/admin/experiments` (rows with sessions / CTA clicks / signups / conversion% / CTR% + winner). Non-admin gets 403.
+- ✅ **Daily Digest** (7-day rolling window, WoW deltas): visitors, waitlist signups, conversion rate, traffic sources, A/B performance, demo requests, device split (UA-parsed), top countries (best-effort via ip-api.com).
+- ✅ Scheduler: **APScheduler AsyncIOScheduler + CronTrigger(hour=8, tz=IST)** — fires daily at 08:00 IST → recipient `ashish.jha93@gmail.com` (via `DIGEST_TO`). Every digest is stored in `digests` Mongo collection.
+- ✅ Email delivery: **Resend** integration — activates automatically when `RESEND_API_KEY` is set in `/app/backend/.env`. Until then, digests are generated + stored + previewable, and Admin shows a yellow warning banner.
+- ✅ Admin new tabs: **A/B Tests** (side-by-side variant cards with content preview + stats + winner banner) and **Daily Digest** (schedule card, Preview email HTML, Generate now button, KPI cards, WoW/Devices/Top-countries panels, digest archive table).
+- ✅ Testing pass 4/4: 15/15 new tests pass + 62/63 across full suite (only failure is unrelated EMERGENT_LLM_KEY budget on the video pipeline test).
+
+## Phase 1 Additions (2026-02) — Demo Video + Book-a-Demo + Rich Analytics
 - ✅ Landing **Demo Video Section**: 30-second demo MP4 with poster, IntersectionObserver-based impression tracking, play-click view tracking, 4 output cards (Cinematic Video / LinkedIn Post / Blog Article / Email Newsletter) demonstrating multi-format repurposing from one prompt
 - ✅ **Book-a-Demo** dialog for agencies/enterprise — surfaced from hero link, Waitlist section CTA, Pricing footer CTA and the Enterprise plan CTA. Submissions land in `waitlist` collection with `plan_interest=enterprise` and `use_case="DEMO_REQUEST · seats=… · notes=…"`
 - ✅ **Attribution capture** (`captureAttribution()`): reads `?utm_source/?utm_medium/?utm_campaign/?ref` and classifies referrer host (organic_search / social / referral / direct); attribution is persisted in localStorage and injected into every subsequent `track()` event

@@ -65,7 +65,13 @@ export default function AdminPanel() {
       const { data } = await api.post("/admin/digest/send-now");
       if (data.delivery?.sent) toast.success("Digest sent!");
       else toast.info(`Digest generated. Email skipped: ${data.delivery?.reason}`);
-      load();
+      // Refresh the whole tab so KPIs, preview and archive stay in sync
+      const [d, dp] = await Promise.all([
+        api.get("/admin/digest"),
+        api.get("/admin/digest/preview"),
+      ]);
+      setDigestList(d.data);
+      setDigestPreview(dp.data);
     } catch { toast.error("Failed to generate digest"); }
     finally { setSendingDigest(false); }
   };

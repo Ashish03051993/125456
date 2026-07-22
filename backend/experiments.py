@@ -52,7 +52,7 @@ def assign_variant(experiment: str, client_id: str) -> str:
     if not keys:
         return "A"
     h = hashlib.sha256(f"{experiment}::{client_id}".encode()).digest()
-    idx = h[0] % len(keys)
+    idx = int.from_bytes(h[:4], "big") % len(keys)
     return keys[idx]
 
 
