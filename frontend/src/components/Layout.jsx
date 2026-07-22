@@ -1,5 +1,5 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Video, LayoutDashboard, Shield, LogOut, Sparkles, Users, BarChart3 } from "lucide-react";
+import { Video, LayoutDashboard, Shield, LogOut, Sparkles, Users, BarChart3, FlaskConical, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 import { track } from "@/lib/analytics";
@@ -57,6 +57,8 @@ export function Sidebar() {
     { to: "/admin", label: "Overview", icon: LayoutDashboard, testId: "side-overview" },
     { to: "/admin?tab=waitlist", label: "Waitlist", icon: Users, testId: "side-waitlist" },
     { to: "/admin?tab=analytics", label: "Analytics", icon: BarChart3, testId: "side-analytics" },
+    { to: "/admin?tab=experiments", label: "A/B Tests", icon: FlaskConical, testId: "side-experiments" },
+    { to: "/admin?tab=digest", label: "Daily Digest", icon: Send, testId: "side-digest" },
   ];
   return (
     <aside className="hidden md:block w-[240px] shrink-0 border-r border-ink-200 bg-white/60 backdrop-blur-sm min-h-[calc(100vh-64px)] p-4">

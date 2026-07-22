@@ -3,15 +3,17 @@ import { useSearchParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import { TopBar, Sidebar } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
-import { Users, Video, Mail, TrendingUp, BarChart3, Copy, Search } from "lucide-react";
+import { Users, Video, Mail, TrendingUp, BarChart3, Copy, Search, FlaskConical, Send, Trophy, AlertTriangle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, LineChart, Line } from "recharts";
 
 const TABS = [
-  { id: "overview",  label: "Overview",  icon: BarChart3 },
-  { id: "waitlist",  label: "Waitlist",  icon: Mail },
-  { id: "analytics", label: "Analytics", icon: TrendingUp },
+  { id: "overview",   label: "Overview",    icon: BarChart3 },
+  { id: "waitlist",   label: "Waitlist",    icon: Mail },
+  { id: "analytics",  label: "Analytics",   icon: TrendingUp },
+  { id: "experiments",label: "A/B Tests",   icon: FlaskConical },
+  { id: "digest",     label: "Daily Digest",icon: Send },
 ];
 
 function StatCard({ label, value, icon: Icon, testid }) {
@@ -32,21 +34,41 @@ export default function AdminPanel() {
   const [stats, setStats] = useState(null);
   const [waitlist, setWaitlist] = useState(null);
   const [analytics, setAnalytics] = useState(null);
+  const [experiments, setExperiments] = useState(null);
+  const [digestList, setDigestList] = useState(null);
+  const [digestConfig, setDigestConfig] = useState(null);
+  const [digestPreview, setDigestPreview] = useState(null);
+  const [sendingDigest, setSendingDigest] = useState(false);
   const [q, setQ] = useState("");
 
   const load = async () => {
     try {
-      const [s, w, a] = await Promise.all([
+      const [s, w, a, e, d, dc, dp] = await Promise.all([
         api.get("/admin/stats"),
         api.get("/admin/waitlist"),
         api.get("/admin/analytics"),
+        api.get("/admin/experiments"),
+        api.get("/admin/digest"),
+        api.get("/admin/digest/config"),
+        api.get("/admin/digest/preview"),
       ]);
-      setStats(s.data);
-      setWaitlist(w.data);
-      setAnalytics(a.data);
+      setStats(s.data); setWaitlist(w.data); setAnalytics(a.data);
+      setExperiments(e.data); setDigestList(d.data);
+      setDigestConfig(dc.data); setDigestPreview(dp.data);
     } catch { toast.error("Could not load admin data"); }
   };
   useEffect(() => { load(); }, []);
+
+  const sendDigestNow = async () => {
+    setSendingDigest(true);
+    try {
+      const { data } = await api.post("/admin/digest/send-now");
+      if (data.delivery?.sent) toast.success("Digest sent!");
+      else toast.info(`Digest generated. Email skipped: ${data.delivery?.reason}`);
+      load();
+    } catch { toast.error("Failed to generate digest"); }
+    finally { setSendingDigest(false); }
+  };
 
   const filteredWaitlist = useMemo(() => {
     if (!waitlist) return [];
@@ -254,6 +276,174 @@ export default function AdminPanel() {
                       ))}
                       {(!analytics.conversion_by_source || analytics.conversion_by_source.length === 0) && (
                         <tr><td colSpan={5} className="px-4 py-8 text-center text-ink-400">No traffic yet.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* A/B Experiments */}
+          {activeTab === "experiments" && experiments && (
+            <div className="mt-6 space-y-6" data-testid="experiments-section">
+              <div className="bg-white border border-ink-200 rounded-2xl p-6">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div>
+                    <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">Experiment</div>
+                    <div className="font-heading font-bold text-xl mt-1">landing_hero — headline &amp; CTA</div>
+                    <div className="text-sm text-ink-500 mt-1">Each visitor is deterministically assigned once. Winner is the variant with the highest waitlist conversion.</div>
+                  </div>
+                  {experiments.winner && (
+                    <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 text-emerald-700 px-3 py-1.5 text-sm font-semibold border border-emerald-200" data-testid="experiment-winner">
+                      <Trophy className="w-4 h-4" /> Winner: Variant {experiments.winner}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="grid md:grid-cols-2 gap-4">
+                {experiments.rows.map((r) => (
+                  <div key={r.variant} data-testid={`experiment-variant-${r.variant}`}
+                    className={`bg-white border-2 rounded-2xl p-6 ${experiments.winner === r.variant ? "border-emerald-500 shadow-lg" : "border-ink-200"}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="font-heading font-extrabold text-2xl tracking-tight">Variant {r.variant}</div>
+                      <div className="text-sm font-mono text-ink-500">{r.sessions} sessions</div>
+                    </div>
+                    <div className="mt-4 space-y-2 text-sm">
+                      <div className="text-ink-500 text-xs uppercase tracking-widest">Headline</div>
+                      <div className="font-heading font-bold text-lg">
+                        {r.content.headline_pre} <span className="text-brand-600">{r.content.headline_highlight}</span> {r.content.headline_mid} {r.content.headline_after}.
+                      </div>
+                      <div className="text-ink-500 text-xs uppercase tracking-widest pt-2">Primary CTA</div>
+                      <div className="inline-block bg-brand-600 text-white text-sm font-semibold rounded-full px-3 py-1">{r.content.cta_primary}</div>
+                    </div>
+                    <div className="mt-5 grid grid-cols-3 gap-2">
+                      <div className="rounded-lg bg-ink-50 p-3">
+                        <div className="text-[10px] uppercase tracking-widest text-ink-500 font-semibold">CTA clicks</div>
+                        <div className="mt-1 font-heading font-extrabold text-xl">{r.cta_clicks}</div>
+                        <div className="text-[11px] text-ink-500">{r.cta_ctr_pct}% CTR</div>
+                      </div>
+                      <div className="rounded-lg bg-ink-50 p-3">
+                        <div className="text-[10px] uppercase tracking-widest text-ink-500 font-semibold">Signups</div>
+                        <div className="mt-1 font-heading font-extrabold text-xl">{r.signups}</div>
+                      </div>
+                      <div className="rounded-lg bg-brand-50 border border-brand-100 p-3">
+                        <div className="text-[10px] uppercase tracking-widest text-brand-700 font-semibold">Conv.</div>
+                        <div className="mt-1 font-heading font-extrabold text-xl text-brand-800">{r.conversion_pct}%</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="text-xs text-ink-500 bg-ink-50 border border-ink-200 rounded-xl p-4">
+                Statistical note: results below ~200 sessions per variant are directional only.
+                Wait until each variant has enough traffic before declaring a definitive winner.
+              </div>
+            </div>
+          )}
+
+          {/* Daily Digest */}
+          {activeTab === "digest" && digestConfig && digestPreview && (
+            <div className="mt-6 space-y-6" data-testid="digest-section">
+              {!digestConfig.email_enabled && (
+                <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-5 flex items-start gap-3" data-testid="digest-email-disabled">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="text-sm">
+                    <div className="font-heading font-bold text-amber-900">Email delivery is off.</div>
+                    <div className="text-amber-800 mt-1">
+                      Digests are being generated and stored, but no email is sent yet.
+                      Set <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-xs">RESEND_API_KEY</code> in <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-xs">/app/backend/.env</code> to turn on delivery to
+                      <strong> {digestConfig.recipients.join(", ")}</strong>.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-white border border-ink-200 rounded-2xl p-6">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">Schedule</div>
+                    <div className="font-heading font-bold text-lg mt-1">{digestConfig.schedule}</div>
+                    <div className="text-sm text-ink-500 mt-1">Recipients: {digestConfig.recipients.join(", ") || "—"}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <a href={`${process.env.REACT_APP_BACKEND_URL}/api/admin/digest/preview.html`} target="_blank" rel="noreferrer">
+                      <Button variant="outline" data-testid="preview-html-btn">Preview email</Button>
+                    </a>
+                    <Button onClick={sendDigestNow} disabled={sendingDigest}
+                      className="bg-brand-600 hover:bg-brand-700 text-white" data-testid="send-digest-btn">
+                      {sendingDigest ? "Sending…" : (digestConfig.email_enabled ? "Send now" : "Generate now")}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <StatCard label="Visitors · 7d" value={`${digestPreview.visitors}`} icon={Users} testid="digest-visitors" />
+                <StatCard label="Signups · 7d" value={`${digestPreview.signups}`} icon={Mail} testid="digest-signups" />
+                <StatCard label="Conversion" value={`${digestPreview.conversion_pct}%`} icon={TrendingUp} testid="digest-conversion" />
+                <StatCard label="Demo requests" value={`${digestPreview.demo_requests.book_demo_submitted}`} icon={FlaskConical} testid="digest-demos" />
+              </div>
+
+              <div className="grid md:grid-cols-3 gap-4">
+                <div className="bg-white border border-ink-200 rounded-2xl p-4">
+                  <div className="text-xs uppercase tracking-widest text-ink-500 font-semibold">WoW growth</div>
+                  <div className="mt-3 space-y-2 text-sm">
+                    <div className="flex justify-between"><span className="text-ink-500">Visitors</span><span className="font-mono font-semibold">{digestPreview.visitors_wow}</span></div>
+                    <div className="flex justify-between"><span className="text-ink-500">Signups</span><span className="font-mono font-semibold">{digestPreview.signups_wow}</span></div>
+                    <div className="flex justify-between"><span className="text-ink-500">Conversion</span><span className="font-mono font-semibold">{digestPreview.conversion_wow}</span></div>
+                  </div>
+                </div>
+                <div className="bg-white border border-ink-200 rounded-2xl p-4">
+                  <div className="text-xs uppercase tracking-widest text-ink-500 font-semibold">Devices</div>
+                  <div className="mt-3 space-y-2 text-sm">
+                    {Object.entries(digestPreview.devices).filter(([, v]) => v).map(([k, v]) => (
+                      <div key={k} className="flex justify-between"><span className="text-ink-500 capitalize">{k}</span><span className="font-mono font-semibold">{v}</span></div>
+                    ))}
+                  </div>
+                </div>
+                <div className="bg-white border border-ink-200 rounded-2xl p-4">
+                  <div className="text-xs uppercase tracking-widest text-ink-500 font-semibold">Top countries</div>
+                  <div className="mt-3 space-y-2 text-sm">
+                    {digestPreview.top_countries.length === 0 && <div className="text-ink-400 text-xs">No geo data yet</div>}
+                    {digestPreview.top_countries.map((c) => (
+                      <div key={c.country} className="flex justify-between"><span className="text-ink-500">{c.country}</span><span className="font-mono font-semibold">{c.n}</span></div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white border border-ink-200 rounded-2xl overflow-hidden">
+                <div className="p-4 border-b border-ink-100 font-heading font-bold text-lg">Digest archive</div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm min-w-[560px]">
+                    <thead className="bg-ink-50 text-ink-500 text-xs uppercase tracking-widest">
+                      <tr>
+                        <th className="text-left px-4 py-3 font-semibold">Generated</th>
+                        <th className="text-right px-4 py-3 font-semibold">Visitors</th>
+                        <th className="text-right px-4 py-3 font-semibold">Signups</th>
+                        <th className="text-right px-4 py-3 font-semibold">Conv.</th>
+                        <th className="text-left px-4 py-3 font-semibold">Delivery</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(digestList || []).map((d) => (
+                        <tr key={d.id} className="border-t border-ink-100" data-testid={`digest-row-${d.id}`}>
+                          <td className="px-4 py-3 text-ink-700">{new Date(d.generated_at).toLocaleString()}</td>
+                          <td className="px-4 py-3 text-right font-mono">{d.visitors}</td>
+                          <td className="px-4 py-3 text-right font-mono">{d.signups}</td>
+                          <td className="px-4 py-3 text-right font-mono">{d.conversion_pct}%</td>
+                          <td className="px-4 py-3">
+                            {d.delivery?.sent
+                              ? <span className="text-xs font-semibold bg-emerald-50 text-emerald-700 rounded-full px-2 py-1">sent</span>
+                              : <span className="text-xs font-semibold bg-ink-100 text-ink-500 rounded-full px-2 py-1" title={d.delivery?.reason || ""}>not sent</span>}
+                          </td>
+                        </tr>
+                      ))}
+                      {(!digestList || digestList.length === 0) && (
+                        <tr><td colSpan={5} className="px-4 py-8 text-center text-ink-400">
+                          No digests generated yet. Click <b>Generate now</b> to create the first one.
+                        </td></tr>
                       )}
                     </tbody>
                   </table>

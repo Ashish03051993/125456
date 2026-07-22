@@ -4,6 +4,7 @@ import { Sparkles, Zap, Palette, Layers, Video, Check, Play, ArrowRight, Calenda
 import { Button } from "@/components/ui/button";
 import { TopBar } from "@/components/Layout";
 import { track, captureAttribution } from "@/lib/analytics";
+import { fetchVariant } from "@/lib/experiments";
 import WaitlistForm from "@/components/WaitlistForm";
 import DemoVideoSection from "@/components/DemoVideoSection";
 import BookDemoDialog from "@/components/BookDemoDialog";
@@ -11,6 +12,18 @@ import BookDemoDialog from "@/components/BookDemoDialog";
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const DEMO_VIDEO = `${BACKEND_URL}/api/media/videos/demo.mp4`;
 const DEMO_POSTER = `${BACKEND_URL}/api/media/videos/demo_poster.jpg`;
+
+// Fallback content in case the experiment endpoint is unreachable.
+const FALLBACK = {
+  eyebrow: "Now in private beta — join the waitlist",
+  headline_pre: "Turn a",
+  headline_highlight: "topic",
+  headline_mid: "into a",
+  headline_after: "cinematic video",
+  subtitle: "AI Video Studio writes the script, storyboards every scene, generates the imagery, records the voiceover and renders a finished MP4 — then repurposes the same idea into a LinkedIn post, blog and newsletter.",
+  cta_primary: "Reserve my spot",
+  cta_secondary: "Watch demo",
+};
 
 const FEATURES = [
   { icon: Sparkles, title: "Prompt to Video", body: "Type a topic. We write the script, storyboard, and generate every scene." , span: "md:col-span-2" },
@@ -22,12 +35,20 @@ const FEATURES = [
 export default function Landing() {
   const fired = useRef(false);
   const [demoOpen, setDemoOpen] = useState(false);
+  const [content, setContent] = useState(FALLBACK);
+  const [variant, setVariant] = useState(null);
 
   useEffect(() => {
     if (fired.current) return;
     fired.current = true;
     captureAttribution();
-    track("page_view", { page: "landing" });
+    // Fetch A/B variant, then track exposure + page view (so events carry variant).
+    fetchVariant("landing_hero")
+      .then((data) => { setContent(data.content); setVariant(data.variant); })
+      .catch(() => { /* fallback stays */ })
+      .finally(() => {
+        track("page_view", { page: "landing" });
+      });
   }, []);
 
   const scrollToWaitlist = (source) => {
@@ -56,28 +77,27 @@ export default function Landing() {
         <div className="dot-grid absolute inset-0 opacity-40" />
         <div className="relative max-w-7xl mx-auto px-5 sm:px-6 pt-14 sm:pt-24 pb-16 sm:pb-28 grid md:grid-cols-12 gap-10 md:gap-12 items-center">
           <div className="md:col-span-7 stagger">
-            <div className="inline-flex items-center gap-2 bg-white border border-ink-200 rounded-full px-3 py-1 text-[11px] sm:text-xs font-semibold text-brand-700 shadow-sm">
-              <Sparkles className="w-3.5 h-3.5" /> Now in private beta — join the waitlist
+            <div className="inline-flex items-center gap-2 bg-white border border-ink-200 rounded-full px-3 py-1 text-[11px] sm:text-xs font-semibold text-brand-700 shadow-sm" data-testid="hero-eyebrow">
+              <Sparkles className="w-3.5 h-3.5" /> {content.eyebrow}
+              {variant && <span className="ml-1 text-ink-400 font-mono">· {variant}</span>}
             </div>
-            <h1 className="mt-5 sm:mt-6 font-heading font-extrabold text-4xl sm:text-5xl md:text-6xl lg:text-7xl tracking-tighter leading-[0.95]">
-              Turn a <span className="text-brand-600">topic</span> into a<br className="hidden sm:block" />
-              {" "}cinematic video<span className="text-brand-600">.</span>
+            <h1 className="mt-5 sm:mt-6 font-heading font-extrabold text-4xl sm:text-5xl md:text-6xl lg:text-7xl tracking-tighter leading-[0.95]" data-testid="hero-headline">
+              {content.headline_pre} <span className="text-brand-600">{content.headline_highlight}</span> {content.headline_mid}<br className="hidden sm:block" />
+              {" "}{content.headline_after}<span className="text-brand-600">.</span>
             </h1>
-            <p className="mt-5 sm:mt-6 text-base sm:text-lg text-ink-500 max-w-xl">
-              AI Video Studio writes the script, storyboards every scene, generates the imagery,
-              records the voiceover and renders a finished MP4 — then repurposes the same idea
-              into a LinkedIn post, blog and newsletter.
+            <p className="mt-5 sm:mt-6 text-base sm:text-lg text-ink-500 max-w-xl" data-testid="hero-subtitle">
+              {content.subtitle}
             </p>
             <div className="mt-7 sm:mt-8 flex flex-wrap gap-3">
               <Button onClick={() => scrollToWaitlist("hero")}
                 className="rounded-full h-12 px-6 sm:px-7 bg-brand-600 hover:bg-brand-700 text-white text-base w-full sm:w-auto"
                 data-testid="hero-cta-waitlist">
-                Reserve my spot <ArrowRight className="w-4 h-4 ml-2" />
+                {content.cta_primary} <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
               <Button onClick={scrollToDemo} variant="outline"
                 className="rounded-full h-12 px-6 sm:px-7 border-ink-300 text-base w-full sm:w-auto"
                 data-testid="hero-cta-demo">
-                <Play className="w-4 h-4 mr-2 fill-brand-600 text-brand-600" /> Watch demo
+                <Play className="w-4 h-4 mr-2 fill-brand-600 text-brand-600" /> {content.cta_secondary}
               </Button>
             </div>
             <div className="mt-6 sm:mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-ink-500">

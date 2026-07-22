@@ -49,9 +49,14 @@ export function getAttribution() {
 export async function track(event, properties = {}) {
   try {
     const attr = getAttribution();
+    let variant = null;
+    try {
+      const cached = JSON.parse(localStorage.getItem("avs_exp_landing_hero") || "null");
+      variant = cached?.variant || null;
+    } catch { /* ignore */ }
     await api.post("/analytics/track", {
       event,
-      properties: { ...properties, ...attr },
+      properties: { ...properties, ...attr, variant },
       session_id: getSessionId(),
       path: window.location.pathname + window.location.hash,
     });

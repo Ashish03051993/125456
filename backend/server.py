@@ -656,6 +656,141 @@ async def run_pipeline(project_id: str):
                                       {"$inc": {"credits": 1}})
 
 
+# --------------------------- Experiments (A/B testing) ---------------------------
+from experiments import (assign_variant as _assign_variant,
+                         variant_content as _variant_content,
+                         all_variants as _all_variants)
+
+
+@api.get("/experiments/{experiment}/{client_id}")
+async def experiment_assign(experiment: str, client_id: str, request: Request):
+    variant = _assign_variant(experiment, client_id)
+    # Fire an exposure event server-side so it's counted even if the client
+    # skips analytics (adblock, etc.).
+    await db.analytics_events.insert_one({
+        "id": f"evt_{uuid.uuid4().hex[:12]}",
+        "event": "experiment_exposure",
+        "properties": {"experiment": experiment, "variant": variant,
+                       "client_id": client_id},
+        "session_id": client_id,
+        "path": "/",
+        "user_agent": request.headers.get("user-agent", "")[:200],
+        "ip": request.client.host if request.client else None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {
+        "experiment": experiment,
+        "variant": variant,
+        "content": _variant_content(experiment, variant),
+    }
+
+
+@api.get("/admin/experiments")
+async def admin_experiments(_admin=Depends(require_admin), experiment: str = "landing_hero"):
+    since = _iso_ago_days(30)
+    variants = _all_variants(experiment)
+    expose_cur = db.analytics_events.aggregate([
+        {"$match": {"event": "experiment_exposure",
+                    "properties.experiment": experiment,
+                    "created_at": {"$gte": since}}},
+        {"$group": {"_id": {"v": "$properties.variant", "sid": "$session_id"}}},
+        {"$group": {"_id": "$_id.v", "sessions": {"$sum": 1}}},
+    ])
+    expose = {d["_id"]: d["sessions"] async for d in expose_cur}
+
+    sig_cur = db.analytics_events.aggregate([
+        {"$match": {"event": {"$in": ["waitlist_submit", "waitlist_success"]},
+                    "properties.variant": {"$ne": None},
+                    "created_at": {"$gte": since}}},
+        {"$group": {"_id": "$properties.variant", "n": {"$sum": 1}}},
+    ])
+    signups = {d["_id"]: d["n"] async for d in sig_cur}
+
+    cta_cur = db.analytics_events.aggregate([
+        {"$match": {"event": "waitlist_button_click",
+                    "properties.variant": {"$ne": None},
+                    "created_at": {"$gte": since}}},
+        {"$group": {"_id": "$properties.variant", "n": {"$sum": 1}}},
+    ])
+    cta_clicks = {d["_id"]: d["n"] async for d in cta_cur}
+
+    rows = []
+    for v in variants:
+        sess_n = expose.get(v, 0)
+        sig_n = signups.get(v, 0)
+        cta_n = cta_clicks.get(v, 0)
+        rows.append({
+            "variant": v,
+            "sessions": sess_n,
+            "cta_clicks": cta_n,
+            "signups": sig_n,
+            "conversion_pct": round((sig_n / sess_n) * 100, 2) if sess_n else 0.0,
+            "cta_ctr_pct": round((cta_n / sess_n) * 100, 2) if sess_n else 0.0,
+            "content": _variant_content(experiment, v),
+        })
+    # Sort by conversion desc for a natural winner-first table
+    winner = max(rows, key=lambda r: r["conversion_pct"]) if rows else None
+    return {
+        "experiment": experiment,
+        "rows": rows,
+        "winner": winner["variant"] if winner and winner["sessions"] > 0 else None,
+    }
+
+
+def _iso_ago_days(n: int) -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=n)).isoformat()
+
+
+# --------------------------- Digest ---------------------------
+from digest import (build_digest as _build_digest,
+                    render_html as _render_digest_html,
+                    generate_and_deliver as _generate_digest,
+                    DIGEST_HOUR_IST, IST)
+
+
+@api.get("/admin/digest/preview")
+async def digest_preview(_admin=Depends(require_admin)):
+    return await _build_digest(db)
+
+
+@api.get("/admin/digest/preview.html")
+async def digest_preview_html(_admin=Depends(require_admin)):
+    data = await _build_digest(db)
+    return Response(content=_render_digest_html(data), media_type="text/html")
+
+
+@api.get("/admin/digest/config")
+async def digest_config(_admin=Depends(require_admin)):
+    return {
+        "recipients": [r.strip() for r in os.environ.get(
+            "DIGEST_TO", "ashish.jha93@gmail.com").split(",") if r.strip()],
+        "sender": os.environ.get("DIGEST_FROM", "AI Video Studio <onboarding@resend.dev>"),
+        "schedule": f"Daily at {DIGEST_HOUR_IST:02d}:00 IST",
+        "email_enabled": bool(os.environ.get("RESEND_API_KEY")),
+        "provider": "Resend",
+    }
+
+
+@api.get("/admin/digest")
+async def digest_list(_admin=Depends(require_admin), limit: int = 20):
+    cur = db.digests.find({}, {"_id": 0, "html": 0}).sort("generated_at", -1).limit(limit)
+    return await cur.to_list(limit)
+
+
+@api.post("/admin/digest/send-now")
+async def digest_send_now(_admin=Depends(require_admin)):
+    doc = await _generate_digest(db)
+    return {"id": doc["id"], "delivery": doc["delivery"], "subject": doc["subject"]}
+
+
+@api.get("/admin/digest/{digest_id}")
+async def digest_get(digest_id: str, _admin=Depends(require_admin)):
+    doc = await db.digests.find_one({"id": digest_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Not found")
+    return doc
+
+
 # --------------------------- Startup ---------------------------
 @app.on_event("startup")
 async def startup():
@@ -672,6 +807,31 @@ async def startup():
             "credits": 9999,
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
+    # Kick off the daily digest scheduler (08:00 IST)
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from apscheduler.triggers.cron import CronTrigger
+    global _scheduler
+    _scheduler = AsyncIOScheduler(timezone=IST)
+
+    async def _digest_job():
+        try:
+            await _generate_digest(db)
+        except Exception:
+            logger.exception("Daily digest job failed")
+
+    _scheduler.add_job(_digest_job, CronTrigger(hour=DIGEST_HOUR_IST, minute=0),
+                       id="daily_digest", replace_existing=True)
+    _scheduler.start()
+    logger.info("Digest scheduler started — 08:00 IST daily")
+
+
+_scheduler = None
+
+
+@app.on_event("shutdown")
+async def _stop_scheduler():
+    if _scheduler is not None:
+        _scheduler.shutdown(wait=False)
 
 
 @api.get("/")

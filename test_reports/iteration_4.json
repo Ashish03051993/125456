@@ -1,0 +1,45 @@
+{
+  "summary": "Phase 1 additions #2 (Landing A/B testing + Daily Digest) verified end-to-end. Backend: 15/15 pytest in test_phase1_ab_digest.py PASS. GET /api/experiments/landing_hero/{cid} returns {experiment, variant, content} with all 8 content keys (eyebrow, headline_pre/highlight/mid/after, subtitle, cta_primary/cta_secondary); deterministic — same client_id yields the same variant across repeated calls; distribution reaches both A and B across 20 sampled ids; the endpoint writes an experiment_exposure event that surfaces in /api/admin/experiments row.sessions. /api/admin/experiments returns rows for each variant with sessions/cta_clicks/signups/conversion_pct/cta_ctr_pct + winner; non-admin gets 403. /api/admin/digest/config returns recipients=['ashish.jha93@gmail.com'], schedule 'Daily at 08:00 IST', email_enabled=false, provider='Resend'. /api/admin/digest/preview returns full model (visitors, signups, conversion_pct, WoW deltas, traffic_sources, ab_test.rows, demo_requests, devices, top_countries). /api/admin/digest/preview.html returns text/html with header 'AI Video Studio · Daily Digest' + stat blocks. POST /api/admin/digest/send-now returns {id: 'digest_xxx', delivery: {sent:false, reason:'RESEND_API_KEY not configured'}, subject: 'AI Video Studio · N signups · N visitors · N% conv'}. GET /api/admin/digest lists archived digests most-recent-first WITHOUT html body. POST /api/analytics/track accepts properties.variant='A' and persists it. Scheduler log line 'Digest scheduler started — 08:00 IST daily' present in /var/log/supervisor/backend.err.log (2 startups). Frontend Playwright: Landing hero fetches variant via /api/experiments/landing_hero/{client_id} (variant B in the run), renders variant-B headline='One prompt. Four polished content pieces.', subtitle, CTA='Get early access'; reload keeps the same variant (avs_client_id + avs_exp_landing_hero cached in localStorage). Every track() payload carries properties.variant ('B' seen in 2/2 captured calls). Admin sidebar has A/B Tests (data-testid=side-experiments) and Daily Digest (data-testid=side-digest) links; top tabs have data-testid=tab-experiments and tab-digest and respond to ?tab= URL params. A/B Tests tab renders experiment-variant-A + experiment-variant-B cards + experiment-winner banner. Digest tab renders digest-email-disabled yellow banner + schedule card ('Daily at 08:00 IST' + Preview email + send-digest-btn) + 4 KPI cards (Visitors 34, Signups 15, Conversion 44.12%, Demo requests 3) + WoW/Devices/Top-countries panels + Digest archive with digest-row-{id} rows (grew 3→4 after clicking Generate now); success toast shows 'Digest generated. Email skipped: RESEND_API_KEY not configured'. Regression: 62/63 tests pass across the whole /app/backend/tests suite; the single failure (backend_test.py::TestPipeline::test_generate_end_to_end) is an unrelated OpenAI budget-exceeded error in the video-generation pipeline that has nothing to do with this pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/experiments/{experiment}/{client_id}", "issue": "Endpoint is unauthenticated and writes an analytics_events doc on every call — anyone can flood the collection with fake exposures via curl. Consider light rate-limiting or requiring the analytics session cookie."},
+      {"endpoint": "/api/analytics/track", "issue": "(pre-existing, still unresolved) accepts arbitrary events with no rate limit or auth. Same shape now also accepts properties.variant which pollutes A/B counters if abused."},
+      {"endpoint": "/api/admin/digest/send-now", "issue": "Every call inserts a full digest doc into the `digests` collection (including the ~10 KB html body). Repeated clicks from the UI grow the collection unboundedly. Consider dedup within a 5-minute window or a soft cap + rotation policy."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase1_ab_digest.py",
+    "/app/test_reports/pytest/phase1_ab_digest_results.xml",
+    "/app/test_reports/pytest/all_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: Add lightweight rate-limiting to /api/experiments/{exp}/{cid} and /api/analytics/track to prevent A/B counter poisoning.",
+    "OPTIONAL: Dedup /api/admin/digest/send-now within a 5-minute window OR cap the digests collection (only store last N days). Currently every button click stores a fresh digest doc + full html body.",
+    "OPTIONAL (pre-existing, from prior pass): backend_test.py::TestPipeline::test_generate_end_to_end is failing because litellm reports 'Budget has been exceeded' on the OpenAI proxy. This is an environment/quota issue, not code. Consider skipping this test in CI when EMERGENT_LLM_KEY budget is exhausted."
+  ],
+  "critical_code_review_comments": [
+    "experiments.py assign_variant uses only the first byte of sha256 (h[0] % len(keys)) — fine for 2 variants but if you add a 3rd variant later the distribution becomes 43/43/14 (256 % 3 = 1) instead of a clean split. Prefer int.from_bytes(h[:4], 'big') % len(keys) for future-proofing.",
+    "digest.py build_digest fires up to 20 sequential ip-api.com HTTP calls per invocation (top_countries block) — each with a 3s timeout. Worst case a preview takes 60s. Cache country lookups per-IP in Mongo (TTL=30d) to make preview responsive even on cold caches.",
+    "server.py /admin/digest/send-now blocks on send_via_resend (up to 15s httpx timeout) plus build_digest cold path. Move to a background task (asyncio.create_task) and return 202 with the id immediately so the UI stays responsive.",
+    "digest.py send_via_resend swallows non-2xx as {sent:false} and never logs the payload — makes debugging Resend rejections painful once RESEND_API_KEY is set. Log r.status + r.text at WARNING.",
+    "AdminPanel.jsx sendDigestNow refreshes `digestList` from the response but never re-fetches `digestPreview` / `experiments` — after a POST the KPI cards on the same tab can be stale relative to the archive row it just inserted. Trigger a re-fetch of digestPreview on send.",
+    "AdminPanel.jsx Preview email link is a plain <a target='_blank'> to /api/admin/digest/preview.html — that endpoint requires the admin cookie. Cookie is 'SameSite=Lax' by default on cross-site nav, which works here (same eTLD+1), but flag if the frontend is ever moved to a different domain.",
+    "experiments.js does not include a network-failure fallback — if /api/experiments 500s, fetchVariant rejects and Landing.jsx keeps its default `content` (variant A). Fine, but silently. Log to console.warn for observability."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase1_ab_digest.py (new — 15 tests across TestExperiments/TestAnalyticsVariant/TestDigest/TestScheduler)"
+  ],
+  "success_rate": {"backend": "100% (15/15 phase1_ab_digest, 62/63 across full suite; the 1 failure is unrelated OpenAI budget)", "frontend": "100% (Landing variant + reload stickiness + track variant payload + Admin A/B tab + Admin Digest tab + Generate now round-trip all verified)"},
+  "test_credentials": "Admin cookie session_token=test_admin_1784712404860 (admin@videostudio.ai). Same as prior passes.",
+  "seed_data_creation": "Backend pytest created ~30 experiment_exposure events (from test_client_a/z and TEST_client_* ids), 1 analytics_events row with properties.variant='A' via /analytics/track, and 1 stored digest doc via /admin/digest/send-now. Playwright added ~2 more page_view events (with variant='B') from the landing visits and 1 more digest via the UI Generate-now button. digests collection currently has ≥4 rows.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All A/B testing + digest features are green. Not in scope for this pass but noted for the future: Live Ticker, Twitter Share, Referral System, Auto-Reply Emails. When RESEND_API_KEY is set for a future pass, re-run TestDigest::test_send_now_returns_document and expect delivery.sent=True with a Resend id in delivery.reason. digest scheduler is registered via APScheduler CronTrigger(hour=8, tz=IST); do not wait for actual 08:00 IST to fire — the log line 'Digest scheduler started — 08:00 IST daily' is the confirmation. Playwright's Chromium cannot decode H.264 (still relevant if you retest demo video). Admin cookie name is 'session_token' with value 'test_admin_1784712404860'.",
+  "rca of the issue": "N/A — all requested features verified working. The lone regression failure (test_generate_end_to_end) is not a bug: litellm returns 'Budget has been exceeded! Current cost: 1.22, Max budget: 1.16'. This is a shared LLM quota exhaustion in the preview env, not a code defect."
+}
