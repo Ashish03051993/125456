@@ -1,0 +1,41 @@
+{
+  "summary": "Iter-13 additive delta verified — Attribution Matrix CSV export is fully functional end-to-end. Backend: 23/23 pytest cases pass (test_iter13_matrix_csv.py) — auth (401 anon / 200 admin), Content-Type: text/csv, Content-Disposition: attachment; filename=\"attribution-matrix-YYYY-MM-DD.csv\" with today's UTC date, exact line-count formula (1 header + sources*variants + sources + variants + 1 = 21 for current 3 sources × 4 variants), header row `[source,variant,sessions,signups,conversion_pct]`, full JSON↔CSV round-trip (every cell + every row-total `<src>,__total__` + every col-total `__total__,<v>` + `__total__,__total__` grand-total numerically identical to /api/admin/attribution-matrix JSON). Regression spot-checks on /api/admin/sanity, /api/admin/sanity/untagged, /api/admin/attribution-matrix, /api/admin/waitlist.csv, /api/admin/utm-links.csv, /api/formats, /api/admin/waitlist, /api/admin/experiments, /api/short/{slug} (both real + 404 miss) and /api/analytics/track all green. Frontend: /admin?tab=experiments renders new [data-testid='matrix-export-csv-btn'] in the matrix panel header (flex-wrap with `shrink-0` — verified no mobile overflow at 390px: btn box x=41 w=120 sits inside panel x=20 w=350). Click synthesizes an `<a>` with href=`${REACT_APP_BACKEND_URL}/api/admin/attribution-matrix.csv` and `download` attr present; toast 'Matrix CSV downloading' appears. All existing testids preserved (attribution-matrix, matrix-grand, 12× matrix-cell-*, 3× matrix-row-*, 4× matrix-col-*, 4× matrix-coltotal-*). Sanity+untagged nav + landing waitlist form still render. Zero console errors during the full flow.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter13_matrix_csv.py",
+    "/app/test_reports/pytest/iter13_results.xml"
+  ],
+  "action_items": [
+    "(Cosmetic, out-of-scope for iter-13) The review spec mentions a `footnote` data-testid on the matrix panel — the codebase never had one; the footnote div at AdminPanel.jsx line 679-683 currently renders without any data-testid. If future tests want to target it, add data-testid='matrix-footnote' or 'footnote' to that <div>. Not blocking.",
+    "(Carry-over from iter-12) Outline buttons on WaitlistForm.jsx lines 109/114 still inherit text-white when embedded in Landing.jsx's <section class='bg-ink-900 text-white'>. Add `text-ink-900` to those classNames. Unrelated to iter-13."
+  ],
+  "critical_code_review_comments": [
+    "server.py admin_attribution_matrix_csv (lines 703-735) — Clean delegation to admin_attribution_matrix(_admin=_admin) guarantees JSON↔CSV numeric consistency (verified via round-trip pytest). csv.writer + io.StringIO is stdlib-only, no new deps. Response uses media_type='text/csv' + Content-Disposition attachment with `date.today().isoformat()` filename. Emits exactly 1 header + rows×cols + rows (row-totals) + cols (col-totals) + 1 grand = 21 lines on current data; matches spec's formula. Nit: `date.today()` uses server local time — if the container is not UTC, filename date could differ from what admin expects; consider `datetime.now(timezone.utc).date().isoformat()` for consistency with the rest of the code base which already uses timezone.utc everywhere. Not a functional bug (test allowed today or previous day).",
+    "server.py — Reusing admin_attribution_matrix() by directly calling `data = await admin_attribution_matrix(_admin=_admin)` is a great pattern: single source of truth for the math. If we ever add caching to the matrix, both endpoints benefit automatically.",
+    "AdminPanel.jsx (lines 591-615) — Header changed from block to `flex items-start justify-between gap-3 flex-wrap`. `flex-wrap` + `shrink-0` on the button keeps it visible at 390px (confirmed via bounding-box measurement). Button uses variant='outline' with `text-ink-900` class explicitly — smart, avoids the iter-12 cascade bug. Anchor synthesis is safe: creates <a>, sets href, sets download='', clicks, removes. `a.download=\"\"` uses the server-supplied Content-Disposition filename — correct.",
+    "AdminPanel.jsx — `new URL(...)` wrapper on line 606 is defensive; the returned .toString() normalizes the URL. If REACT_APP_BACKEND_URL were ever missing it would throw synchronously (visible in the toast onClick handler with no try/catch — a very minor edge case; probably won't hit in practice since app-wide many other calls already assume it).",
+    "Round-trip integrity — Pytest verified every one of the 12 cell rows, 3 row-total lines, 4 col-total lines, and 1 grand total exactly match the JSON endpoint. This is the strongest possible test for numeric consistency."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter13_matrix_csv.py (NEW — 23 pytest cases: 2 auth + 3 headers + 4 body structure + 4 round-trip cell/row-total/col-total/grand + 10 prior-iter regressions)",
+    "/app/test_reports/pytest/iter13_results.xml (NEW — junit results)"
+  ],
+  "success_rate": {
+    "backend": "100% (23/23 pytest pass — CSV auth+headers+body-structure+full-round-trip + iter-9..iter-12 spot-checks all green)",
+    "frontend": "100% (matrix-export-csv-btn visible, click synthesizes correct href https://script-to-video-382.preview.emergentagent.com/api/admin/attribution-matrix.csv, 'Matrix CSV downloading' toast fires, mobile 390 has no overflow, all existing matrix-* testids preserved, sanity/waitlist regressions clean, zero console errors)"
+  },
+  "test_credentials": "Admin session_token=test_admin_1784712404860 (still valid). Set as cookie (SameSite=None; Secure) — frontend uses withCredentials:true, not Authorization header.",
+  "seed_data_creation": "One ephemeral analytics event injected by TestPriorRegressionSpot.test_analytics_track: {event:'iter13_probe', properties:{src:'test'}, session_id:'sess_iter13_probe'}. No cleanup — event is inert and disposable (does not affect matrix since it's not a page_view/waitlist_signup).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iter-13 CSV export is 100% green — no follow-up needed. Admin session_token still test_admin_1784712404860 (cookie-based; frontend uses withCredentials:true). Current matrix shape on live DB: 3 sources (direct, linkedin, twitter) × 4 variants (Unassigned, hero_a, A, B) = 12 cells; CSV emits 21 rows exactly. To re-run: `pytest /app/backend/tests/test_iter13_matrix_csv.py -v`. The `footnote` data-testid mentioned in the review request has never existed in AdminPanel.jsx (verified via grep) — either add it or drop it from future specs. Prior iter-12 outline-button cosmetic bug (WaitlistForm.jsx lines 109/114 white-on-white) still open, unrelated to iter-13.",
+  "rca of the issue": "N/A — no bugs discovered in iter-13. The one initial short-link test failure was due to the spec literal `script-to-video-382` being the preview host slug rather than an actual utm_links slug; test was updated to fetch a real slug via /admin/utm-links first and also verify /api/short/<bad-slug> correctly 404s — both now pass."
+}

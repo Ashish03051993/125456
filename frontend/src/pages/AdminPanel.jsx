@@ -591,13 +591,27 @@ export default function AdminPanel() {
               {/* Signup Attribution Matrix */}
               {attribution && (
                 <div className="bg-white border border-ink-200 rounded-2xl overflow-hidden" data-testid="attribution-matrix">
-                  <div className="p-5 border-b border-ink-100">
-                    <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">Signup Attribution</div>
-                    <div className="font-heading font-bold text-xl mt-1">Source × Variant matrix</div>
-                    <div className="text-sm text-ink-500 mt-1">
-                      Cells show <span className="font-mono">signups</span> and conversion % (signups ÷ sessions).
-                      Use this to see which channel + message combo converts best.
+                  <div className="p-5 border-b border-ink-100 flex items-start justify-between gap-3 flex-wrap">
+                    <div>
+                      <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">Signup Attribution</div>
+                      <div className="font-heading font-bold text-xl mt-1">Source × Variant matrix</div>
+                      <div className="text-sm text-ink-500 mt-1">
+                        Cells show <span className="font-mono">signups</span> and conversion % (signups ÷ sessions).
+                        Use this to see which channel + message combo converts best.
+                      </div>
                     </div>
+                    <Button variant="outline" size="sm" className="rounded-full text-ink-900 shrink-0"
+                      data-testid="matrix-export-csv-btn"
+                      onClick={() => {
+                        const url = new URL(`${process.env.REACT_APP_BACKEND_URL}/api/admin/attribution-matrix.csv`);
+                        const a = document.createElement("a");
+                        a.href = url.toString();
+                        a.download = "";
+                        document.body.appendChild(a); a.click(); a.remove();
+                        toast.success("Matrix CSV downloading");
+                      }}>
+                      <Download className="w-4 h-4 mr-2" /> Export CSV
+                    </Button>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm min-w-[640px]">
