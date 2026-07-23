@@ -134,7 +134,11 @@ export default function Signup() {
             <Link to="/login" className="text-brand-600 font-semibold hover:underline" data-testid="link-to-login">Log in</Link>
           </p>
           <p className="text-xs text-ink-400 text-center mt-3">
-            By creating an account, you agree to our fair-use policy. We&apos;ll grant you 3 free credits every month.
+            By creating an account, you agree to our{" "}
+            <Link to="/terms" className="underline hover:text-brand-600" data-testid="signup-terms-link">Terms</Link>{" "}
+            and{" "}
+            <Link to="/privacy" className="underline hover:text-brand-600" data-testid="signup-privacy-link">Privacy Policy</Link>.
+            You&apos;ll get 3 free credits every month.
           </p>
         </div>
       </div>

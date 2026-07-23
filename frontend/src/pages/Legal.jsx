@@ -24,14 +24,13 @@ export function LegalShell({ title, updated, children }) {
         <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">Legal</div>
         <h1 className="mt-2 font-heading text-3xl sm:text-4xl font-black tracking-tighter text-ink-900">{title}</h1>
         <p className="text-ink-500 text-sm mt-1">Last updated: {updated}</p>
-        <div className="prose prose-sm sm:prose max-w-none mt-8
-                        prose-headings:font-heading prose-headings:font-black prose-headings:tracking-tight
-                        prose-h2:text-xl prose-h2:mt-8 prose-h2:mb-3
-                        prose-h3:text-base
-                        prose-p:text-ink-700 prose-p:leading-relaxed
-                        prose-ul:my-3 prose-li:text-ink-700 prose-li:my-1
-                        prose-a:text-brand-600 prose-a:no-underline hover:prose-a:underline
-                        prose-strong:text-ink-900">
+        <div className="mt-8 space-y-6
+                        [&_h2]:font-heading [&_h2]:font-black [&_h2]:tracking-tight [&_h2]:text-lg [&_h2]:sm:text-xl [&_h2]:text-ink-900 [&_h2]:mt-8 [&_h2]:mb-2 [&_h2]:pb-1 [&_h2]:border-b [&_h2]:border-ink-100
+                        [&_p]:text-ink-700 [&_p]:leading-relaxed [&_p]:text-sm
+                        [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-1.5 [&_ul]:text-sm [&_li]:text-ink-700 [&_li]:leading-relaxed
+                        [&_code]:bg-ink-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono
+                        [&_a]:text-brand-600 [&_a]:font-semibold hover:[&_a]:underline
+                        [&_strong]:text-ink-900 [&_strong]:font-semibold">
           {children}
         </div>
         <div className="mt-12 border-t border-ink-100 pt-6 flex flex-wrap items-center justify-between gap-3 text-xs text-ink-500">

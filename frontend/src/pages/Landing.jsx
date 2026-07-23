@@ -180,10 +180,12 @@ export default function Landing() {
       <footer className="border-t border-ink-100 py-8">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 text-sm text-ink-500">
           <div>© {new Date().getFullYear()} AI Video Studio</div>
-          <div className="flex items-center gap-5">
+          <div className="flex items-center gap-x-5 gap-y-2 flex-wrap justify-end">
             <Link to="/pricing" className="hover:text-brand-600" data-testid="footer-pricing">Pricing</Link>
             <Link to="/login" className="hover:text-brand-600" data-testid="footer-login">Log in</Link>
             <Link to="/signup" className="hover:text-brand-600" data-testid="footer-signup">Sign up</Link>
+            <Link to="/terms" className="hover:text-brand-600" data-testid="footer-terms">Terms</Link>
+            <Link to="/privacy" className="hover:text-brand-600" data-testid="footer-privacy">Privacy</Link>
           </div>
         </div>
       </footer>

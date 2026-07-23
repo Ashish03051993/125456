@@ -15,6 +15,8 @@ import Signup from "@/pages/Signup";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 import PublicVideo from "@/pages/PublicVideo";
+import { Terms, Privacy } from "@/pages/Legal";
+import NotFound from "@/pages/NotFound";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import ShortLinkRedirect from "@/pages/ShortLinkRedirect";
@@ -37,11 +39,14 @@ function AppRouter() {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/v/:slug" element={<PublicVideo />} />
       <Route path="/l/:slug" element={<ShortLinkRedirect />} />
+      <Route path="/terms" element={<Terms />} />
+      <Route path="/privacy" element={<Privacy />} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/new" element={<ProtectedRoute><ProjectWizard /></ProtectedRoute>} />
       <Route path="/project/:id" element={<ProtectedRoute><ProjectView /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
       <Route path="/admin" element={<ProtectedRoute adminOnly><AdminPanel /></ProtectedRoute>} />
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }

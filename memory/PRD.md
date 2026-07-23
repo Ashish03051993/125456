@@ -228,6 +228,13 @@ Dashboard, credit system, projects, download, admin panel, pricing.
   - **DemoVideoSection rewritten** as a self-contained "Sample storyboard" — 6-panel gradient grid showing Scene 1-5 + Export card + the outputs-grid; no video element, no broken play button, no misleading affordance
   - **Footer mailto removed**: was `mailto:hello@videostudio.ai` (dead domain); replaced with 3 real Router links (Pricing / Log in / Sign up)
   - Iteration 27: 100% frontend regression pass, zero console errors on desktop + mobile viewports
+- ✅ **Launch-Readiness Pack** (2026-07-23)
+  - `/terms` — 10-section Terms of Service (account, usage, content ownership + rights grant on public shares, AI limitations, refunds, termination, updates policy)
+  - `/privacy` — 9-section Privacy Policy (data collection scope, explicit "we do NOT collect" list, third-party processors, retention windows including 24h draft cleanup, GDPR rights)
+  - `/404` catch-all `<NotFound>` — clean brand-consistent page with dashboard/home fallback CTAs
+  - Landing footer expanded to 5 links: Pricing / Log in / Sign up / Terms / Privacy
+  - Signup page shows inline "By creating an account, you agree to our Terms and Privacy Policy"
+  - HTML `<head>` meta cleaned: dropped stale "private beta" copy, added canonical URL + robots + author + freemium-accurate og:description/twitter:description
 
 ## Backlog after Phase 3
 - P0: Password reset flow (`/api/auth/forgot-password` + email link via Resend) — needs Resend API key from user
