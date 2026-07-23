@@ -3,7 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { TopBar, Sidebar } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
-import { Loader2, Download, Youtube, Instagram, AlertCircle, ArrowLeft, PlayCircle, Monitor, Smartphone } from "lucide-react";
+import { Loader2, Download, Youtube, Instagram, AlertCircle, ArrowLeft, PlayCircle, Monitor, Smartphone, Pencil, Copy as CopyIcon, RefreshCw, Check, X } from "lucide-react";
 import { toast } from "sonner";
 
 const STAGES = ["writing script","generating images","generating voiceover","composing video","done"];

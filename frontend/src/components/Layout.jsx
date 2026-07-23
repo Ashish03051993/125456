@@ -1,5 +1,5 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Video, LayoutDashboard, Shield, LogOut, Sparkles, Users, BarChart3, FlaskConical, Send, Link as LinkIcon, LogIn } from "lucide-react";
+import { Video, LayoutDashboard, Shield, LogOut, Sparkles, Users, BarChart3, FlaskConical, Send, Link as LinkIcon, LogIn, Coins } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 import { track } from "@/lib/analytics";
@@ -24,6 +24,11 @@ export function TopBar() {
         <div className="flex items-center gap-2 sm:gap-3">
           {user ? (
             <>
+              <Link to="/pricing" className="hidden sm:flex items-center gap-1.5 rounded-full bg-brand-50 border border-brand-200 text-brand-700 px-3 py-1.5 hover:bg-brand-100 transition-colors" data-testid="nav-credits-badge" title="Your credit balance — click to top up">
+                <Coins className="w-3.5 h-3.5" />
+                <span className="text-xs font-bold">{user.credits ?? 0}</span>
+                <span className="text-[10px] uppercase tracking-widest font-semibold opacity-80">credits</span>
+              </Link>
               {user.role === "admin" && (
                 <div className="hidden sm:flex items-center gap-1.5 text-xs bg-violet-50 text-violet-700 px-2.5 py-1 rounded-full font-semibold">
                   <Shield className="w-3.5 h-3.5" /> admin

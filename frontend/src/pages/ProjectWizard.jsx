@@ -41,6 +41,7 @@ export default function ProjectWizard() {
   const [style, setStyle] = useState("Educational");
   const [language, setLanguage] = useState("English");
   const [voice, setVoice] = useState("female");
+  const [dialogueMode, setDialogueMode] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -58,6 +59,7 @@ export default function ProjectWizard() {
     try {
       const { data } = await api.post("/projects", {
         topic, duration_sec: durationSec, style, language, voice,
+        dialogue_mode: dialogueMode,
       });
       await api.post(`/projects/${data.id}/generate`);
       await refresh();
@@ -155,6 +157,32 @@ export default function ProjectWizard() {
                         }`}>{v.label}</button>
                     ))}
                   </div>
+                </div>
+              </div>
+
+              {/* Character Dialogue toggle */}
+              <div className="rounded-xl border-2 border-dashed border-brand-200 bg-brand-50/40 p-4" data-testid="dialogue-toggle-block">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm font-semibold text-ink-900">Character dialogue mode</Label>
+                      <span className="text-[10px] uppercase tracking-widest font-bold text-brand-700 bg-brand-100 rounded-full px-2 py-0.5">Beta</span>
+                    </div>
+                    <p className="mt-1 text-xs text-ink-500">
+                      Instead of a single narrator, let characters in your video speak their own lines. Script will be written with named speakers (e.g. <span className="font-mono">Sarah:</span> and <span className="font-mono">Narrator:</span>) and different voices will be used per speaker.
+                    </p>
+                    <p className="mt-2 text-[11px] text-ink-400 italic">
+                      Talking-head lip-sync visuals are coming soon — right now this changes the script + voices only.
+                    </p>
+                  </div>
+                  <button type="button"
+                    onClick={() => setDialogueMode(v => !v)}
+                    role="switch"
+                    aria-checked={dialogueMode}
+                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${dialogueMode ? "bg-brand-600" : "bg-ink-200"}`}
+                    data-testid="dialogue-toggle">
+                    <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${dialogueMode ? "translate-x-6" : "translate-x-1"}`} />
+                  </button>
                 </div>
               </div>
 

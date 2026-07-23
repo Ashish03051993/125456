@@ -181,6 +181,7 @@ class Project(BaseModel):
     language: str = "English"
     style: str = "Educational"
     voice: str = "female"
+    dialogue_mode: bool = False           # If True, script uses named characters + multi-voice
     status: str = "draft"  # draft | generating | ready | error
     progress: int = 0
     stage: str = "queued"
@@ -202,6 +203,7 @@ class CreateProjectIn(BaseModel):
     language: str = "English"
     style: str = "Educational"
     voice: str = "female"
+    dialogue_mode: bool = False           # NEW: character dialogue toggle
 
 
 # --------------------------- Auth helpers ---------------------------
@@ -267,8 +269,9 @@ async def auth_session(payload: SessionIn, response: Response):
             "picture": data.get("picture"),
             "role": role,
             "plan": "free",
-            "credits": 5,
+            "credits": 3,   # Free plan: 1 × 30-sec video / month (as designed)
             "created_at": datetime.now(timezone.utc).isoformat(),
+            "last_refill_at": datetime.now(timezone.utc).isoformat(),
         })
     session_token = data["session_token"]
     await db.user_sessions.insert_one({
@@ -385,6 +388,7 @@ async def create_project(payload: CreateProjectIn, user=Depends(current_user)):
         language=payload.language,
         style=payload.style,
         voice=payload.voice,
+        dialogue_mode=payload.dialogue_mode,
         credit_cost=cost,
     )
     doc = project.model_dump()
@@ -1107,6 +1111,13 @@ async def _generate_script(project: dict) -> dict:
     schema = ("{\"title\": str, \"hook\": str, \"scenes\": ["
               "{\"heading\": str, \"narration\": str, \"subtitle\": str, "
               "\"image_prompt\": str, \"video_prompt\": str}]}")
+    dialogue_rules = (
+        "\n- IMPORTANT: This video is in CHARACTER DIALOGUE MODE. Each `narration` field "
+        "should be a spoken line prefixed with the speaker name and a colon, e.g. "
+        "`Sarah: Hello, welcome.` or `Narrator: In a small town...`. Use at most 3 named "
+        "characters plus 1 optional `Narrator`. Keep names consistent across scenes."
+        if project.get("dialogue_mode") else ""
+    )
     prompt = (
         f"Topic: {project['topic']}\n"
         f"Language: {project['language']}\n"
@@ -1116,7 +1127,8 @@ async def _generate_script(project: dict) -> dict:
         f"- Each `narration` is 1-3 sentences, spoken in {project['language']}.\n"
         f"- Each `subtitle` <= 8 words.\n"
         f"- Each `image_prompt` is a vivid, cinematic English prompt suitable for AI image generation.\n"
-        f"- Return exactly {n_scenes} scenes.\n"
+        f"- Return exactly {n_scenes} scenes."
+        f"{dialogue_rules}\n"
         f"Schema: {schema}"
     )
     chat = LlmChat(api_key=EMERGENT_LLM_KEY,
