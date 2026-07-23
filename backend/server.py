@@ -1049,14 +1049,29 @@ async def public_video(slug: str, request: Request):
     creator = await db.users.find_one(
         {"user_id": p["user_id"]}, {"_id": 0, "name": 1, "picture": 1},
     ) or {}
-    # Fire-and-forget view counter
+    # Log the view (fire-and-forget). We store referrer + coarse user-agent
+    # bucket, never the IP or fingerprint — this is aggregate analytics for
+    # the creator, not tracking.
     try:
+        referrer_host = _parse_referrer_host(request.headers.get("referer") or request.headers.get("referrer"))
+        ua_bucket = _bucket_user_agent(request.headers.get("user-agent") or "")
+        now = datetime.now(timezone.utc)
+        await db.share_events.insert_one({
+            "slug": slug,
+            "project_id": p["id"],
+            "user_id": p["user_id"],
+            "referrer": referrer_host,           # e.g. "twitter.com" or "direct"
+            "ua_bucket": ua_bucket,              # "mobile" | "desktop" | "bot"
+            "at": now.isoformat(),
+            "at_day": now.strftime("%Y-%m-%d"),
+        })
         await db.projects.update_one(
             {"share_slug": slug},
             {"$inc": {"share_view_count": 1},
-             "$set": {"share_last_viewed_at": datetime.now(timezone.utc).isoformat()}},
+             "$set": {"share_last_viewed_at": now.isoformat()}},
         )
-    except Exception: pass
+    except Exception:
+        logger.exception("share_view_log_failed slug=%s", slug)
     return {
         "slug": slug,
         "title": p.get("title") or p.get("topic"),
@@ -1071,6 +1086,87 @@ async def public_video(slug: str, request: Request):
                    for s in (p.get("scenes") or [])],
         "creator_name": creator.get("name") or "A Kadenza creator",
         "view_count": (p.get("share_view_count") or 0) + 1,
+    }
+
+
+def _parse_referrer_host(ref: Optional[str]) -> str:
+    if not ref: return "direct"
+    try:
+        from urllib.parse import urlparse
+        host = urlparse(ref).netloc.lower()
+        if not host: return "direct"
+        # Strip 'www.' + common mobile prefixes
+        if host.startswith("www."): host = host[4:]
+        if host.startswith("m."): host = host[2:]
+        if host.startswith("mobile."): host = host[7:]
+        # Own-domain hits are "direct" for the creator's analytics purposes
+        if any(t in host for t in ("emergentagent.com", "kadenza")): return "direct"
+        return host
+    except Exception:
+        return "direct"
+
+
+def _bucket_user_agent(ua: str) -> str:
+    ua = (ua or "").lower()
+    if not ua: return "unknown"
+    if any(t in ua for t in ("bot", "crawler", "spider", "slack", "discord",
+                             "whatsapp", "twitter", "facebook", "linkedin",
+                             "telegram", "vkshare", "skype", "preview")):
+        return "bot_preview"
+    if any(t in ua for t in ("android", "iphone", "ipad", "mobile")):
+        return "mobile"
+    return "desktop"
+
+
+@api.get("/projects/{pid}/share/analytics")
+async def share_analytics(pid: str, user=Depends(current_user)):
+    """Aggregate view analytics for the creator: total views, 14-day timeline,
+    top referrers, top UA bucket."""
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    if not p.get("share_slug"):
+        return {"total_views": 0, "share_enabled": False, "timeline": [],
+                "top_referrers": [], "ua_breakdown": []}
+
+    # Rolling 14-day window
+    days = 14
+    today = datetime.now(timezone.utc)
+    day_keys = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days - 1, -1, -1)]
+
+    # One aggregation pass for timeline
+    cursor = db.share_events.aggregate([
+        {"$match": {"slug": p["share_slug"],
+                    "at_day": {"$in": day_keys}}},
+        {"$group": {"_id": "$at_day", "count": {"$sum": 1}}},
+    ])
+    by_day = {r["_id"]: r["count"] async for r in cursor}
+    timeline = [{"day": d, "views": by_day.get(d, 0)} for d in day_keys]
+
+    # Top referrers (all-time)
+    top_refs_cur = db.share_events.aggregate([
+        {"$match": {"slug": p["share_slug"]}},
+        {"$group": {"_id": "$referrer", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 6},
+    ])
+    top_referrers = [{"host": r["_id"] or "direct", "count": r["count"]} async for r in top_refs_cur]
+
+    # UA bucket breakdown
+    ua_cur = db.share_events.aggregate([
+        {"$match": {"slug": p["share_slug"]}},
+        {"$group": {"_id": "$ua_bucket", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+    ])
+    ua_breakdown = [{"bucket": r["_id"] or "unknown", "count": r["count"]} async for r in ua_cur]
+
+    return {
+        "total_views": int(p.get("share_view_count") or 0),
+        "share_enabled": bool(p.get("share_enabled")),
+        "last_viewed_at": p.get("share_last_viewed_at"),
+        "share_slug": p.get("share_slug"),
+        "timeline": timeline,
+        "top_referrers": top_referrers,
+        "ua_breakdown": ua_breakdown,
     }
 
 
@@ -2561,6 +2657,8 @@ async def startup():
         await db.login_attempts.create_index("key", unique=True)
         await db.password_reset_tokens.create_index("token", unique=True)
         await db.projects.create_index("share_slug", unique=True, sparse=True)
+        await db.share_events.create_index([("slug", 1), ("at_day", 1)])
+        await db.share_events.create_index("at")
         # NOTE: TTL on ISO-string dates doesn't work — we manually prune expired tokens in scheduler
     except Exception as e:
         logger.warning("index_creation_warning: %s", e)

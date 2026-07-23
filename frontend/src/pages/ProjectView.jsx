@@ -3,7 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { TopBar, Sidebar } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
-import { Loader2, Download, Youtube, Instagram, AlertCircle, ArrowLeft, PlayCircle, Monitor, Smartphone, Pencil, Copy as CopyIcon, RefreshCw, Check, X, Image as ImageIcon, Mic, Play, Pause, Volume2, Share2, Link as LinkIcon, Twitter } from "lucide-react";
+import { Loader2, Download, Youtube, Instagram, AlertCircle, ArrowLeft, PlayCircle, Monitor, Smartphone, Pencil, Copy as CopyIcon, RefreshCw, Check, X, Image as ImageIcon, Mic, Play, Pause, Volume2, Share2, Link as LinkIcon, Twitter, BarChart3, Eye, Globe } from "lucide-react";
 import { toast } from "sonner";
 
 const STAGES = ["writing script","generating images","generating voiceover","composing video","done"];
@@ -175,6 +175,21 @@ export default function ProjectView() {
   useEffect(() => {
     if (p?.share_slug && p?.share_enabled) setShareSlug(p.share_slug);
   }, [p?.share_slug, p?.share_enabled]);
+
+  const [shareAnalytics, setShareAnalytics] = useState(null);
+  const [analyticsTab, setAnalyticsTab] = useState("link");   // "link" | "insights"
+
+  const loadShareAnalytics = async () => {
+    try {
+      const { data } = await api.get(`/projects/${id}/share/analytics`);
+      setShareAnalytics(data);
+    } catch { /* ignore */ }
+  };
+
+  useEffect(() => {
+    if (shareOpen && shareSlug && analyticsTab === "insights") loadShareAnalytics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shareOpen, shareSlug, analyticsTab]);
 
   const openShare = async () => {
     setShareOpen(true);
@@ -622,12 +637,34 @@ export default function ProjectView() {
             <h3 className="mt-4 font-heading text-2xl font-black tracking-tight">Share your video</h3>
             <p className="text-sm text-ink-500 mt-1">Anyone with the link can watch — no signup needed.</p>
 
+            {/* Tabs */}
+            {shareSlug && (
+              <div className="mt-5 flex items-center gap-1 border-b border-ink-100" data-testid="share-tabs">
+                {[
+                  { id: "link",     label: "Share link", icon: LinkIcon },
+                  { id: "insights", label: "Insights",   icon: BarChart3 },
+                ].map((t) => {
+                  const active = analyticsTab === t.id;
+                  return (
+                    <button key={t.id} onClick={() => setAnalyticsTab(t.id)}
+                      className={[
+                        "inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 -mb-px border-b-2 transition-colors",
+                        active ? "border-brand-600 text-brand-600" : "border-transparent text-ink-500 hover:text-ink-900",
+                      ].join(" ")}
+                      data-testid={`share-tab-${t.id}`}>
+                      <t.icon className="w-3.5 h-3.5" /> {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {shareBusy && !shareSlug ? (
               <div className="mt-6 flex items-center justify-center py-8">
                 <Loader2 className="w-6 h-6 animate-spin text-brand-600" />
                 <span className="ml-2 text-sm text-ink-500">Creating share link…</span>
               </div>
-            ) : shareSlug ? (
+            ) : shareSlug && analyticsTab === "link" ? (
               <>
                 <div className="mt-5 flex items-center gap-2 rounded-lg bg-ink-50 border border-ink-200 px-3 py-2.5">
                   <LinkIcon className="w-4 h-4 text-ink-400 shrink-0" />
@@ -671,6 +708,100 @@ export default function ProjectView() {
                   </Button>
                 </div>
               </>
+            ) : shareSlug && analyticsTab === "insights" ? (
+              <div className="mt-5" data-testid="share-insights">
+                {!shareAnalytics ? (
+                  <div className="py-12 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-brand-600" /></div>
+                ) : shareAnalytics.total_views === 0 ? (
+                  <div className="py-10 text-center">
+                    <Eye className="w-8 h-8 mx-auto text-ink-300" />
+                    <div className="mt-3 font-heading font-bold text-ink-700">No views yet</div>
+                    <p className="text-xs text-ink-500 mt-1 max-w-xs mx-auto">Share your link — this panel will fill up with view counts, referrers, and device breakdown.</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Headline stats */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-xl border border-ink-200 p-3">
+                        <div className="text-[10px] uppercase tracking-widest text-ink-500 font-semibold">Total views</div>
+                        <div className="mt-1 font-heading font-black text-2xl tracking-tighter" data-testid="insights-total-views">
+                          {shareAnalytics.total_views.toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-ink-200 p-3">
+                        <div className="text-[10px] uppercase tracking-widest text-ink-500 font-semibold">Last viewed</div>
+                        <div className="mt-1 font-heading font-bold text-sm">
+                          {shareAnalytics.last_viewed_at
+                            ? new Date(shareAnalytics.last_viewed_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                            : "—"}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 14-day sparkline (CSS bars) */}
+                    <div className="mt-4">
+                      <div className="text-[10px] uppercase tracking-widest text-ink-500 font-semibold">Last 14 days</div>
+                      <div className="mt-2 flex items-end gap-1 h-16" data-testid="insights-timeline">
+                        {(() => {
+                          const maxV = Math.max(1, ...shareAnalytics.timeline.map((d) => d.views));
+                          return shareAnalytics.timeline.map((d) => {
+                            const h = Math.max(2, Math.round((d.views / maxV) * 60));
+                            return (
+                              <div key={d.day}
+                                title={`${d.day}: ${d.views} views`}
+                                className={`flex-1 rounded-t-sm ${d.views > 0 ? "bg-brand-600" : "bg-ink-100"}`}
+                                style={{ height: `${h}px` }}
+                                data-testid={`insights-bar-${d.day}`} />
+                            );
+                          });
+                        })()}
+                      </div>
+                      <div className="mt-1 flex justify-between text-[9px] text-ink-400 font-mono">
+                        <span>{shareAnalytics.timeline[0]?.day.slice(5)}</span>
+                        <span>Today</span>
+                      </div>
+                    </div>
+
+                    {/* Top referrers */}
+                    {shareAnalytics.top_referrers.length > 0 && (
+                      <div className="mt-5">
+                        <div className="text-[10px] uppercase tracking-widest text-ink-500 font-semibold flex items-center gap-1.5">
+                          <Globe className="w-3 h-3" /> Top referrers
+                        </div>
+                        <ul className="mt-2 space-y-1.5" data-testid="insights-referrers">
+                          {shareAnalytics.top_referrers.slice(0, 5).map((r) => {
+                            const pct = Math.round((r.count / shareAnalytics.total_views) * 100);
+                            return (
+                              <li key={r.host} className="text-xs">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-semibold text-ink-700 truncate">{r.host}</span>
+                                  <span className="text-ink-500 font-mono ml-2">{r.count} · {pct}%</span>
+                                </div>
+                                <div className="mt-1 h-1 rounded-full bg-ink-100 overflow-hidden">
+                                  <div className="h-full bg-brand-600" style={{ width: `${pct}%` }} />
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Device breakdown */}
+                    {shareAnalytics.ua_breakdown.length > 0 && (
+                      <div className="mt-5 flex flex-wrap gap-1.5" data-testid="insights-ua-breakdown">
+                        {shareAnalytics.ua_breakdown.map((u) => (
+                          <span key={u.bucket}
+                            className="inline-flex items-center gap-1 rounded-full bg-ink-50 border border-ink-200 px-2.5 py-1 text-[11px] text-ink-700">
+                            <span className="font-mono font-bold text-ink-900">{u.count}</span>
+                            <span className="text-ink-500">{u.bucket.replace("_", " ")}</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             ) : null}
           </div>
         </div>
