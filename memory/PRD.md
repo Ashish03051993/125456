@@ -211,6 +211,12 @@ Dashboard, credit system, projects, download, admin panel, pricing.
   - Backend: `PATCH /api/projects/{id}/title` — rename works in any status; `POST /api/projects/{id}/duplicate` — creates a fresh draft with same settings, empty scenes; copies the character portrait file to a new pid-keyed path so source deletion doesn't break the duplicate; enforces paid-plan gate + credit balance via structured 402s
   - Frontend: Dashboard cards have hover-revealed rename pencil + inline input with Enter/Escape/save/cancel; duplicate icon in every card footer
   - Iteration 25: 100% backend (13/13) + 100% frontend (10/10)
+- ✅ **Dashboard Search + Status Filter** (2026-07-23)
+  - Client-side search box (title/topic/style/language) with clear button
+  - Status filter chips (All / Drafts / Generating / Ready / Failed) with per-status counts
+  - Empty statuses render disabled chips so users see the whole taxonomy at a glance
+  - "Showing X of Y matching …" summary line + no-match empty state with Reset Filters button
+  - Zero backend changes — all filtering is memoised client-side for instant response
 
 ## Backlog after Phase 3
 - P0: Password reset flow (`/api/auth/forgot-password` + email link via Resend) — needs Resend API key from user
