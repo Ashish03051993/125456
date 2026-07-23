@@ -612,6 +612,9 @@ async def auth_reset_password(payload: ResetPasswordIn, request: Request, respon
         {"$set": {"password_hash": _hash_password(payload.password)},
          "$addToSet": {"auth_methods": "password"}},
     )
+    # Invalidate ALL existing sessions for this user (security: any prior stolen
+    # session_token is now unusable). A fresh one is issued below.
+    await db.user_sessions.delete_many({"user_id": rec["user_id"]})
     # Mark token used
     await db.password_reset_tokens.update_one(
         {"token": payload.token},

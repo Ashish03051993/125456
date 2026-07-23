@@ -168,7 +168,7 @@ Dashboard, credit system, projects, download, admin panel, pricing.
   - Frontend: `image-approval-panel` (per-scene regen buttons + Approve/Regen All) and `voice-approval-panel` (audio preview + voice switch + regenerate/approve) in ProjectView
 - ✅ Character dialogue mode (`dialogue_mode` toggle in wizard, multi-voice TTS parsing)
 - ✅ Hindi subtitles rendered via Noto CJK/Devanagari fonts (OS-level `apt install fonts-noto-cjk fonts-noto-devanagari`)
-- ✅ Testing: iteration 19 (auth, 100% frontend / 86% backend rate-limit-noise) + iteration 20 (image/voice gates, 100% both) + iteration 21 (talking-head feature, 100% both)
+- ✅ Testing: iteration 19 (auth, 100% frontend / 86% backend rate-limit-noise) + iteration 20 (image/voice gates, 100% both) + iteration 21 (talking-head feature, 100% both) + iteration 22 (password reset + cleanup, 100% both)
 - ✅ **Realistic Talking Head — Pro feature** (2026-07-23)
   - `POST /api/projects/{id}/character/upload` — user uploads own portrait (JPG/PNG/WEBP, max 5MB)
   - `POST /api/projects/{id}/character/generate` — AI-generates photorealistic portrait via Nano Banana from user description
@@ -179,6 +179,18 @@ Dashboard, credit system, projects, download, admin panel, pricing.
   - Free plan gets **402 Payment Required** on any talking-head or character operation — Pro/Business/Enterprise unlocked
   - Frontend wizard: new "Realistic Talking Head [PRO]" section, upsell modal for Free users, upload OR AI-generate character with live preview, character-source badge (upload vs AI-generated), replace-character button
   - Actual lip-sync render is **stubbed behind env `TALKING_HEAD_PROVIDER=stub`** — UI shows "Preview mode" badge and honest disclosure. When user provides fal.ai API key, flip env to `fal_sonic` to activate real lip-sync render (~$0.02/sec of output)
+- ✅ **Password Reset flow** (2026-07-23)
+  - `POST /api/auth/forgot-password` — accepts email or mobile; email-enum-guarded (always returns 200 with generic message)
+  - `POST /api/auth/reset-password` — token + new password → updates hash, invalidates ALL prior sessions (session-fixation defence), issues fresh session cookie (auto-login), marks token used
+  - 1-hour token TTL, single-use, prior tokens invalidated on new request
+  - Email delivery via Resend when `RESEND_API_KEY` env is set; otherwise logs the URL to backend console (dev fallback) — UI shows "Delivery: dev mode" hint
+  - Rate limits: 5 forgot / 10 reset per IP per 10 min
+  - Frontend: `/forgot-password` and `/reset-password` pages + "Forgot password?" link on Login
+- ✅ **Nightly Cleanup Job** (2026-07-23)
+  - Runs daily at 03:00 IST via APScheduler
+  - Purges abandoned draft projects (>24h, status='draft', no scenes)
+  - Purges expired password reset tokens + used tokens >7d old
+  - Purges orphan character portrait files (no matching project in DB)
 
 ## Backlog after Phase 3
 - P0: Password reset flow (`/api/auth/forgot-password` + email link via Resend) — needs Resend API key from user
