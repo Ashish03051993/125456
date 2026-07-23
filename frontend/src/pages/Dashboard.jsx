@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus, Video, Loader2, AlertCircle, CheckCircle2, Trash2, Pencil, Copy as CopyIcon, Check, X, Search, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
+import LowCreditNudge from "@/components/LowCreditNudge";
 
 const STATUS_STYLES = {
   draft: "bg-ink-100 text-ink-700",
@@ -119,6 +120,8 @@ export default function Dashboard() {
               <Plus className="w-4 h-4 mr-2" /> New video
             </Button></Link>
           </div>
+
+          <LowCreditNudge />
 
           {loading ? (
             <div className="mt-16 flex justify-center text-ink-500"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
