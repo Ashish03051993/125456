@@ -26,6 +26,11 @@ Dashboard, credit system, projects, download, admin panel, pricing.
 - Landing, Pricing, Dashboard, Wizard, Project View, Settings, Admin Panel
 - Blue & white professional theme (Canva/InVideo inspired)
 
+## Phase 12 (2026-02) — Sign-in Access + Analytics Correctness Fix
+- ✅ **Sign-in nav button** — landing page top nav now shows a visible `Sign in` link (data-testid=`nav-signin-btn`) alongside `Join waitlist` for waitlist members who receive invite emails. Visible on ≥640px; hidden on mobile to preserve pill button prominence. Fires `signin_click` analytics event tagged with `source: 'top_nav'` then redirects to Emergent Auth.
+- ✅ **/login route** — direct-link route (data-testid=`login-page`) that auto-triggers Google OAuth for anon users and redirects logged-in users to `/dashboard`. Ideal for invite email links.
+- ✅ **Analytics correctness bug fix** — pre-existing bug in `/app/frontend/src/lib/analytics.js` where caller-supplied `properties.source` (e.g. `'top_nav'`, `'landing_hero'`) was silently overwritten by the visitor's attribution source. Swapped spread order so caller wins while attribution still fills in as fallback. Affected every event using `source:` (signin_click, waitlist_button_click, etc). Confirmed by testing agent 5/5 green.
+
 ## Phase 11 (2026-02) — Attribution Matrix CSV Export
 - ✅ **CSV export** — new `GET /api/admin/attribution-matrix.csv` (admin-only) delegates to the JSON endpoint for numeric consistency and streams a CSV: header row + one line per cell + `__total__` variant lines for row totals + `__total__` source lines for col totals + a final grand total. Filename encodes today's date.
 - ✅ **Frontend Export CSV button** on the Attribution Matrix panel header (data-testid=`matrix-export-csv-btn`). Uses `<a download>` synthesis so the server-supplied Content-Disposition filename is honored. Toast confirmation. Mobile-safe at 390px (flex-wrap + shrink-0).
