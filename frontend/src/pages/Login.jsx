@@ -75,6 +75,7 @@ export default function Login() {
             <div>
               <div className="flex items-center justify-between">
                 <Label htmlFor="password" className="text-ink-700">Password</Label>
+                <Link to="/forgot-password" className="text-xs text-brand-600 hover:underline font-semibold" data-testid="link-forgot-password">Forgot password?</Link>
               </div>
               <Input id="password" type="password" data-testid="login-password-input"
                 value={password} onChange={(e) => setPassword(e.target.value)}

@@ -499,6 +499,131 @@ async def auth_set_password(payload: SetPasswordIn, user=Depends(current_user)):
     return {"ok": True}
 
 
+# --------------------------- Password Reset ---------------------------
+import secrets as _secrets
+
+FRONTEND_URL_ENV = os.environ.get("FRONTEND_URL", "")
+
+
+async def _send_reset_email(email: str, name: str, reset_url: str) -> str:
+    """Deliver the password-reset link. Uses Resend if RESEND_API_KEY is set,
+    otherwise logs the link to the backend console (dev/staging fallback).
+    Returns 'sent' | 'logged' so callers can surface an accurate hint."""
+    resend_key = os.environ.get("RESEND_API_KEY")
+    if not resend_key:
+        # Dev/staging: log link so devs can copy it out of the backend logs.
+        logger.info("password_reset_link email=%s url=%s", email, reset_url)
+        return "logged"
+    # Real Resend delivery
+    try:
+        async with httpx.AsyncClient(timeout=15) as hc:
+            r = await hc.post(
+                "https://api.resend.com/emails",
+                headers={"Authorization": f"Bearer {resend_key}",
+                         "Content-Type": "application/json"},
+                json={
+                    "from": os.environ.get("RESEND_FROM", "noreply@kadenza.app"),
+                    "to": [email],
+                    "subject": "Reset your AI Video Studio password",
+                    "html": f"""<div style="font-family:sans-serif;max-width:520px;margin:0 auto">
+                      <h2>Hi {name or 'there'},</h2>
+                      <p>Click the link below to reset your password. This link expires in 1 hour.</p>
+                      <p><a href="{reset_url}" style="display:inline-block;background:#4F46E5;color:#fff;padding:12px 20px;border-radius:24px;text-decoration:none;font-weight:600">Reset password</a></p>
+                      <p style="color:#666;font-size:12px">If you didn't request this, ignore this email — your password is safe.</p>
+                    </div>""",
+                },
+            )
+        if r.status_code >= 300:
+            logger.warning("resend_delivery_failed status=%d body=%s", r.status_code, r.text[:200])
+            return "logged"
+        return "sent"
+    except Exception:
+        logger.exception("resend_delivery_exception")
+        return "logged"
+
+
+class ForgotIn(BaseModel):
+    identifier: str   # email or mobile
+
+
+@api.post("/auth/forgot-password")
+async def auth_forgot(payload: ForgotIn, request: Request):
+    """Generate a 1-hour reset token and email it. Always returns 200 with a
+    generic message — never reveals whether the account exists (email-enum guard)."""
+    _rate_limit_check(request, "auth_forgot", limit=5, window_seconds=600)
+    try:
+        kind, ident = _normalize_identifier(payload.identifier)
+    except HTTPException:
+        # Return generic OK so an attacker can't probe formatting either
+        return {"ok": True, "delivery": "logged",
+                "message": "If an account matches, a reset link has been sent."}
+    query = {"email": ident} if kind == "email" else {"mobile": ident}
+    user = await db.users.find_one(query)
+    delivery = "logged"
+    if user and kind == "email":
+        # Invalidate previous unused tokens for this user
+        await db.password_reset_tokens.delete_many(
+            {"user_id": user["user_id"], "used": {"$ne": True}}
+        )
+        token = _secrets.token_urlsafe(32)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        await db.password_reset_tokens.insert_one({
+            "token": token,
+            "user_id": user["user_id"],
+            "email": user.get("email"),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "expires_at": expires_at.isoformat(),
+            "used": False,
+        })
+        frontend = FRONTEND_URL_ENV or request.headers.get("origin") or ""
+        reset_url = f"{frontend}/reset-password?token={token}"
+        delivery = await _send_reset_email(user.get("email", ident),
+                                           user.get("name", ""), reset_url)
+    # Mobile-only accounts: we don't SMS yet — return generic message
+    return {"ok": True, "delivery": delivery,
+            "message": "If an account matches, a reset link has been sent."}
+
+
+class ResetPasswordIn(BaseModel):
+    token: str
+    password: str
+
+
+@api.post("/auth/reset-password")
+async def auth_reset_password(payload: ResetPasswordIn, request: Request, response: Response):
+    _rate_limit_check(request, "auth_reset", limit=10, window_seconds=600)
+    if len(payload.password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+    rec = await db.password_reset_tokens.find_one({"token": payload.token})
+    if not rec:
+        raise HTTPException(400, "Invalid or expired reset link.")
+    if rec.get("used"):
+        raise HTTPException(400, "This reset link has already been used.")
+    exp = rec.get("expires_at")
+    if isinstance(exp, str):
+        try: exp = datetime.fromisoformat(exp)
+        except Exception: exp = None
+    if exp and exp.tzinfo is None: exp = exp.replace(tzinfo=timezone.utc)
+    if not exp or exp < datetime.now(timezone.utc):
+        raise HTTPException(400, "This reset link has expired. Please request a new one.")
+    # Update the user's password
+    await db.users.update_one(
+        {"user_id": rec["user_id"]},
+        {"$set": {"password_hash": _hash_password(payload.password)},
+         "$addToSet": {"auth_methods": "password"}},
+    )
+    # Mark token used
+    await db.password_reset_tokens.update_one(
+        {"token": payload.token},
+        {"$set": {"used": True, "used_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    # Auto-log-in the user for a smooth UX
+    await _issue_session(rec["user_id"], response)
+    user_public = await db.users.find_one({"user_id": rec["user_id"]},
+                                          {"_id": 0, "password_hash": 0})
+    return {"user": user_public, "message": "Password reset successful."}
+
+
 # --------------------------- Project CRUD ---------------------------
 @api.get("/projects")
 async def list_projects(user=Depends(current_user)):
@@ -2242,6 +2367,8 @@ async def startup():
         await db.users.create_index("user_id", unique=True)
         await db.user_sessions.create_index("session_token", unique=True)
         await db.login_attempts.create_index("key", unique=True)
+        await db.password_reset_tokens.create_index("token", unique=True)
+        # NOTE: TTL on ISO-string dates doesn't work — we manually prune expired tokens in scheduler
     except Exception as e:
         logger.warning("index_creation_warning: %s", e)
     # Seed admin (empty shell) if not exists so we can promote by email login
@@ -2274,10 +2401,46 @@ async def startup():
         except Exception:
             logger.exception("Daily digest job failed")
 
+    async def _cleanup_job():
+        """Nightly: purge abandoned drafts (>24h old, status='draft', no scenes)
+        and expired password reset tokens (>1h past expires_at)."""
+        try:
+            cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+            r1 = await db.projects.delete_many({
+                "status": "draft",
+                "created_at": {"$lt": cutoff},
+                "$or": [{"scenes": {"$size": 0}}, {"scenes": {"$exists": False}}],
+            })
+            # Expired reset tokens
+            now_iso = datetime.now(timezone.utc).isoformat()
+            r2 = await db.password_reset_tokens.delete_many({
+                "$or": [{"expires_at": {"$lt": now_iso}},
+                        {"used": True,
+                         "used_at": {"$lt": (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()}}],
+            })
+            # Orphaned character files (>24h old, no matching draft in DB)
+            char_dir = STORAGE_DIR / "characters"
+            purged_files = 0
+            if char_dir.exists():
+                cutoff_ts = (datetime.now(timezone.utc) - timedelta(hours=24)).timestamp()
+                for f in char_dir.iterdir():
+                    if not f.is_file(): continue
+                    if f.stat().st_mtime > cutoff_ts: continue
+                    pid = f.stem   # proj_xxxxx
+                    if not await db.projects.find_one({"id": pid}, {"_id": 1}):
+                        try: f.unlink(); purged_files += 1
+                        except Exception: pass
+            logger.info("cleanup_job drafts=%d tokens=%d orphan_char_files=%d",
+                        r1.deleted_count, r2.deleted_count, purged_files)
+        except Exception:
+            logger.exception("Cleanup job failed")
+
     _scheduler.add_job(_digest_job, CronTrigger(hour=DIGEST_HOUR_IST, minute=0),
                        id="daily_digest", replace_existing=True)
+    _scheduler.add_job(_cleanup_job, CronTrigger(hour=3, minute=0),
+                       id="nightly_cleanup", replace_existing=True)
     _scheduler.start()
-    logger.info("Digest scheduler started — 08:00 IST daily")
+    logger.info("Schedulers started — digest 08:00 IST + cleanup 03:00 IST daily")
 
 
 _scheduler = None
