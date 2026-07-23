@@ -202,6 +202,8 @@ class Project(BaseModel):
     video_url: Optional[str] = None
     credit_cost: int = 3                  # Credits charged when generation started
     error: Optional[str] = None
+    share_slug: Optional[str] = None      # Public share URL slug (nanoid-ish)
+    share_enabled: bool = False           # Whether the public link is active
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -882,6 +884,86 @@ async def talking_head_feature():
         "live_render": TALKING_HEAD_PROVIDER != "stub" and bool(os.environ.get("FAL_KEY")),
         "paid_plans": sorted(list(PAID_PLANS)),
         "max_upload_mb": CHAR_MAX_BYTES // 1024 // 1024,
+    }
+
+
+# --------------------------- Public Share Links ---------------------------
+_SHARE_ALPHABET = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I/l
+
+
+def _generate_share_slug(length: int = 10) -> str:
+    return "".join(_secrets.choice(_SHARE_ALPHABET) for _ in range(length))
+
+
+@api.post("/projects/{pid}/share")
+async def enable_share(pid: str, user=Depends(current_user)):
+    """Create (or return existing) public share slug for a completed video."""
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    if p.get("status") != "ready":
+        raise HTTPException(400, "Only completed videos can be shared. "
+                                 "Approve all steps to finish rendering first.")
+    slug = p.get("share_slug")
+    if not slug:
+        # Retry-until-unique (astronomically unlikely to collide, but be safe)
+        for _ in range(5):
+            candidate = _generate_share_slug()
+            if not await db.projects.find_one({"share_slug": candidate}, {"_id": 1}):
+                slug = candidate; break
+        if not slug:
+            raise HTTPException(500, "Couldn't allocate a share link, try again.")
+    await db.projects.update_one(
+        {"id": pid},
+        {"$set": {"share_slug": slug, "share_enabled": True,
+                  "shared_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    return {"share_slug": slug, "share_enabled": True}
+
+
+@api.delete("/projects/{pid}/share")
+async def disable_share(pid: str, user=Depends(current_user)):
+    """Revoke the public share link (slug stays reserved but link is disabled)."""
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    await db.projects.update_one({"id": pid}, {"$set": {"share_enabled": False}})
+    return {"ok": True}
+
+
+@api.get("/public/videos/{slug}")
+async def public_video(slug: str, request: Request):
+    """Public endpoint — no auth. Returns a slim, safe projection for the /v/:slug page."""
+    _rate_limit_check(request, "public_video", limit=120, window_seconds=60)
+    p = await db.projects.find_one({"share_slug": slug, "share_enabled": True}, {"_id": 0})
+    if not p:
+        raise HTTPException(404, "This video is no longer available.")
+    if p.get("status") != "ready":
+        raise HTTPException(404, "This video is no longer available.")
+    # Look up creator display name (may be null if user was deleted)
+    creator = await db.users.find_one(
+        {"user_id": p["user_id"]}, {"_id": 0, "name": 1, "picture": 1},
+    ) or {}
+    # Fire-and-forget view counter
+    try:
+        await db.projects.update_one(
+            {"share_slug": slug},
+            {"$inc": {"share_view_count": 1},
+             "$set": {"share_last_viewed_at": datetime.now(timezone.utc).isoformat()}},
+        )
+    except Exception: pass
+    return {
+        "slug": slug,
+        "title": p.get("title") or p.get("topic"),
+        "hook": p.get("hook"),
+        "duration_sec": p.get("duration_sec"),
+        "language": p.get("language"),
+        "style": p.get("style"),
+        "video_url": p.get("video_url"),
+        "video_urls": p.get("video_urls") or {},
+        "scenes": [{"idx": s.get("idx"), "heading": s.get("heading"),
+                    "subtitle": s.get("subtitle"), "image_url": s.get("image_url")}
+                   for s in (p.get("scenes") or [])],
+        "creator_name": creator.get("name") or "A Kadenza creator",
+        "view_count": (p.get("share_view_count") or 0) + 1,
     }
 
 
@@ -2371,6 +2453,7 @@ async def startup():
         await db.user_sessions.create_index("session_token", unique=True)
         await db.login_attempts.create_index("key", unique=True)
         await db.password_reset_tokens.create_index("token", unique=True)
+        await db.projects.create_index("share_slug", unique=True, sparse=True)
         # NOTE: TTL on ISO-string dates doesn't work — we manually prune expired tokens in scheduler
     except Exception as e:
         logger.warning("index_creation_warning: %s", e)

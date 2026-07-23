@@ -14,6 +14,7 @@ import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
+import PublicVideo from "@/pages/PublicVideo";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import ShortLinkRedirect from "@/pages/ShortLinkRedirect";
@@ -33,6 +34,7 @@ function AppRouter() {
       <Route path="/signup" element={<Signup />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/v/:slug" element={<PublicVideo />} />
       <Route path="/l/:slug" element={<ShortLinkRedirect />} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/new" element={<ProtectedRoute><ProjectWizard /></ProtectedRoute>} />

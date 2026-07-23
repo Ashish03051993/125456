@@ -3,7 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { TopBar, Sidebar } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
-import { Loader2, Download, Youtube, Instagram, AlertCircle, ArrowLeft, PlayCircle, Monitor, Smartphone, Pencil, Copy as CopyIcon, RefreshCw, Check, X, Image as ImageIcon, Mic, Play, Pause, Volume2 } from "lucide-react";
+import { Loader2, Download, Youtube, Instagram, AlertCircle, ArrowLeft, PlayCircle, Monitor, Smartphone, Pencil, Copy as CopyIcon, RefreshCw, Check, X, Image as ImageIcon, Mic, Play, Pause, Volume2, Share2, Link as LinkIcon, Twitter } from "lucide-react";
 import { toast } from "sonner";
 
 const STAGES = ["writing script","generating images","generating voiceover","composing video","done"];
@@ -25,6 +25,10 @@ export default function ProjectView() {
   const [imgAllBusy, setImgAllBusy] = useState(false);  // approving/regenerating all
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [pickedVoice, setPickedVoice] = useState(null);
+  // Share state
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareSlug, setShareSlug] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -167,6 +171,43 @@ export default function ProjectView() {
     finally { setVoiceBusy(false); }
   };
 
+  // --- Share handlers ---
+  useEffect(() => {
+    if (p?.share_slug && p?.share_enabled) setShareSlug(p.share_slug);
+  }, [p?.share_slug, p?.share_enabled]);
+
+  const openShare = async () => {
+    setShareOpen(true);
+    if (shareSlug) return;
+    setShareBusy(true);
+    try {
+      const { data } = await api.post(`/projects/${id}/share`);
+      setShareSlug(data.share_slug);
+      toast.success("Share link ready");
+    } catch (e) { toast.error(e?.response?.data?.detail || "Couldn't create share link"); setShareOpen(false); }
+    finally { setShareBusy(false); }
+  };
+
+  const disableShare = async () => {
+    setShareBusy(true);
+    try {
+      await api.delete(`/projects/${id}/share`);
+      setShareSlug(null);
+      setShareOpen(false);
+      toast.success("Share link revoked");
+    } catch (e) { toast.error(e?.response?.data?.detail || "Couldn't revoke"); }
+    finally { setShareBusy(false); }
+  };
+
+  const publicUrl = shareSlug ? `${window.location.origin}/v/${shareSlug}` : "";
+  const copyLink = async () => {
+    if (!publicUrl) return;
+    try {
+      await navigator.clipboard.writeText(publicUrl);
+      toast.success("Link copied");
+    } catch { toast.error("Couldn't copy — please copy manually"); }
+  };
+
   if (!p) return (
     <div className="min-h-screen bg-ink-50">
       <TopBar />
@@ -196,6 +237,9 @@ export default function ProjectView() {
                     <Download className="w-4 h-4 mr-2" /> Download {active.aspect}
                   </Button>
                 </a>
+                <Button variant="outline" className="rounded-full" onClick={openShare} data-testid="share-btn">
+                  <Share2 className="w-4 h-4 mr-2" /> Share
+                </Button>
                 <Button variant="outline" className="rounded-full" onClick={() => toast.info("YouTube export: connect account in Settings (coming soon)")} data-testid="youtube-btn">
                   <Youtube className="w-4 h-4 mr-2" /> YouTube
                 </Button>
@@ -561,6 +605,76 @@ export default function ProjectView() {
           )}
         </main>
       </div>
+
+      {/* Share Modal */}
+      {shareOpen && (
+        <div className="fixed inset-0 z-50 bg-ink-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+             onClick={() => setShareOpen(false)} data-testid="share-modal">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between">
+              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center">
+                <Share2 className="w-6 h-6 text-white" />
+              </div>
+              <button onClick={() => setShareOpen(false)} className="text-ink-400 hover:text-ink-700" data-testid="share-close-btn">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <h3 className="mt-4 font-heading text-2xl font-black tracking-tight">Share your video</h3>
+            <p className="text-sm text-ink-500 mt-1">Anyone with the link can watch — no signup needed.</p>
+
+            {shareBusy && !shareSlug ? (
+              <div className="mt-6 flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-brand-600" />
+                <span className="ml-2 text-sm text-ink-500">Creating share link…</span>
+              </div>
+            ) : shareSlug ? (
+              <>
+                <div className="mt-5 flex items-center gap-2 rounded-lg bg-ink-50 border border-ink-200 px-3 py-2.5">
+                  <LinkIcon className="w-4 h-4 text-ink-400 shrink-0" />
+                  <input readOnly value={publicUrl}
+                    onFocus={(e) => e.target.select()}
+                    data-testid="share-url-input"
+                    className="flex-1 min-w-0 bg-transparent text-sm text-ink-700 outline-none" />
+                  <Button size="sm" onClick={copyLink}
+                    className="rounded-full bg-brand-600 hover:bg-brand-700 text-white text-xs shrink-0"
+                    data-testid="share-copy-btn">
+                    <CopyIcon className="w-3.5 h-3.5 mr-1" /> Copy
+                  </Button>
+                </div>
+
+                <div className="mt-4 grid grid-cols-4 gap-2" data-testid="share-social-row">
+                  {[
+                    { id: "twitter", label: "X", icon: Twitter, href: `https://twitter.com/intent/tweet?text=${encodeURIComponent("Made this with AI Video Studio →")}%20${encodeURIComponent(publicUrl)}` },
+                    { id: "whatsapp", label: "WhatsApp", icon: null, href: `https://wa.me/?text=${encodeURIComponent(publicUrl)}` },
+                    { id: "linkedin", label: "LinkedIn", icon: null, href: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(publicUrl)}` },
+                    { id: "email", label: "Email", icon: null, href: `mailto:?subject=${encodeURIComponent("Watch this")}&body=${encodeURIComponent(publicUrl)}` },
+                  ].map((s) => (
+                    <a key={s.id} href={s.href} target="_blank" rel="noopener noreferrer"
+                       data-testid={`share-${s.id}`}
+                       className="flex flex-col items-center gap-1.5 rounded-lg border border-ink-200 py-3 px-2 hover:border-brand-600 hover:bg-brand-50 transition-colors">
+                      <div className="w-8 h-8 rounded-full bg-ink-100 flex items-center justify-center text-ink-700 font-bold text-xs">
+                        {s.icon ? <s.icon className="w-4 h-4" /> : s.label.charAt(0)}
+                      </div>
+                      <span className="text-[11px] font-medium text-ink-700">{s.label}</span>
+                    </a>
+                  ))}
+                </div>
+
+                <div className="mt-6 flex items-center justify-between border-t border-ink-100 pt-4">
+                  <div className="text-xs text-ink-500">
+                    <div className="font-semibold text-ink-700">Public link active</div>
+                    <div className="mt-0.5">Revoke any time to make it private again.</div>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={disableShare} disabled={shareBusy}
+                    className="rounded-full text-xs" data-testid="share-revoke-btn">
+                    {shareBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Revoke link"}
+                  </Button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
