@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { TopBar, Sidebar } from "@/components/Layout";
@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sparkles, Loader2, Briefcase, Film, GraduationCap, Camera, BookOpen } from "lucide-react";
+import { Sparkles, Loader2, Briefcase, Film, GraduationCap, Camera, BookOpen, Upload, Wand2, User, X, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 
@@ -42,29 +42,118 @@ export default function ProjectWizard() {
   const [language, setLanguage] = useState("English");
   const [voice, setVoice] = useState("female");
   const [dialogueMode, setDialogueMode] = useState(false);
+  const [talkingHead, setTalkingHead] = useState(false);
+  const [charSource, setCharSource] = useState(null);         // "upload" | "ai_generated"
+  const [charImageUrl, setCharImageUrl] = useState(null);
+  const [charBusy, setCharBusy] = useState(false);
+  const [charDesc, setCharDesc] = useState("");
+  const [showUpsell, setShowUpsell] = useState(false);
+  const [feature, setFeature] = useState({ enabled: true, live_render: false, paid_plans: ["pro", "business", "enterprise"] });
+  const fileInputRef = useRef(null);
+  const draftIdRef = useRef(null);                           // holds a placeholder project id for pre-create character uploads
   const [busy, setBusy] = useState(false);
+
+  const isPaidUser = user && feature.paid_plans.includes(user.plan);
 
   useEffect(() => {
     api.get("/durations").then(({ data }) => { if (Array.isArray(data) && data.length) setDurations(data); }).catch(() => {});
+    api.get("/features/talking_head").then(({ data }) => setFeature(data)).catch(() => {});
   }, []);
 
   const activeCredits = durations.find((d) => d.sec === durationSec)?.credits ?? 3;
   const currentCredits = user?.credits ?? 0;
   const canAfford = currentCredits >= activeCredits;
 
-  const create = async () => {
-    if (!topic.trim()) return toast.error("Please enter a topic.");
-    if (!canAfford) return toast.error(`Need ${activeCredits} credits, you have ${currentCredits}. Top up to continue.`);
-    setBusy(true);
+  // --- Character (talking-head) handlers ---
+  // Strategy: create the project first (topic required anyway), then upload/generate the character
+  // against that project id, THEN kick off /generate. This avoids a temp-draft table.
+  const ensureDraftProject = async () => {
+    if (draftIdRef.current) return draftIdRef.current;
+    if (!topic.trim()) { toast.error("Please enter a topic first — we'll attach the character to this project."); return null; }
+    if (!isPaidUser) { setShowUpsell(true); return null; }
     try {
       const { data } = await api.post("/projects", {
         topic, duration_sec: durationSec, style, language, voice,
-        dialogue_mode: dialogueMode,
+        dialogue_mode: dialogueMode, talking_head: false,   // set to true only at final submit
       });
-      await api.post(`/projects/${data.id}/generate`);
+      draftIdRef.current = data.id;
+      return data.id;
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Couldn't prepare project");
+      return null;
+    }
+  };
+
+  const onUploadCharacter = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!isPaidUser) { setShowUpsell(true); e.target.value = ""; return; }
+    const pid = await ensureDraftProject();
+    if (!pid) { e.target.value = ""; return; }
+    setCharBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", f);
+      const { data } = await api.post(`/projects/${pid}/character/upload`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setCharImageUrl(data.character_image_url);
+      setCharSource("upload");
+      toast.success("Photo uploaded");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Upload failed");
+    } finally { setCharBusy(false); e.target.value = ""; }
+  };
+
+  const onGenerateCharacter = async () => {
+    if (!isPaidUser) { setShowUpsell(true); return; }
+    if (charDesc.trim().length < 8) { toast.error("Describe the character in a few words (e.g. 'confident Indian entrepreneur, 30s')."); return; }
+    const pid = await ensureDraftProject();
+    if (!pid) return;
+    setCharBusy(true);
+    try {
+      const { data } = await api.post(`/projects/${pid}/character/generate`, { description: charDesc });
+      setCharImageUrl(data.character_image_url);
+      setCharSource("ai_generated");
+      toast.success("Portrait generated");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Generation failed");
+    } finally { setCharBusy(false); }
+  };
+
+  const onClearCharacter = async () => {
+    if (draftIdRef.current) {
+      try { await api.delete(`/projects/${draftIdRef.current}/character`); } catch { /* ignore */ }
+    }
+    setCharImageUrl(null); setCharSource(null); setCharDesc("");
+  };
+
+  const create = async () => {
+    if (!topic.trim()) return toast.error("Please enter a topic.");
+    if (!canAfford) return toast.error(`Need ${activeCredits} credits, you have ${currentCredits}. Top up to continue.`);
+    if (talkingHead && !isPaidUser) { setShowUpsell(true); return; }
+    if (talkingHead && !charImageUrl) return toast.error("Please add a character photo or generate one before enabling Talking Head.");
+    setBusy(true);
+    try {
+      let pid = draftIdRef.current;
+      if (pid) {
+        // Update the draft with final settings (topic/duration/etc may have changed after draft creation)
+        await api.patch(`/projects/${pid}`, {
+          topic, duration_sec: durationSec, style, language, voice,
+          dialogue_mode: dialogueMode, talking_head: talkingHead,
+        }).catch(() => {}); // PATCH may not exist yet — soft-fail so we still generate
+      } else {
+        const { data } = await api.post("/projects", {
+          topic, duration_sec: durationSec, style, language, voice,
+          dialogue_mode: dialogueMode, talking_head: talkingHead,
+          character_image_url: charImageUrl || undefined,
+        });
+        pid = data.id;
+      }
+      await api.post(`/projects/${pid}/generate`);
       await refresh();
       toast.success("Generation started");
-      nav(`/project/${data.id}`);
+      nav(`/project/${pid}`);
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Failed to start");
     } finally { setBusy(false); }
@@ -171,9 +260,6 @@ export default function ProjectWizard() {
                     <p className="mt-1 text-xs text-ink-500">
                       Instead of a single narrator, let characters in your video speak their own lines. Script will be written with named speakers (e.g. <span className="font-mono">Sarah:</span> and <span className="font-mono">Narrator:</span>) and different voices will be used per speaker.
                     </p>
-                    <p className="mt-2 text-[11px] text-ink-400 italic">
-                      Talking-head lip-sync visuals are coming soon — right now this changes the script + voices only.
-                    </p>
                   </div>
                   <button type="button"
                     onClick={() => setDialogueMode(v => !v)}
@@ -185,6 +271,145 @@ export default function ProjectWizard() {
                   </button>
                 </div>
               </div>
+
+              {/* Talking Head (Realistic Speaker) — Paid Only */}
+              <div className={`rounded-xl border-2 p-4 ${talkingHead ? "border-brand-600 bg-brand-50/60" : "border-dashed border-amber-300 bg-amber-50/40"}`} data-testid="talking-head-block">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Label className="text-sm font-semibold text-ink-900">Realistic Talking Head</Label>
+                      <span className="text-[10px] uppercase tracking-widest font-bold text-white bg-gradient-to-r from-amber-500 to-orange-600 rounded-full px-2 py-0.5">Pro</span>
+                      {!feature.live_render && talkingHead && (
+                        <span className="text-[10px] uppercase tracking-widest font-bold text-amber-800 bg-amber-100 rounded-full px-2 py-0.5">Preview mode</span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-ink-500">
+                      Add a real human speaker to your video. Upload your own photo or let AI generate a photorealistic portrait — your character will lip-sync to the narration.
+                    </p>
+                    {!feature.live_render && (
+                      <p className="mt-2 text-[11px] text-amber-700 italic">
+                        Lip-sync render is currently in preview — your character will appear in the storyboard, and full lip-sync activates when the studio finalises the render provider.
+                      </p>
+                    )}
+                  </div>
+                  <button type="button"
+                    onClick={() => {
+                      if (!isPaidUser) { setShowUpsell(true); return; }
+                      setTalkingHead(v => !v);
+                    }}
+                    role="switch"
+                    aria-checked={talkingHead}
+                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${talkingHead ? "bg-brand-600" : "bg-ink-200"} ${!isPaidUser ? "opacity-70" : ""}`}
+                    data-testid="talking-head-toggle">
+                    {!isPaidUser && <Lock className="w-3 h-3 text-white absolute left-1.5" />}
+                    <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${talkingHead ? "translate-x-6" : "translate-x-1"}`} />
+                  </button>
+                </div>
+
+                {talkingHead && (
+                  <div className="mt-4 pt-4 border-t border-brand-200/60" data-testid="character-picker">
+                    {charImageUrl ? (
+                      <div className="flex items-start gap-4">
+                        <div className="relative w-24 h-24 rounded-xl overflow-hidden border-2 border-brand-600 shrink-0 bg-ink-100">
+                          <img src={`${process.env.REACT_APP_BACKEND_URL}${charImageUrl}`}
+                               alt="Character" className="w-full h-full object-cover"
+                               data-testid="character-preview" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">
+                            {charSource === "upload" ? "Your uploaded photo" : "AI-generated portrait"}
+                          </div>
+                          <div className="mt-1 font-heading font-bold text-ink-900">Character ready</div>
+                          <p className="text-xs text-ink-500 mt-1">
+                            This face will appear in every scene where a character speaks. You can replace it before generating.
+                          </p>
+                          <Button variant="outline" size="sm" onClick={onClearCharacter}
+                            className="mt-2 rounded-full text-xs" data-testid="character-clear-btn">
+                            <X className="w-3.5 h-3.5 mr-1" /> Replace character
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid md:grid-cols-2 gap-3">
+                        {/* Upload path */}
+                        <div className="rounded-xl border border-ink-200 bg-white p-4">
+                          <div className="flex items-center gap-2">
+                            <Upload className="w-4 h-4 text-brand-600" />
+                            <div className="font-semibold text-sm">Upload your photo</div>
+                          </div>
+                          <p className="text-[11px] text-ink-500 mt-1">Any front-facing headshot works best. JPG, PNG or WEBP, max 5 MB.</p>
+                          <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp"
+                            onChange={onUploadCharacter} className="hidden"
+                            data-testid="character-file-input" />
+                          <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}
+                            disabled={charBusy || !topic.trim()}
+                            className="mt-3 rounded-full w-full" data-testid="character-upload-btn">
+                            {charBusy ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Uploading…</>
+                                      : <><Upload className="w-4 h-4 mr-2" /> Choose photo</>}
+                          </Button>
+                          {!topic.trim() && <p className="text-[10px] text-amber-600 mt-1.5">Enter your topic first ↑</p>}
+                        </div>
+                        {/* AI-generate path */}
+                        <div className="rounded-xl border border-ink-200 bg-white p-4">
+                          <div className="flex items-center gap-2">
+                            <Wand2 className="w-4 h-4 text-brand-600" />
+                            <div className="font-semibold text-sm">Generate with AI</div>
+                          </div>
+                          <p className="text-[11px] text-ink-500 mt-1">Describe your ideal speaker — we&apos;ll generate a photorealistic portrait.</p>
+                          <Input value={charDesc} onChange={(e) => setCharDesc(e.target.value)}
+                            placeholder="e.g. Confident Indian woman, 30s, business attire"
+                            className="mt-2 text-xs"
+                            data-testid="character-desc-input" />
+                          <Button size="sm" onClick={onGenerateCharacter}
+                            disabled={charBusy || !topic.trim() || charDesc.trim().length < 8}
+                            className="mt-2 rounded-full w-full bg-brand-600 hover:bg-brand-700 text-white"
+                            data-testid="character-generate-btn">
+                            {charBusy ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Generating…</>
+                                      : <><Wand2 className="w-4 h-4 mr-2" /> Generate portrait</>}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Upsell modal for Free users clicking Talking Head */}
+              {showUpsell && (
+                <div className="fixed inset-0 z-50 bg-ink-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+                     onClick={() => setShowUpsell(false)} data-testid="talking-head-upsell">
+                  <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-start justify-between">
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center">
+                        <Sparkles className="w-6 h-6 text-white" />
+                      </div>
+                      <button onClick={() => setShowUpsell(false)} className="text-ink-400 hover:text-ink-700" data-testid="upsell-close">
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <h3 className="mt-4 font-heading text-2xl font-black tracking-tight">Unlock Realistic Talking Head</h3>
+                    <p className="text-sm text-ink-500 mt-2">
+                      Bring your videos to life with a real human character that speaks on-screen. Upload your own photo or generate a photorealistic portrait — your character will lip-sync to every scene.
+                    </p>
+                    <ul className="mt-4 space-y-2 text-sm text-ink-700">
+                      <li className="flex items-start gap-2"><span className="text-brand-600 mt-0.5">✓</span> Photorealistic characters, not cartoons</li>
+                      <li className="flex items-start gap-2"><span className="text-brand-600 mt-0.5">✓</span> Upload your own face or generate with AI</li>
+                      <li className="flex items-start gap-2"><span className="text-brand-600 mt-0.5">✓</span> Same character across every scene</li>
+                    </ul>
+                    <div className="mt-6 flex gap-2">
+                      <Button onClick={() => { setShowUpsell(false); nav("/pricing"); }}
+                        className="flex-1 rounded-full bg-brand-600 hover:bg-brand-700 text-white h-11"
+                        data-testid="upsell-upgrade-btn">
+                        <Sparkles className="w-4 h-4 mr-2" /> See Pro plans
+                      </Button>
+                      <Button variant="outline" onClick={() => setShowUpsell(false)}
+                        className="rounded-full h-11" data-testid="upsell-dismiss-btn">
+                        Maybe later
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="flex items-center justify-between pt-2 flex-wrap gap-3">
                 <div className="text-xs text-ink-500" data-testid="cost-summary">

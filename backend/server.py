@@ -26,7 +26,7 @@ from dotenv import load_dotenv
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 from emergentintegrations.llm.openai import OpenAITextToSpeech
 from fastapi import (APIRouter, BackgroundTasks, Cookie, Depends, FastAPI,
-                     Header, HTTPException, Request)
+                     File, Form, Header, HTTPException, Request, UploadFile)
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -37,10 +37,15 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 STORAGE_DIR = Path(os.environ.get("STORAGE_DIR", ROOT_DIR / "storage"))
-for sub in ("images", "audio", "videos"):
+for sub in ("images", "audio", "videos", "characters"):
     (STORAGE_DIR / sub).mkdir(parents=True, exist_ok=True)
 
 EMERGENT_LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
+
+# Talking-head provider — "stub" (default, no external calls) or "fal_sonic" (needs FAL_KEY env)
+TALKING_HEAD_PROVIDER = os.environ.get("TALKING_HEAD_PROVIDER", "stub")
+# Paid-only feature — Free-plan users cannot enable talking_head
+PAID_PLANS = {"pro", "business", "enterprise"}
 
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
@@ -183,6 +188,9 @@ class Project(BaseModel):
     style: str = "Educational"
     voice: str = "female"
     dialogue_mode: bool = False           # If True, script uses named characters + multi-voice
+    talking_head: bool = False            # If True, character speaks on-screen (paid plans only)
+    character_image_url: Optional[str] = None   # /api/media/characters/{project_id}.png
+    character_source: Optional[str] = None      # "upload" | "ai_generated"
     status: str = "draft"  # draft | generating | ready | error
     progress: int = 0
     stage: str = "queued"
@@ -204,7 +212,9 @@ class CreateProjectIn(BaseModel):
     language: str = "English"
     style: str = "Educational"
     voice: str = "female"
-    dialogue_mode: bool = False           # NEW: character dialogue toggle
+    dialogue_mode: bool = False           # Character dialogue toggle
+    talking_head: bool = False            # Realistic on-screen speaker (paid plans only)
+    character_image_url: Optional[str] = None  # Pre-uploaded/generated character portrait
 
 
 # --------------------------- Auth helpers ---------------------------
@@ -567,6 +577,10 @@ async def create_project(payload: CreateProjectIn, user=Depends(current_user)):
     user = await apply_free_refill(user)
     sec = resolve_duration_sec(payload)
     cost = credit_cost_for_sec(sec)
+    # Talking-head is a paid-plan-only feature
+    if payload.talking_head and user.get("plan", "free") not in PAID_PLANS:
+        raise HTTPException(402, "Talking-head is available on Pro plan and above. "
+                                 "Upgrade to enable a realistic on-screen speaker.")
     if int(user.get("credits", 0) or 0) < cost:
         raise HTTPException(402, f"Need {cost} credits for a {sec}-sec video, "
                                  f"you have {user.get('credits', 0)}. Top up to continue.")
@@ -579,6 +593,8 @@ async def create_project(payload: CreateProjectIn, user=Depends(current_user)):
         style=payload.style,
         voice=payload.voice,
         dialogue_mode=payload.dialogue_mode,
+        talking_head=payload.talking_head,
+        character_image_url=payload.character_image_url,
         credit_cost=cost,
     )
     doc = project.model_dump()
@@ -599,6 +615,146 @@ async def get_project(pid: str, user=Depends(current_user)):
 async def delete_project(pid: str, user=Depends(current_user)):
     r = await db.projects.delete_one({"id": pid, "user_id": user["user_id"]})
     return {"deleted": r.deleted_count}
+
+
+class ProjectPatchIn(BaseModel):
+    topic: Optional[str] = None
+    duration_sec: Optional[int] = None
+    style: Optional[str] = None
+    language: Optional[str] = None
+    voice: Optional[str] = None
+    dialogue_mode: Optional[bool] = None
+    talking_head: Optional[bool] = None
+
+
+@api.patch("/projects/{pid}")
+async def patch_project(pid: str, payload: ProjectPatchIn, user=Depends(current_user)):
+    """Update project settings while it is still a draft. Once generation has
+    started, only /script/edit is allowed."""
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    if p["status"] != "draft":
+        raise HTTPException(400, f"Project is no longer editable (status: {p['status']}).")
+    updates = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
+    # Recompute cost if duration changed
+    if "duration_sec" in updates:
+        updates["credit_cost"] = credit_cost_for_sec(updates["duration_sec"])
+        updates["duration_min"] = max(1, updates["duration_sec"] // 60)
+    if updates.get("talking_head"):
+        user_fresh = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0})
+        if (user_fresh or {}).get("plan", "free") not in PAID_PLANS:
+            raise HTTPException(402, "Talking-head is available on Pro plan and above.")
+    if updates:
+        await db.projects.update_one({"id": pid}, {"$set": updates})
+    return await db.projects.find_one({"id": pid}, {"_id": 0})
+
+
+# --------------------------- Character Portrait (Talking-Head) ---------------------------
+CHAR_MAX_BYTES = 5 * 1024 * 1024   # 5 MB
+CHAR_ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp"}
+
+
+def _require_paid_plan(user: dict):
+    if user.get("plan", "free") not in PAID_PLANS:
+        raise HTTPException(402, "Talking-head is available on Pro plan and above.")
+
+
+@api.post("/projects/{pid}/character/upload")
+async def upload_character(pid: str, file: UploadFile = File(...),
+                           user=Depends(current_user)):
+    """User uploads their own portrait. Saves under /storage/characters/{pid}.png."""
+    _require_paid_plan(user)
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    if file.content_type not in CHAR_ALLOWED_MIME:
+        raise HTTPException(400, "Only JPG, PNG or WEBP allowed.")
+    contents = await file.read()
+    if len(contents) > CHAR_MAX_BYTES:
+        raise HTTPException(400, f"File too large. Max {CHAR_MAX_BYTES // 1024 // 1024} MB.")
+    if len(contents) < 1024:
+        raise HTTPException(400, "File too small.")
+    ext = ".png" if file.content_type == "image/png" else (".webp" if file.content_type == "image/webp" else ".jpg")
+    out_path = STORAGE_DIR / "characters" / f"{pid}{ext}"
+    # Remove any prior character file for this project
+    for existing_ext in (".png", ".jpg", ".webp"):
+        old = STORAGE_DIR / "characters" / f"{pid}{existing_ext}"
+        if old.exists() and old != out_path:
+            try: old.unlink()
+            except Exception: pass
+    out_path.write_bytes(contents)
+    # Cache buster
+    url = f"/api/media/characters/{pid}{ext}?v={int(datetime.now(timezone.utc).timestamp())}"
+    await db.projects.update_one(
+        {"id": pid},
+        {"$set": {"character_image_url": url, "character_source": "upload"}},
+    )
+    return {"character_image_url": url}
+
+
+class CharGenIn(BaseModel):
+    description: str   # "A confident 30-year-old Indian entrepreneur in a blazer"
+
+
+@api.post("/projects/{pid}/character/generate")
+async def generate_character(pid: str, payload: CharGenIn, user=Depends(current_user)):
+    """AI-generate a realistic portrait via Nano Banana (Emergent LLM Key)."""
+    _require_paid_plan(user)
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    desc = (payload.description or "").strip()
+    if len(desc) < 8:
+        raise HTTPException(400, "Please describe the character in at least a few words.")
+    # Build a photorealistic-portrait prompt so the output looks like a real human.
+    prompt = ("Photorealistic close-up portrait, professional studio lighting, sharp focus, "
+              "cinematic 85mm depth of field, natural skin texture, direct eye contact. "
+              f"Subject: {desc[:280]}. Ultra-realistic, no cartoon, no illustration.")
+    out_path = STORAGE_DIR / "characters" / f"{pid}.png"
+    # Clean up any prior character file
+    for existing_ext in (".jpg", ".webp"):
+        old = STORAGE_DIR / "characters" / f"{pid}{existing_ext}"
+        if old.exists():
+            try: old.unlink()
+            except Exception: pass
+    try:
+        await _generate_image(prompt, out_path)
+    except Exception as e:
+        logger.exception("Character generation failed for %s", pid)
+        raise HTTPException(502, f"Character generation failed: {str(e)[:120]}")
+    url = f"/api/media/characters/{pid}.png?v={int(datetime.now(timezone.utc).timestamp())}"
+    await db.projects.update_one(
+        {"id": pid},
+        {"$set": {"character_image_url": url, "character_source": "ai_generated"}},
+    )
+    return {"character_image_url": url}
+
+
+@api.delete("/projects/{pid}/character")
+async def delete_character(pid: str, user=Depends(current_user)):
+    """Remove the character portrait from a project."""
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    for ext in (".png", ".jpg", ".webp"):
+        f = STORAGE_DIR / "characters" / f"{pid}{ext}"
+        if f.exists():
+            try: f.unlink()
+            except Exception: pass
+    await db.projects.update_one(
+        {"id": pid},
+        {"$set": {"character_image_url": None, "character_source": None}},
+    )
+    return {"ok": True}
+
+
+@api.get("/features/talking_head")
+async def talking_head_feature():
+    """Expose feature status so the frontend knows whether to show the toggle."""
+    return {
+        "enabled": True,
+        "provider": TALKING_HEAD_PROVIDER,
+        "live_render": TALKING_HEAD_PROVIDER != "stub" and bool(os.environ.get("FAL_KEY")),
+        "paid_plans": sorted(list(PAID_PLANS)),
+        "max_upload_mb": CHAR_MAX_BYTES // 1024 // 1024,
+    }
 
 
 @api.post("/projects/{pid}/generate")

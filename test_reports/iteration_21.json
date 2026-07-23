@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 21 — Realistic Talking-Head (character portrait) feature tested end-to-end. Backend: all 15 pytest cases pass (feature flag shape, POST /projects Free/Pro gating, PATCH draft-only + plan gate + duration cost recompute, POST character/upload MIME/size validation, POST character/generate short-desc rejection + REAL Nano Banana render, DELETE character, media served at /api/media/characters/{pid}.png, non-draft PATCH 400, free-user regression). Frontend: Free-user flow shows Pro badge, opens talking-head-upsell modal on toggle, upgrade button navigates to /pricing. Pro-user flow reveals character-picker with both upload + AI-generate paths, Preview mode badge shows because live_render=false, portrait generation returned a real 1376px-wide image (>100KB), source badge 'AI-generated portrait' rendered, and Replace-character clears back to picker.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/new — Realistic Talking Head", "issues": ["Minor UX: Generate-video button remains ENABLED when talking_head=true but no character portrait is present. The `create()` handler falls back to toast.error at click-time. Per the review request the disabled state should also encode the 'talking_head-requires-character' logic. Recommended fix: `disabled={busy || !topic.trim() || !canAfford || (talkingHead && !charImageUrl)}` at ProjectWizard.jsx:419."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter21_talking_head.py",
+    "/app/test_reports/pytest/iter21_talking_head.xml"
+  ],
+  "action_items": [
+    "(Optional / minor UX) Add `(talkingHead && !charImageUrl)` to the Generate button's disabled prop so visual state matches the click-time guard."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 2313 lines (up from 2145 in iter20) — the >700-line-per-file guideline continues to worsen. Consider extracting projects/character/pipeline into separate modules; not a blocker but a growing maintenance risk.",
+    "POST /projects/{pid}/character/generate: no rate limit on the Nano Banana call — a paid user could hammer this endpoint (each call is 5-15s and consumes emergent-llm-key quota). Suggest per-project cooldown or a hard 3/min per user cap.",
+    "POST /projects/{pid}/character/upload: reads full request body via `await file.read()` before size check (server.py:672). A malicious client could upload 100MB+ file and OOM the worker before the 5MB limit is enforced. Consider streaming with chunk-based accumulation and early abort.",
+    "The client-side `ensureDraftProject()` (ProjectWizard.jsx:70) creates a REAL DB-persisted draft project as a side-effect of uploading/generating a character. If the user abandons the wizard, orphaned drafts pile up in Mongo indefinitely. Consider a nightly cleanup of drafts older than 24h with no scenes/status still 'draft'.",
+    "ProjectPatch does not validate `voice` field values — an arbitrary string will be persisted (same bug flagged for /voice/regenerate in iter20).",
+    "TALKING_HEAD_PROVIDER=stub is correctly gated in `/api/features/talking_head`, and the UI faithfully surfaces 'Preview mode' + 'Lip-sync render is currently in preview' banners — this is honest UX. No user is misled that lip-sync is live."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter21_talking_head.py (new)"
+  ],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "100% (all data-testids + Free upsell flow + Pro real-generation flow + Preview mode badge + clear-and-return-to-picker verified)"},
+  "test_credentials": "Pro user: newuser@test.com / secret123 (plan=pro, ~97 credits remaining after test suite consumed ~3 credits via test_patch_non_draft_returns_400 which calls /generate). Free-plan tests dynamically create TEST_iter21_<hex>@testmail.local accounts.",
+  "seed_data_creation": "None manually seeded. Fresh TEST_-prefixed users created per-test for Free-plan gating. Each character/upload test uses an inline generated 128x128 PNG (~3-10KB). The generate test creates one real Nano Banana portrait per run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Talking-head feature is fully working and gated correctly. TALKING_HEAD_PROVIDER=stub is INTENTIONAL and the UI shows 'Preview mode' badges + explanatory banner — this is not a bug. When testing character generate flow, expect ~5-15s latency per call (real Nano Banana). Media serves through the StaticFiles mount at /api/media/ (see server.py:1590). PATCH /projects/{pid} accepts partial updates and correctly recomputes credit_cost when duration_sec changes (uses credit_cost_for_sec helper). The character-upload endpoint reads the entire body before size validation — do NOT test with actual 100MB files in preview envs (it will OOM). If the pro test-user's credit balance drops below 3, the E2E test_patch_non_draft_returns_400 will fail with a 402; top up manually via a mongo shell or admin endpoint before rerunning.",
+  "rca of the issue": "N/A — no bugs found. All feature-flag + gating + validation behaviour matches the review request."
+}
