@@ -191,6 +191,18 @@ Dashboard, credit system, projects, download, admin panel, pricing.
   - Purges abandoned draft projects (>24h, status='draft', no scenes)
   - Purges expired password reset tokens + used tokens >7d old
   - Purges orphan character portrait files (no matching project in DB)
+- ✅ **Public Share Links** (2026-07-23)
+  - `POST /api/projects/{id}/share` — creates 10-char slug for status='ready' project (idempotent)
+  - `DELETE /api/projects/{id}/share` — disables slug (kept reserved for later re-enable)
+  - `GET /api/public/videos/{slug}` — public, no auth, safe projection only, rate-limited 120/min per IP, increments view counter
+  - Frontend: new `/v/:slug` public page (dark hero, video player, 3 signup CTAs) + Share modal on ProjectView with copy-link + Twitter/WhatsApp/LinkedIn/Email socials
+  - Iteration 23: 100% backend (11/11) + 100% frontend
+- ✅ **Pricing transparency rebuild** (2026-07-23)
+  - Interactive Credit Calculator: 8 duration chips → all 4 plan cards live-update with exact video counts
+  - Full Pack × Duration matrix table (8 durations × 4 packs) with per-video cost + best-for use case
+  - Free plan explicitly shows `—` for non-30s durations (transparent about the free-tier limit)
+  - "See exactly what you get ↓" scroll link on paid cards → jumps to calculator
+  - Iteration 24: 97% pass (63/65) — no bugs, 2 non-passes were test-env artifacts
 
 ## Backlog after Phase 3
 - P0: Password reset flow (`/api/auth/forgot-password` + email link via Resend) — needs Resend API key from user

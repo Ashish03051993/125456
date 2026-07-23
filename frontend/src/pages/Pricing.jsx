@@ -34,7 +34,6 @@ const PLANS = [
     tagline: "One-time top-up. Credits never expire.",
     credits: "60 credits",
     creditsNum: 60,
-    refill: "See exactly what you get ↓",
     cta: "Buy 60 credits",
     features: [
       "Everything in Free",
@@ -54,7 +53,6 @@ const PLANS = [
     tagline: "Most popular · +10% bonus credits",
     credits: "175 credits",
     creditsNum: 175,
-    refill: "See exactly what you get ↓",
     cta: "Buy 175 credits",
     features: [
       "Everything in Starter",
@@ -74,7 +72,6 @@ const PLANS = [
     tagline: "Best value · +20% bonus credits",
     credits: "400 credits",
     creditsNum: 400,
-    refill: "See exactly what you get ↓",
     cta: "Buy 400 credits",
     features: [
       "Everything in Creator",
