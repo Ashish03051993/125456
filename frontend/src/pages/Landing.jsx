@@ -50,6 +50,11 @@ export default function Landing() {
     login();
   };
 
+  const scrollToDemo = () => {
+    track("cta_click", { target: "demo_section" });
+    document.getElementById("demo")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
     <div className="min-h-screen bg-white text-ink-900 selection:bg-brand-600 selection:text-white">
       <TopBar />
@@ -84,7 +89,7 @@ export default function Landing() {
             <Button onClick={() => startFree("hero_primary")} className="rounded-full bg-brand-600 hover:bg-brand-700 text-white h-12 px-6 text-base font-semibold" data-testid="hero-signup-btn">
               <Sparkles className="w-4 h-4 mr-2" /> Start free — 1 video / month
             </Button>
-            <Button variant="outline" onClick={() => setDemoOpen(true)} className="rounded-full h-12 px-6 text-base font-semibold border-ink-200 text-ink-900" data-testid="hero-demo-btn">
+            <Button variant="outline" onClick={scrollToDemo} className="rounded-full h-12 px-6 text-base font-semibold border-ink-200 text-ink-900" data-testid="hero-demo-btn">
               Watch 60-second demo
             </Button>
           </div>
@@ -97,7 +102,9 @@ export default function Landing() {
       </section>
 
       {/* Demo Video */}
-      <DemoVideoSection open={demoOpen} onOpenChange={setDemoOpen} />
+      <div id="demo">
+        <DemoVideoSection open={demoOpen} onOpenChange={setDemoOpen} />
+      </div>
 
       {/* HOW IT WORKS */}
       <section className="max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-24" data-testid="how-it-works">

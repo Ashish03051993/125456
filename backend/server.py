@@ -197,7 +197,7 @@ class Project(BaseModel):
 
 class CreateProjectIn(BaseModel):
     topic: str
-    duration_sec: int = 30                # Preferred
+    duration_sec: Optional[int] = None    # Preferred; if None, falls back to duration_min
     duration_min: Optional[int] = None    # Legacy fallback
     language: str = "English"
     style: str = "Educational"

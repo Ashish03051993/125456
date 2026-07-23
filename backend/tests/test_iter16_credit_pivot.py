@@ -132,6 +132,43 @@ class TestProjectCreation:
         assert p["duration_sec"] == 180
         assert p["credit_cost"] == 15
 
+    @pytest.mark.parametrize("dmin,exp_sec,exp_cost", [
+        (1, 30, 3),
+        (3, 180, 15),
+        (5, 300, 25),
+        (10, 600, 50),
+    ])
+    def test_create_project_legacy_duration_min_matrix(self, seeded_user, dmin, exp_sec, exp_cost):
+        """iter-16 fix retest: legacy {duration_min: N} maps correctly to duration_sec + credit_cost."""
+        r = requests.post(f"{API}/projects",
+                          json={"topic": f"TEST_iter16_fix_dmin_{dmin}", "duration_min": dmin},
+                          headers=auth_headers(seeded_user["token"]), timeout=15)
+        assert r.status_code == 200, r.text
+        p = r.json()
+        assert p["duration_sec"] == exp_sec, f"duration_min={dmin} → expected {exp_sec}s got {p['duration_sec']}"
+        assert p["credit_cost"] == exp_cost, f"duration_min={dmin} → expected {exp_cost} credits got {p['credit_cost']}"
+
+    @pytest.mark.parametrize("dsec,exp_cost", [(30, 3), (90, 7), (600, 50)])
+    def test_create_project_duration_sec_matrix(self, seeded_user, dsec, exp_cost):
+        """iter-16 regression: explicit duration_sec still works."""
+        r = requests.post(f"{API}/projects",
+                          json={"topic": f"TEST_iter16_dsec_{dsec}", "duration_sec": dsec},
+                          headers=auth_headers(seeded_user["token"]), timeout=15)
+        assert r.status_code == 200, r.text
+        p = r.json()
+        assert p["duration_sec"] == dsec
+        assert p["credit_cost"] == exp_cost
+
+    def test_create_project_no_duration_uses_default(self, seeded_user):
+        """iter-16 regression: no duration_sec + no duration_min → DEFAULT_DURATION_SEC=30 (cost=3)."""
+        r = requests.post(f"{API}/projects",
+                          json={"topic": "TEST_iter16_default_dur"},
+                          headers=auth_headers(seeded_user["token"]), timeout=15)
+        assert r.status_code == 200, r.text
+        p = r.json()
+        assert p["duration_sec"] == 30
+        assert p["credit_cost"] == 3
+
     def test_create_project_snap_unsupported_duration(self, seeded_user):
         # 200 should snap to nearest tier (180 or 300 depending on tie-break)
         r = requests.post(f"{API}/projects",

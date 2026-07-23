@@ -1,0 +1,30 @@
+{
+  "summary": "Iter-16 fix retest — BOTH bugs are GREEN. Backend HIGH (duration_min legacy handling) verified via new parametrized matrix: {1→30s/3c, 3→180s/15c, 5→300s/25c, 10→600s/50c} all pass. Backend regression (duration_sec 30/90/600, no-duration default, unsupported-snap) all pass. Frontend MINOR (hero-demo-btn) verified: element.scrollIntoView called on #demo with {behavior:'smooth', block:'start'}, page scrolled 0→745px, #demo landed in viewport, no dialog opened. All iter-16 smoke surfaces (hero-signup, nav-signup-btn/nav-signin-btn, 8 duration chips, /pricing, /login redirect) still healthy.",
+  "verdict": "PASS",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter16_credit_pivot.py",
+    "/app/test_reports/pytest/iter16_fix_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:200 — CreateProjectIn.duration_sec is now Optional[int]=None as expected; resolve_duration_sec() correctly falls through to duration_min branch when duration_sec is missing.",
+    "Landing.jsx:53-56 — scrollToDemo() uses safe optional chaining (document.getElementById('demo')?.scrollIntoView) and fires a `cta_click` analytics event with target='demo_section' — good instrumentation.",
+    "Landing.jsx still passes obsolete open/onOpenChange props to DemoVideoSection (line 106). No-op (component ignores them) but dead code — consider removing demoOpen useState + props for cleanliness.",
+    "server.py:328-330 — 'snap to nearest tier' branch is unreachable now that duration_sec is Optional (the first `if payload.duration_sec and payload.duration_sec in DURATION_BY_SEC` returns early on supported tiers, and the min() branch only fires when duration_sec is a non-supported truthy value). Tested with duration_sec=200 → correctly snaps to 180 (cost 15)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter16_credit_pivot.py — added TestProjectCreation.test_create_project_legacy_duration_min_matrix (4 params), test_create_project_duration_sec_matrix (3 params), test_create_project_no_duration_uses_default"
+  ],
+  "success_rate": {
+    "backend": "29/29 = 100%",
+    "frontend": "hero-demo-btn scroll fix: 7/7 assertions PASS; smoke of nav/pricing/login/duration-chips all PASS"
+  },
+  "test_credentials": "ADMIN_TOKEN=test_admin_1784712404860. Test users seeded via Mongo helper _seed_user() with TEST_iter16_* prefix and cleaned in each fixture's teardown.",
+  "seed_data_creation": "~7 ephemeral users + sessions across parametrized tests. Each test class fixture handles its own delete on teardown. Post-run mongo delete for TEST_iter16_* returned 0 → all fixture teardowns ran cleanly.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Both iter-16 defects are now fixed. Backend pytest suite `python -m pytest /app/backend/tests/test_iter16_credit_pivot.py -v` reports 29/29 pass in ~3.4s. The parametrized matrix tests (duration_min 1/3/5/10 + duration_sec 30/90/600 + no-duration default) are the canonical regression suite for the credit-pricing pipeline. Frontend scroll behavior can be verified in one line: `document.getElementById('demo').scrollIntoView(...)` — no more open/onOpenChange dependency.",
+  "rca_of_the_issue": "Backend HIGH: CreateProjectIn.duration_sec previously defaulted to int=30, which meant every legacy client payload arrived at the server with duration_sec=30 already set. resolve_duration_sec()'s first branch (`if payload.duration_sec and payload.duration_sec in DURATION_BY_SEC`) short-circuited and returned 30 before the duration_min fallback branch could run. Fix (server.py:200) changed default to Optional[int]=None so the first branch is skipped when duration_sec is unset, allowing the duration_min → seconds map to fire. Verified with 4-value parametrized matrix. Frontend MINOR: hero-demo-btn was wired to setDemoOpen(true) but DemoVideoSection's signature is ({videoSrc, posterSrc}) — it never consumed open/onOpenChange, so clicking was a silent no-op. Fix (Landing.jsx:53-56) replaced the state-toggle with document.getElementById('demo')?.scrollIntoView({behavior:'smooth',block:'start'}) and wrapped DemoVideoSection in <div id='demo'>. Verified scroll happens + section reaches viewport + no dialog opens."
+}
