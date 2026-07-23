@@ -16,6 +16,10 @@ export default function ProjectView() {
   const [formats, setFormats] = useState([]);
   const [selected, setSelected] = useState(null);
   const [videoMissing, setVideoMissing] = useState(false);
+  const [editingScript, setEditingScript] = useState(false);
+  const [draftScenes, setDraftScenes] = useState([]);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [scriptBusy, setScriptBusy] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -26,7 +30,9 @@ export default function ProjectView() {
       } catch { /* ignore */ }
     };
     load();
-    const iv = setInterval(() => { if (p?.status !== "ready" && p?.status !== "error") load(); }, 3000);
+    const iv = setInterval(() => {
+      if (p?.status === "generating") load();
+    }, 3000);
     return () => { alive = false; clearInterval(iv); };
   }, [id, p?.status]);
 
@@ -52,6 +58,52 @@ export default function ProjectView() {
   // MUST be declared before any conditional/early returns to respect the
   // Rules of Hooks.
   useEffect(() => { setVideoMissing(false); }, [active?.id]);
+
+  // Sync local edit state with backend scenes when awaiting approval
+  useEffect(() => {
+    if (p?.status === "awaiting_script_approval" && !editingScript) {
+      setDraftScenes(p.scenes || []);
+      setDraftTitle(p.title || "");
+    }
+  }, [p?.status, p?.scenes, p?.title, editingScript]);
+
+  const regenerateScript = async () => {
+    setScriptBusy(true);
+    try {
+      await api.post(`/projects/${id}/script/regenerate`);
+      toast.success("Rewriting your script…");
+      const { data } = await api.get(`/projects/${id}`);
+      setP(data);
+    } catch (e) { toast.error(e?.response?.data?.detail || "Regeneration failed"); }
+    finally { setScriptBusy(false); }
+  };
+
+  const saveScriptEdits = async () => {
+    setScriptBusy(true);
+    try {
+      const { data } = await api.patch(`/projects/${id}/script`, {
+        title: draftTitle,
+        scenes: draftScenes.map((s) => ({
+          narration: s.narration, subtitle: s.subtitle, image_prompt: s.image_prompt,
+        })),
+      });
+      setP(data);
+      setEditingScript(false);
+      toast.success("Script updated");
+    } catch (e) { toast.error(e?.response?.data?.detail || "Save failed"); }
+    finally { setScriptBusy(false); }
+  };
+
+  const approveScript = async () => {
+    setScriptBusy(true);
+    try {
+      await api.post(`/projects/${id}/script/approve`);
+      toast.success("Script approved — generating visuals now");
+      const { data } = await api.get(`/projects/${id}`);
+      setP(data);
+    } catch (e) { toast.error(e?.response?.data?.detail || "Approve failed"); }
+    finally { setScriptBusy(false); }
+  };
 
   if (!p) return (
     <div className="min-h-screen bg-ink-50">
@@ -92,9 +144,9 @@ export default function ProjectView() {
             )}
           </div>
 
-          {/* Status */}
-          {p.status !== "ready" && p.status !== "error" && (
-            <div className="mt-6 bg-white border border-ink-200 rounded-2xl p-6">
+          {/* Status (during actual generation) */}
+          {p.status === "generating" && (
+            <div className="mt-6 bg-white border border-ink-200 rounded-2xl p-6" data-testid="generating-panel">
               <div className="flex items-center gap-3">
                 <Loader2 className="w-5 h-5 animate-spin text-brand-600" />
                 <div className="font-heading font-bold text-lg capitalize">{p.stage}</div>
@@ -107,6 +159,108 @@ export default function ProjectView() {
                   <div key={s} className={`text-xs px-2.5 py-1 rounded-full font-semibold capitalize ${
                     p.stage === s ? "bg-brand-600 text-white" : "bg-ink-100 text-ink-500"
                   }`}>{s}</div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Script Approval Gate — user reviews & approves the script before visuals are generated */}
+          {p.status === "awaiting_script_approval" && (
+            <div className="mt-6 space-y-4" data-testid="script-approval-panel">
+              <div className="bg-brand-600 text-white rounded-2xl p-5 flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <div className="text-xs uppercase tracking-widest font-bold opacity-80">Step 1 of 3 · Your approval needed</div>
+                  <div className="mt-1 font-heading font-extrabold text-2xl tracking-tighter">Review your script</div>
+                  <p className="text-sm opacity-90 mt-1 max-w-lg">Edit the narration, tweak subtitles, or regenerate. Nothing else runs until you approve.</p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button variant="outline" onClick={regenerateScript} disabled={scriptBusy}
+                    className="rounded-full bg-transparent border-white/50 text-white hover:bg-white/10"
+                    data-testid="script-regen-btn">
+                    <RefreshCw className="w-4 h-4 mr-2" /> Regenerate
+                  </Button>
+                  {editingScript ? (
+                    <>
+                      <Button variant="outline" onClick={() => { setEditingScript(false); setDraftScenes(p.scenes || []); setDraftTitle(p.title || ""); }} disabled={scriptBusy}
+                        className="rounded-full bg-transparent border-white/50 text-white hover:bg-white/10"
+                        data-testid="script-cancel-btn">
+                        <X className="w-4 h-4 mr-2" /> Cancel
+                      </Button>
+                      <Button onClick={saveScriptEdits} disabled={scriptBusy}
+                        className="rounded-full bg-white text-brand-700 hover:bg-white/90"
+                        data-testid="script-save-btn">
+                        <Check className="w-4 h-4 mr-2" /> Save edits
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button variant="outline" onClick={() => setEditingScript(true)}
+                        className="rounded-full bg-transparent border-white/50 text-white hover:bg-white/10"
+                        data-testid="script-edit-btn">
+                        <Pencil className="w-4 h-4 mr-2" /> Edit
+                      </Button>
+                      <Button onClick={approveScript} disabled={scriptBusy}
+                        className="rounded-full bg-white text-brand-700 hover:bg-white/90 font-semibold"
+                        data-testid="script-approve-btn">
+                        <Check className="w-4 h-4 mr-2" /> Approve & generate visuals
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {editingScript && (
+                <div className="bg-white border border-ink-200 rounded-2xl p-5">
+                  <label className="text-xs uppercase tracking-widest text-ink-500 font-semibold">Title</label>
+                  <input type="text" value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)}
+                    data-testid="script-edit-title"
+                    className="mt-1 w-full rounded-lg border border-ink-200 px-3 py-2 font-heading font-bold text-lg" />
+                </div>
+              )}
+
+              <div className="grid md:grid-cols-2 gap-4">
+                {(editingScript ? draftScenes : (p.scenes || [])).map((sc, i) => (
+                  <div key={sc.idx} className="bg-white border border-ink-200 rounded-2xl p-5" data-testid={`draft-scene-${sc.idx}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">Scene {sc.idx + 1}</div>
+                      {sc.heading && <div className="text-[11px] text-ink-500 truncate max-w-[60%]">{sc.heading}</div>}
+                    </div>
+                    {editingScript ? (
+                      <>
+                        <label className="mt-3 text-[11px] uppercase tracking-widest text-ink-500 font-semibold">Narration</label>
+                        <textarea rows={3} value={sc.narration || ""}
+                          data-testid={`edit-narration-${sc.idx}`}
+                          onChange={(e) => {
+                            const upd = [...draftScenes]; upd[i] = { ...upd[i], narration: e.target.value }; setDraftScenes(upd);
+                          }}
+                          className="mt-1 w-full rounded-lg border border-ink-200 px-3 py-2 text-sm text-ink-900" />
+                        <label className="mt-3 text-[11px] uppercase tracking-widest text-ink-500 font-semibold">On-screen subtitle</label>
+                        <input type="text" value={sc.subtitle || ""}
+                          data-testid={`edit-subtitle-${sc.idx}`}
+                          onChange={(e) => {
+                            const upd = [...draftScenes]; upd[i] = { ...upd[i], subtitle: e.target.value }; setDraftScenes(upd);
+                          }}
+                          className="mt-1 w-full rounded-lg border border-ink-200 px-3 py-2 text-sm text-ink-900" />
+                        <label className="mt-3 text-[11px] uppercase tracking-widest text-ink-500 font-semibold">Image prompt (used to generate the visual)</label>
+                        <textarea rows={2} value={sc.image_prompt || ""}
+                          data-testid={`edit-image-prompt-${sc.idx}`}
+                          onChange={(e) => {
+                            const upd = [...draftScenes]; upd[i] = { ...upd[i], image_prompt: e.target.value }; setDraftScenes(upd);
+                          }}
+                          className="mt-1 w-full rounded-lg border border-ink-200 px-3 py-2 text-xs font-mono text-ink-700" />
+                      </>
+                    ) : (
+                      <>
+                        <p className="mt-3 text-sm text-ink-800 leading-relaxed">{sc.narration}</p>
+                        <div className="mt-3 rounded-lg bg-brand-50 text-brand-700 text-xs font-mono px-3 py-1.5 inline-block">
+                          &ldquo;{sc.subtitle}&rdquo;
+                        </div>
+                        <div className="mt-2 text-[11px] text-ink-400 line-clamp-2">
+                          <span className="font-semibold">Visual:</span> {sc.image_prompt}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>
@@ -170,8 +324,8 @@ export default function ProjectView() {
             </div>
           )}
 
-          {/* Scenes storyboard */}
-          {p.scenes?.length > 0 && (
+          {/* Scenes storyboard (only shown after script approval) */}
+          {p.status !== "awaiting_script_approval" && p.scenes?.length > 0 && (
             <div className="mt-10">
               <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">Storyboard</div>
               <h2 className="mt-1 font-heading text-3xl font-bold tracking-tight">Scenes ({p.scenes.length})</h2>
@@ -195,8 +349,8 @@ export default function ProjectView() {
             </div>
           )}
 
-          {/* Script */}
-          {p.script && (
+          {/* Script (only shown after script approval) */}
+          {p.status !== "awaiting_script_approval" && p.script && (
             <div className="mt-10">
               <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">Script</div>
               <div className="mt-2 bg-white border border-ink-200 rounded-2xl p-6 text-ink-700 leading-relaxed whitespace-pre-line" data-testid="script-text">{p.script}</div>

@@ -428,6 +428,78 @@ async def start_generate(pid: str, bg: BackgroundTasks, user=Depends(current_use
     return {"ok": True}
 
 
+# --------------------------- Guided Approval Endpoints (Batch 2) ---------------------------
+@api.post("/projects/{pid}/script/regenerate")
+async def regenerate_script(pid: str, bg: BackgroundTasks, user=Depends(current_user)):
+    """Discard current draft and generate a fresh script. No extra credit charged
+    — the initial credit deduction covers all script regenerations up to approval."""
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    if p["status"] not in ("awaiting_script_approval", "error"):
+        raise HTTPException(400, f"Cannot regenerate script from status '{p['status']}'.")
+    await db.projects.update_one(
+        {"id": pid},
+        {"$set": {"status": "generating", "stage": "rewriting script",
+                  "progress": 10, "error": None}},
+    )
+    bg.add_task(run_pipeline, pid)   # same entrypoint — will end at awaiting_script_approval
+    return {"ok": True}
+
+
+class ScriptEditIn(BaseModel):
+    title: Optional[str] = None
+    hook: Optional[str] = None
+    scenes: Optional[List[dict]] = None   # user-edited scenes list
+
+
+@api.patch("/projects/{pid}/script")
+async def edit_script(pid: str, payload: ScriptEditIn, user=Depends(current_user)):
+    """User-driven inline edit of the draft script. Only allowed while awaiting
+    script approval. Scenes must keep the same length; users can tweak narration,
+    subtitle or image_prompt but cannot add/remove scenes here."""
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    if p["status"] != "awaiting_script_approval":
+        raise HTTPException(400, f"Script is not editable in status '{p['status']}'.")
+    updates: dict = {}
+    if payload.title is not None: updates["title"] = payload.title[:120]
+    if payload.hook is not None: updates["hook"] = payload.hook[:280]
+    if payload.scenes is not None:
+        existing = p.get("scenes") or []
+        if len(payload.scenes) != len(existing):
+            raise HTTPException(400, "Scene count cannot change during edit.")
+        merged = []
+        for i, sc in enumerate(payload.scenes):
+            base = existing[i]
+            merged.append({
+                **base,
+                "narration": (sc.get("narration") or base.get("narration") or "")[:600],
+                "subtitle": (sc.get("subtitle") or base.get("subtitle") or "")[:120],
+                "image_prompt": (sc.get("image_prompt") or base.get("image_prompt") or "")[:400],
+            })
+        updates["scenes"] = merged
+        updates["script"] = " ".join(s.get("narration", "") for s in merged)
+    if updates:
+        await db.projects.update_one({"id": pid}, {"$set": updates})
+    return await db.projects.find_one({"id": pid}, {"_id": 0})
+
+
+@api.post("/projects/{pid}/script/approve")
+async def approve_script(pid: str, bg: BackgroundTasks, user=Depends(current_user)):
+    """User approved the current script — kick off images/voice/compose."""
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    if p["status"] != "awaiting_script_approval":
+        raise HTTPException(400, f"Cannot approve from status '{p['status']}'.")
+    await db.projects.update_one(
+        {"id": pid},
+        {"$set": {"status": "generating", "stage": "generating images",
+                  "progress": 25, "error": None}},
+    )
+    bg.add_task(run_after_script_approval, pid)
+    return {"ok": True}
+
+
 # --------------------------- Admin ---------------------------
 @api.get("/admin/users")
 async def admin_users(_admin=Depends(require_admin)):

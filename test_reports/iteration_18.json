@@ -1,0 +1,34 @@
+{
+  "summary": "iter-18 BATCH 2 Script Confirmation Gate — FULL PASS. Backend: 13/13 pytest cases green in /app/backend/tests/test_iter18_script_approval.py covering PATCH /projects/{pid}/script (truncation to 600/120/400 chars, scene-count mismatch → 400, wrong-status → 400), POST /projects/{pid}/script/regenerate (allowed from awaiting_script_approval + error, rejected from ready/generating, no extra credit charge), POST /projects/{pid}/script/approve (flips to generating; 400 from ready/generating), cross-user isolation (404 for user B on user A's project), and refund of credit_cost when run_after_script_approval fails synthetically (seeded project with empty scenes[] → status=error, credits refunded by exactly credit_cost). Frontend (ProjectView /project/{id}): script-approval-panel renders with 'Step 1 of 3' header + 3 buttons (regen/edit/approve) + 3 draft-scene-{i} cards; edit mode exposes edit-narration-{i}, edit-subtitle-{i}, edit-image-prompt-{i}, script-edit-title, script-save-btn, script-cancel-btn; PATCH persists edits (verified via re-render and toast 'Script updated'); approve flips project to generating, dismounts script-approval-panel, mounts generating-panel with progress bar and stage chips; storyboard and script-text blocks are correctly HIDDEN while awaiting_script_approval and appear post-approval. Zero page-errors, zero unexpected console errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter18_script_approval.py",
+    "/app/test_reports/pytest/iter18_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ProjectView.jsx polling interval uses `p?.status` in its dependency array which causes the interval to be torn down and re-created every time status flips. Functionally correct (polling only fires when status==='generating') but slightly wasteful; consider using a ref for status inside the interval callback.",
+    "PATCH /projects/{pid}/script silently coerces empty strings by falling back to base value: `(sc.get('narration') or base.get('narration') or '')[:600]` — if a user actually wants to CLEAR a subtitle/image_prompt to '', they cannot (empty string is falsy so it falls back to the original). Consider using `sc['narration'] if 'narration' in sc else base.get('narration','')` if intentional empty edits should be supported.",
+    "run_after_script_approval refunds credit_cost on ANY exception, including transient ones. If the frontend allows a retry (via /projects/{id}/generate again) after refund, the user could accidentally spend the credit twice. Consider marking the project as 'refunded' so credit deduction is idempotent per project.",
+    "server.py is 1803 lines — recommended to split guided-approval routes, admin routes, and pipeline runners into separate modules for maintainability.",
+    "regenerate_script does not reset scenes[]/script/title/hook fields before scheduling run_pipeline; if _generate_script errors, the stale draft remains until the bg task finishes. Minor UX inconsistency (user sees 'Rewriting your script…' toast but stale scenes may still show for a beat)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter18_script_approval.py (NEW — 13 pytest cases)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin session_token=test_admin_1784712404860 (bearer + cookie both work). Admin user has 9999+ credits.",
+  "seed_data_creation": "Seeded 1 ProjectView test project 'iter18_fe_e99eozom' with status='awaiting_script_approval' + 3 scenes and cleaned up post-run. Backend pytest fixture creates+cleans ephemeral user B and multiple iter18_* projects per test class. All iter18_* projects deleted at end (verified: 0 remain).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Batch 2 script approval gate is production-ready. Endpoint contract: (1) POST /generate → status='awaiting_script_approval' after script step; (2) PATCH /script only in awaiting_script_approval, scene count immutable, string truncation 600/120/400; (3) POST /script/regenerate allowed in {awaiting_script_approval, error}, no credit charged; (4) POST /script/approve only in awaiting_script_approval → run_after_script_approval bg task → images/voice/compose. Frontend testids: script-approval-panel, script-regen-btn, script-edit-btn, script-approve-btn, script-cancel-btn, script-save-btn, script-edit-title, draft-scene-{i}, edit-narration-{i}, edit-subtitle-{i}, edit-image-prompt-{i}. Polling only when status==='generating' — verified. To seed without spending LLM credits, insert directly into Mongo with status='awaiting_script_approval' + scenes[] (see test_iter18_script_approval.py::_seed_awaiting_project helper).",
+  "rca of the issue": "N/A — no bugs found."
+}
