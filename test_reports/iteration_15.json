@@ -1,0 +1,63 @@
+{
+  "summary": "Iter-15 production-readiness verification: /api/health, x-request-id middleware, rate-limit helper, ErrorBoundary, and index.html meta tags. 28/28 pytest assertions passed. Playwright verified ErrorBoundary hidden on normal loads and key landing testids present. Two DELIVERY issues surfaced during testing and were mitigated by service restarts (documented for main agent).",
+  "verdict": "MOSTLY PASS — 1 latent architectural issue with in-memory rate limiter behind ingress",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "/api/waitlist  (and /api/analytics/track)",
+        "issue": "Rate limiter uses `request.client.host` which behind the Kubernetes ingress is the reverse-proxy pod IP, NOT the real caller IP. Observed in backend access logs that the ingress alternates between (at least) 10.231.142.130 and 10.231.142.133 for consecutive requests from the SAME external client. Effect: (a) the effective limit is multiplied by the number of ingress IPs (~2×) — I sent 7 fresh POST /api/waitlist in a row after a backend restart and got 7×200 instead of the expected 429 at call 6. (b) worse, every real end-user shares the same 2 bucket keys, so ONE spammer can also DoS every legitimate signup within the same hour. Fix: honor `X-Forwarded-For` / `X-Real-IP` (first entry, trusted-proxy-aware) in _rate_limit_check.",
+        "priority": "HIGH",
+        "reproduction": "sudo supervisorctl restart backend && sleep 4 && for i in 1..7; do curl -X POST $URL/api/waitlist -d '{\"email\":\"u_${i}@x.com\"}' -H 'Content-Type: application/json' ; done  → all 200. Then: tail /var/log/supervisor/backend.out.log — see alternating 10.231.142.130 / 10.231.142.133 client IPs."
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "/api/waitlist rate-limit error body",
+        "issue": "429 response has `detail` field ('Rate limit exceeded. Try again in 3600s.') but test spec asks for 'Rate limit exceeded' text; current impl matches — no action, just noting FastAPI HTTPException uses `detail` not `message`."
+      },
+      {
+        "endpoint": "startup event handlers",
+        "issue": "@app.on_event('startup')/'shutdown') is deprecated in current FastAPI — migrate to lifespan handler when convenient (cosmetic only)."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "index.html meta-tag hot-reload",
+        "issue": "CRA `yarn start` does NOT hot-reload changes to public/index.html. Before this test run, the served HTML at / still had the OLD 'Emergent | Fullstack App' title and no OG/Twitter tags — despite /app/frontend/public/index.html being fully updated. Fixed by `supervisorctl restart frontend`. Main agent should be aware: any future public/*.html edit requires a frontend restart to be visible.",
+        "affected_selectors": ["<title>", "meta[property^='og:']", "meta[name^='twitter:']"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter15_prod_readiness.py",
+    "/app/test_reports/pytest/iter15_results.xml"
+  ],
+  "action_items": [
+    "HIGH: Fix `_rate_limit_check` to derive client IP from `X-Forwarded-For` (first hop, honoring a `TRUSTED_PROXIES` allowlist) so the sliding-window bucket is keyed to the real end-user, not the ingress pod. Otherwise the 5/hr waitlist and 300/min analytics limits are effectively ~10/hr and ~600/min AND every user shares the same bucket. This defeats the purpose of the abuse-mitigation added in iter-15.",
+    "LOW: When any file in /app/frontend/public/ changes, restart the frontend service (`sudo supervisorctl restart frontend`) — CRA dev server does not watch that directory. Consider adding a note to the deployment README.",
+    "LOW: Migrate from `@app.on_event('startup')/'shutdown'` to FastAPI lifespan context manager (deprecation warning, non-blocking)."
+  ],
+  "critical_code_review_comments": [
+    "Rate-limiter uses process-local `dict` (`_rate_limit_store`) — resets on every backend restart and cannot be shared across replicas. Acceptable for a single-replica preview, but must move to Redis before scaling. Currently one uvicorn worker in supervisor conf.",
+    "`request.client.host` in `_rate_limit_check` will silently key off proxy IPs behind ANY reverse proxy (K8s, CloudFront, Cloudflare). Repeat: FIX BEFORE PROD.",
+    "`/api/health` correctly returns 503 when a check fails and always includes the request_id. Good.",
+    "ErrorBoundary POST to /api/analytics/track uses `credentials:'include'` — good for cookie session context. It correctly slices message/stack to prevent giant payload abuse.",
+    "index.html meta tags look production-ready. `og:image` uses %PUBLIC_URL%/og-image.png but I did not verify the actual asset exists at /og-image.png — main agent should confirm the PNG is present in /app/frontend/public/, otherwise LinkedIn/Twitter cards will render broken thumbnails.",
+    "CORS still `allow_origins=*` (as documented as deferred). Noted."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "28/28 pytest = 100%",
+    "frontend": "6/6 UI checks (ErrorBoundary hidden, title, all testids, /admin & /dashboard load without crash) = 100%"
+  },
+  "test_credentials": "Used ADMIN_TOK=test_admin_1784712404860 (verified valid, returns admin@videostudio.ai). No user token needed for iter-15.",
+  "seed_data_creation": "None. Tests use unique TEST_/wl_iter15_ prefixed emails; cleaned up 11 rows via Motor `delete_many` in teardown. `analytics_events.event='frontend_error'` had 0 rows to delete (ErrorBoundary was not force-triggered in Playwright since no crashing route exists in-tree).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iter-15 tests live in /app/backend/tests/test_iter15_prod_readiness.py — includes health, request-id middleware, unit tests for _rate_limit_check, regression sweep, and HTML meta-tag assertions via GET /. If retesting after the rate-limit IP fix: run `sudo supervisorctl restart backend && sleep 4 && python -m pytest tests/test_iter15_prod_readiness.py -n 0 -v`. The one non-unit rate-limit test (TestWaitlistLiveRateLimit) may still be flaky depending on residual ingress state — the unit tests are the source of truth for the sliding-window algorithm. Note: ErrorBoundary crash simulation was NOT tested end-to-end because App.js does not expose a `/crash` route or any component that throws — main agent could add a hidden `/__crashtest` route (dev-only) to make this properly testable, or a testing agent can inject a broken component via CRA `MonkeyPatchModule` — currently only static verification passed (ErrorBoundary render path exists, testids match, does NOT render on the 3 healthy pages).",
+  "rca_of_the_issue": "Root cause of the observed 'live rate-limit did not fire' is: (1) FastAPI's `request.client.host` returns the L4 peer's IP, which behind K8s ingress-nginx is the ingress-controller pod IP; (2) ingress-nginx has 2 replicas → 2 possible peer IPs; (3) traffic round-robins between them, so effective per-user limit is 2× nominal AND all end-users share the same 2 buckets. Mitigation: change `ip = request.client.host if request.client else 'unknown'` to `ip = (request.headers.get('x-forwarded-for','').split(',')[0].strip() or (request.client.host if request.client else 'unknown'))`. Also consider trusting XFF only when the peer is in a known-proxy CIDR (10.231.0.0/16 for this cluster). The in-memory helper itself is correct — proven by 4 unit tests including per-IP and per-bucket isolation."
+}

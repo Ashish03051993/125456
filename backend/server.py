@@ -52,6 +52,84 @@ logger = logging.getLogger("videostudio")
 app = FastAPI(title="AI Video Studio")
 api = APIRouter(prefix="/api")
 
+
+# --------------------------- Request ID + Structured Logs Middleware ---------------------------
+@app.middleware("http")
+async def request_context(request, call_next):
+    """Attach a request_id to every request for log correlation + emit structured access log."""
+    rid = request.headers.get("x-request-id") or f"rq_{uuid.uuid4().hex[:12]}"
+    request.state.request_id = rid
+    start = datetime.now(timezone.utc)
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("unhandled_exception request_id=%s path=%s", rid, request.url.path)
+        raise
+    dur_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
+    response.headers["x-request-id"] = rid
+    # Skip noisy paths in access log
+    if not request.url.path.startswith("/api/media") and request.url.path != "/api/health":
+        logger.info('access request_id=%s method=%s path=%s status=%d duration_ms=%d',
+                    rid, request.method, request.url.path, response.status_code, dur_ms)
+    return response
+
+
+# --------------------------- Rate Limiting (in-memory, per-IP) ---------------------------
+_rate_limit_store: dict = {}   # {(ip, bucket): [(timestamp, ...)]}
+
+def _rate_limit_check(request, bucket: str, limit: int, window_seconds: int):
+    """Sliding-window per-IP rate limit. Raises 429 if exceeded.
+
+    In-memory only — resets on backend restart. Fine for public endpoints
+    at current traffic scale; graduate to Redis if we need distributed limits.
+    """
+    ip = request.client.host if request.client else "unknown"
+    key = (ip, bucket)
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(seconds=window_seconds)
+    hits = [t for t in _rate_limit_store.get(key, []) if t > cutoff]
+    if len(hits) >= limit:
+        raise HTTPException(429, f"Rate limit exceeded. Try again in {window_seconds}s.")
+    hits.append(now)
+    _rate_limit_store[key] = hits
+    # Periodic garbage collection: if the store grows past 5k keys, prune stale ones
+    if len(_rate_limit_store) > 5000:
+        for k in list(_rate_limit_store):
+            _rate_limit_store[k] = [t for t in _rate_limit_store[k] if t > cutoff]
+            if not _rate_limit_store[k]:
+                del _rate_limit_store[k]
+
+
+# --------------------------- Health Check ---------------------------
+@api.get("/health")
+async def health(request: Request):
+    """Liveness + readiness probe. Returns 200 if all critical deps are reachable, 503 otherwise.
+
+    Public endpoint — no auth. Safe to expose to load balancers and uptime monitors.
+    """
+    import shutil
+    status = {"status": "ok", "service": "ai-video-studio",
+              "version": "phase-1", "checks": {}}
+    # DB check
+    try:
+        await client.admin.command("ping")
+        status["checks"]["mongodb"] = "ok"
+    except Exception as e:
+        status["status"] = "degraded"
+        status["checks"]["mongodb"] = f"error: {str(e)[:80]}"
+    # FFmpeg check (needed for video pipeline)
+    status["checks"]["ffmpeg"] = "ok" if shutil.which("ffmpeg") else "missing"
+    if status["checks"]["ffmpeg"] == "missing":
+        status["status"] = "degraded"
+    # LLM key configured?
+    status["checks"]["llm_key"] = "ok" if os.environ.get("EMERGENT_LLM_KEY") else "missing"
+    if status["checks"]["llm_key"] == "missing":
+        status["status"] = "degraded"
+    status["request_id"] = request.state.request_id
+    code = 200 if status["status"] == "ok" else 503
+    return JSONResponse(content=status, status_code=code)
+
+
 # --------------------------- Models ---------------------------
 class Scene(BaseModel):
     idx: int
@@ -263,6 +341,8 @@ class WaitlistIn(BaseModel):
 
 @api.post("/waitlist")
 async def waitlist_join(payload: WaitlistIn, request: Request):
+    # Rate limit: 5 signups per IP per hour (protects against spam bots)
+    _rate_limit_check(request, "waitlist", limit=5, window_seconds=3600)
     email = payload.email.strip().lower()
     if "@" not in email or "." not in email:
         raise HTTPException(400, "Invalid email")
@@ -745,6 +825,8 @@ class AnalyticsEvent(BaseModel):
 
 @api.post("/analytics/track")
 async def track(payload: AnalyticsEvent, request: Request):
+    # Rate limit: 300 events per IP per minute (generous — a normal session fires ~5-20 events)
+    _rate_limit_check(request, "analytics", limit=300, window_seconds=60)
     if not payload.event or len(payload.event) > 60:
         raise HTTPException(400, "Invalid event")
     doc = {
