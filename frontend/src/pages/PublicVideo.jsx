@@ -64,7 +64,7 @@ export default function PublicVideo() {
             <div className="w-9 h-9 rounded-lg bg-brand-600 flex items-center justify-center shadow-lg shadow-brand-600/40 group-hover:rotate-6 transition-transform">
               <Video className="w-5 h-5 text-white" />
             </div>
-            <div className="font-heading font-extrabold text-lg tracking-tight">AI Video<span className="text-brand-500">Studio</span></div>
+            <div className="font-heading font-extrabold text-lg tracking-tight">Kad<span className="text-brand-500">enza</span></div>
           </Link>
           <Link to="/signup" data-testid="topbar-signup">
             <Button className="rounded-full bg-brand-600 hover:bg-brand-700 text-white px-4 sm:px-5 h-9 text-sm font-semibold">
@@ -118,7 +118,7 @@ export default function PublicVideo() {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="min-w-0">
               <div className="text-xs uppercase tracking-widest text-white/70 font-bold">Made with</div>
-              <div className="mt-1 font-heading text-2xl sm:text-3xl font-black tracking-tighter">AI Video Studio</div>
+              <div className="mt-1 font-heading text-2xl sm:text-3xl font-black tracking-tighter">Kadenza</div>
               <p className="text-white/80 text-sm mt-2 max-w-lg">
                 Turn any topic into a polished video — approve the script, the visuals and the voice, then download in seconds. Your first 30-second video is on us, every month.
               </p>
@@ -159,7 +159,7 @@ export default function PublicVideo() {
       </main>
 
       <footer className="mt-16 border-t border-white/5 py-8 text-center text-xs text-ink-500">
-        <Link to="/" className="hover:text-white transition-colors">© AI Video Studio · Made with love</Link>
+        <Link to="/" className="hover:text-white transition-colors">© Kadenza · Made with love</Link>
       </footer>
     </div>
   );

@@ -179,7 +179,7 @@ export default function Landing() {
       {/* FOOTER */}
       <footer className="border-t border-ink-100 py-8">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 text-sm text-ink-500">
-          <div>© {new Date().getFullYear()} AI Video Studio</div>
+          <div>© {new Date().getFullYear()} Kadenza</div>
           <div className="flex items-center gap-x-5 gap-y-2 flex-wrap justify-end">
             <Link to="/pricing" className="hover:text-brand-600" data-testid="footer-pricing">Pricing</Link>
             <Link to="/login" className="hover:text-brand-600" data-testid="footer-login">Log in</Link>

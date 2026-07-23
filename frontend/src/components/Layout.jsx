@@ -14,7 +14,7 @@ export function TopBar() {
           <div className="w-9 h-9 rounded-lg bg-brand-600 flex items-center justify-center shadow-sm group-hover:rotate-6 transition-transform">
             <Video className="w-5 h-5 text-white" />
           </div>
-          <div className="font-heading font-extrabold text-lg tracking-tight">AI Video<span className="text-brand-600">Studio</span></div>
+          <div className="font-heading font-extrabold text-lg tracking-tight">Kad<span className="text-brand-600">enza</span></div>
         </Link>
         <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-ink-700">
           <Link to="/pricing" className="hover:text-brand-600 transition-colors" data-testid="nav-pricing">Pricing</Link>

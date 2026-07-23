@@ -55,7 +55,7 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("videostudio")
 
-app = FastAPI(title="AI Video Studio")
+app = FastAPI(title="Kadenza API")
 api = APIRouter(prefix="/api")
 
 # --------------------------- Sentry (optional, no-op without DSN) ---------------------------
