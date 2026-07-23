@@ -90,19 +90,30 @@ export default function ProjectWizard() {
 
               <div>
                 <Label className="text-sm font-semibold">Duration</Label>
-                <div className="mt-2 grid grid-cols-4 sm:grid-cols-8 gap-2">
+                <div className="mt-3 grid grid-cols-4 sm:grid-cols-4 gap-2.5" data-testid="duration-grid">
                   {durations.map((d) => {
                     const active = durationSec === d.sec;
                     const affordable = currentCredits >= d.credits;
                     return (
                       <button key={d.sec} data-testid={`duration-${d.sec}`}
+                        type="button"
                         onClick={() => setDurationSec(d.sec)}
-                        className={`h-16 rounded-lg border font-medium text-sm transition-colors flex flex-col items-center justify-center gap-0.5 ${
-                          active ? "bg-brand-600 text-white border-brand-600"
-                                 : affordable ? "bg-white border-ink-200 hover:border-brand-600"
-                                              : "bg-ink-50 border-ink-200 text-ink-400"}`}>
-                        <span className="font-semibold">{d.label}</span>
-                        <span className={`text-[10px] font-mono ${active ? "text-white/80" : "text-ink-500"}`}>{d.credits} cr</span>
+                        className={[
+                          "relative rounded-xl border p-3 text-left transition-all",
+                          active
+                            ? "bg-brand-600 border-brand-600 text-white shadow-lg shadow-brand-600/20"
+                            : affordable
+                              ? "bg-white border-ink-200 hover:border-brand-600 hover:shadow-sm text-ink-900"
+                              : "bg-ink-50 border-ink-200 text-ink-400 opacity-70 cursor-not-allowed",
+                        ].join(" ")}
+                        disabled={!affordable}>
+                        <div className={`font-heading font-bold text-base leading-none ${active ? "text-white" : "text-ink-900"}`}>{d.label}</div>
+                        <div className="mt-2 flex items-baseline justify-between">
+                          <span className={`text-[10px] uppercase tracking-widest font-semibold ${active ? "text-white/70" : "text-ink-400"}`}>Credits</span>
+                          <span className={`font-heading font-black text-lg leading-none ${active ? "text-white" : affordable ? "text-brand-600" : "text-ink-400"}`}>
+                            {d.credits}
+                          </span>
+                        </div>
                       </button>
                     );
                   })}

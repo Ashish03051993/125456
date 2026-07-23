@@ -8,14 +8,14 @@ import { login } from "@/pages/AuthCallback";
 import DemoVideoSection from "@/components/DemoVideoSection";
 
 const DURATION_CHIPS = [
-  { label: "30 sec", credits: 3 },
-  { label: "45 sec", credits: 4 },
-  { label: "60 sec", credits: 5 },
-  { label: "90 sec", credits: 7 },
-  { label: "2 min",  credits: 10 },
-  { label: "3 min",  credits: 15 },
-  { label: "5 min",  credits: 25 },
-  { label: "10 min", credits: 50 },
+  { label: "30s",  credits: 3,  hint: "Reels · Shorts" },
+  { label: "45s",  credits: 4,  hint: "LinkedIn" },
+  { label: "60s",  credits: 5,  hint: "Instagram" },
+  { label: "90s",  credits: 7,  hint: "X / Twitter" },
+  { label: "2 min", credits: 10, hint: "Demos" },
+  { label: "3 min", credits: 15, hint: "Explainers" },
+  { label: "5 min", credits: 25, hint: "Tutorials" },
+  { label: "10 min",credits: 50, hint: "Long-form" },
 ];
 
 const STEPS = [
@@ -29,7 +29,7 @@ const STEPS = [
 const FEATURES = [
   { icon: Sparkles,  title: "Guided step-by-step",   body: "Approve script, visuals and voice before your video is rendered — never a surprise output.", span: "md:col-span-2" },
   { icon: Palette,   title: "5 cinematic styles",    body: "Business, Documentary, Educational, Cinematic, Storytelling.", span: "md:col-span-1" },
-  { icon: Film,      title: "Two formats included",  body: "Every render ships in 16:9 (YouTube) and 9:16 (LinkedIn, Reels, Shorts).", span: "md:col-span-1" },
+  { icon: Film,      title: "Every platform, one render", body: "16:9 for YouTube. 9:16 for Instagram Reels, LinkedIn, TikTok, Facebook & Shorts. Every output included, no extra credits.", span: "md:col-span-1" },
   { icon: CheckCircle2, title: "One free 30-sec video every month", body: "New users get 3 credits every month, forever. No credit card needed to start.", span: "md:col-span-2" },
 ];
 
@@ -76,10 +76,17 @@ export default function Landing() {
           {/* Duration chips */}
           <div className="mt-7 flex flex-wrap gap-2" data-testid="hero-duration-chips">
             {DURATION_CHIPS.map((d) => (
-              <div key={d.label} className="rounded-full border border-ink-200 bg-white px-3 py-1.5 text-xs font-mono text-ink-700 flex items-center gap-2"
-                data-testid={`duration-chip-${d.label.replace(" ","-")}`}>
-                {d.label}
-                <span className="text-brand-600 font-semibold">{d.credits}c</span>
+              <div key={d.label}
+                className="group rounded-xl border border-ink-200 bg-white pl-3 pr-3 py-2 flex items-center gap-3 hover:border-brand-600 hover:shadow-sm transition-all"
+                data-testid={`duration-chip-${d.label.replace(/\s|min/gi, "").replace("s","sec")}`}>
+                <div className="flex flex-col leading-tight">
+                  <span className="font-heading font-bold text-sm text-ink-900">{d.label}</span>
+                  <span className="text-[10px] text-ink-400 uppercase tracking-wider font-semibold">{d.hint}</span>
+                </div>
+                <div className="pl-3 border-l border-ink-100 flex flex-col items-end leading-tight">
+                  <span className="text-[10px] text-ink-400 uppercase tracking-widest font-semibold">Credits</span>
+                  <span className="font-heading font-black text-brand-600 text-base">{d.credits}</span>
+                </div>
               </div>
             ))}
           </div>

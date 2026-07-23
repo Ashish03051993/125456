@@ -1,0 +1,30 @@
+{
+  "summary": "iter-17 UI polish verified. All 8 hero duration chips render with label+platform hint+credits; TopBar labels correctly updated to 'Log in' + 'Sign up free'; DemoVideoSection heading 'One idea. Every platform.' + 7 output cards render with correct labels (Cinematic Video, YouTube Ready, Instagram/Reels, Facebook Feed, LinkedIn Post, Blog Article, Email Newsletter); FEATURES card 'Every platform, one render' present; hero-demo-btn smoothly scrolls to #demo. Wizard (route is /new, not /create) duration picker renders as 2x4 grid-cols-4 with 8 premium cards showing label + CREDITS label + big purple credit number; active/click state and cost summary ('Uses 5 credits · You have 9999') both work. Backend spot-checks (GET /api/health, /api/formats, /api/durations, /api/admin/attribution-matrix admin, POST /api/waitlist) all 200. Zero unexpected console errors on Landing (2x 401 from /api/me for anonymous is expected), Pricing, /new, /admin.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Documentation: review request referenced route '/create' but actual wizard route is '/new' — no code change needed, just a note for future test agents / PRD alignment.",
+    "Minor: /login page emits ERR_NAME_NOT_RESOLVED in console (likely Google OAuth prefetch or missing host) — pre-existing, not iter-17 related. Verify Google OAuth login flow when time permits."
+  ],
+  "critical_code_review_comments": [
+    "Duration chip testids follow inconsistent pattern (duration-chip-30sec, 45sec, 60sec, 90sec vs duration-chip-2, 3, 5, 10 for minute variants). Not a bug, but consistent naming (e.g., duration-chip-2min) would improve test selector clarity.",
+    "Landing.jsx STEPS array uses dangerouslySetInnerHTML for body copy with HTML entities like &apos; — could be replaced with plain strings using unicode quotes to avoid XSS-adjacent patterns even for static content.",
+    "ProjectWizard uses two sources of truth for durations (FALLBACK_DURATIONS constant + /api/durations fetch) — labels differ between hero ('30s') and wizard ('30 sec'); consider standardizing on backend response."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin session_token=test_admin_1784712404860 (from review request; loaded via cookie for /new + /admin).",
+  "seed_data_creation": "No seed data created. One TEST waitlist entry posted for /api/waitlist smoke test (email pattern iter17_test_<ts>@example.com).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Wizard route is /new (not /create). Duration chip testids: duration-chip-30sec/45sec/60sec/90sec/2/3/5/10 (mixed pattern — verify by counting 8 chips inside [data-testid='hero-duration-chips'] rather than by individual testids). DemoVideoSection has 7 outputs now — the [data-testid='outputs-grid'] wraps individual output-0..output-6 cards. Duration grid in wizard uses [data-testid='duration-grid'] with 8 [data-testid='duration-<sec>'] buttons where sec is 30/45/60/90/120/180/300/600. Active state = class contains 'bg-brand-600 border-brand-600'.",
+  "rca of the issue": "N/A — no bugs found for iter-17."
+}

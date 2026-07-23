@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Play, Sparkles, Video as VideoIcon, Linkedin, FileText, Mail } from "lucide-react";
+import { Play, Sparkles, Video as VideoIcon, Linkedin, FileText, Mail, Youtube, Instagram, Facebook } from "lucide-react";
 import { track } from "@/lib/analytics";
 
 const OUTPUTS = [
-  { icon: VideoIcon, label: "Cinematic Video",   sub: "MP4 with voice + subtitles" },
+  { icon: VideoIcon, label: "Cinematic Video",   sub: "MP4 · 16:9 + 9:16" },
+  { icon: Youtube,   label: "YouTube Ready",     sub: "16:9 landscape master" },
+  { icon: Instagram, label: "Instagram / Reels", sub: "9:16 vertical cut" },
+  { icon: Facebook,  label: "Facebook Feed",     sub: "Square + caption ready" },
   { icon: Linkedin,  label: "LinkedIn Post",     sub: "Hook + thread ready" },
   { icon: FileText,  label: "Blog Article",      sub: "SEO-friendly long form" },
   { icon: Mail,      label: "Email Newsletter",  sub: "Personalized send-ready" },
@@ -48,11 +51,10 @@ export default function DemoVideoSection({ videoSrc, posterSrc }) {
       <div className="max-w-3xl">
         <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">See it in action</div>
         <h2 className="mt-3 font-heading text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight">
-          One idea. Four polished outputs.
+          One idea. Every platform.
         </h2>
         <p className="mt-4 text-ink-500 text-base sm:text-lg max-w-2xl">
-          Feed AI Video Studio a topic and it doesn&apos;t just make a video — it turns the same idea
-          into a LinkedIn post, a blog article and an email newsletter, all in your voice.
+          Feed AI Video Studio a topic and it hands you cinematic video for <span className="font-semibold text-ink-900">YouTube, Instagram, Reels, Facebook and LinkedIn</span> — plus a LinkedIn post, blog article and email newsletter. All from a single prompt, in your voice.
         </p>
       </div>
 
@@ -94,7 +96,7 @@ export default function DemoVideoSection({ videoSrc, posterSrc }) {
         </div>
 
         <div className="lg:col-span-2">
-          <div className="grid grid-cols-2 gap-3 sm:gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-2 gap-3 sm:gap-4" data-testid="outputs-grid">
             {OUTPUTS.map((o, i) => (
               <div key={o.label} data-testid={`output-${i}`}
                 className="rounded-2xl bg-white border border-ink-200 p-4 sm:p-5 hover:-translate-y-1 hover:shadow-lg transition-all">

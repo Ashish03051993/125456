@@ -1236,36 +1236,81 @@ def _ffmpeg_compose_all(project_id: str, scenes: list, images: list,
 
 
 async def run_pipeline(project_id: str):
+    """Step 1 (Batch 2): Generate the script, then STOP and wait for user approval.
+    Subsequent steps (images/voice/final compose) are triggered by
+    POST /api/projects/{id}/script/approve which calls `run_after_script_approval`.
+    """
     async def upd(**fields):
         await db.projects.update_one({"id": project_id}, {"$set": fields})
     try:
         proj = await db.projects.find_one({"id": project_id}, {"_id": 0})
-        # 1) Script
-        await upd(stage="writing script", progress=10)
+        await upd(stage="writing script", progress=10, status="generating")
         script = await _generate_script(proj)
         scenes = script["scenes"]
-        # 2) Images (parallel)
-        await upd(stage="generating images", progress=25,
-                  title=script.get("title"), hook=script.get("hook"))
+        # Save script scenes with placeholder image_url (no images generated yet)
+        draft_scenes = [{
+            "idx": i,
+            "heading": sc.get("heading", f"Scene {i+1}"),
+            "narration": sc["narration"],
+            "subtitle": sc["subtitle"],
+            "image_prompt": sc["image_prompt"],
+            "video_prompt": sc.get("video_prompt", sc["image_prompt"]),
+            "image_url": None,
+            "duration": None,
+        } for i, sc in enumerate(scenes)]
+        full_narration = " ".join(s["narration"] for s in scenes)
+        await upd(
+            stage="awaiting script approval",
+            progress=20,
+            status="awaiting_script_approval",
+            title=script.get("title"),
+            hook=script.get("hook"),
+            script=full_narration,
+            scenes=draft_scenes,
+        )
+        logger.info("Project %s script drafted, awaiting user approval", project_id)
+    except Exception as e:
+        logger.exception("Script generation failed for %s", project_id)
+        await db.projects.update_one({"id": project_id},
+                                     {"$set": {"status": "error", "error": str(e),
+                                               "stage": "failed"}})
+        # Refund credit
+        proj = await db.projects.find_one({"id": project_id}, {"_id": 0})
+        if proj:
+            cost = int(proj.get("credit_cost", 1) or 1)
+            await db.users.update_one({"user_id": proj["user_id"]},
+                                      {"$inc": {"credits": cost}})
+
+
+async def run_after_script_approval(project_id: str):
+    """Continues the pipeline once the user has approved the script.
+    Batch 2 keeps the remaining stages (images → voice → compose) sequential;
+    Batches 3+4 will further split these into individual approval gates.
+    """
+    async def upd(**fields):
+        await db.projects.update_one({"id": project_id}, {"$set": fields})
+    try:
+        proj = await db.projects.find_one({"id": project_id}, {"_id": 0})
+        scenes = proj.get("scenes") or []
+        if not scenes:
+            raise RuntimeError("Cannot continue: no scenes on the project.")
+        # 2) Images (sequential)
+        await upd(stage="generating images", progress=25, status="generating")
         image_paths: List[Path] = []
         img_dir = STORAGE_DIR / "images" / project_id
         img_dir.mkdir(parents=True, exist_ok=True)
-        tasks = []
         for i, sc in enumerate(scenes):
             p = img_dir / f"s{i}.png"
             image_paths.append(p)
-            tasks.append(_generate_image(sc["image_prompt"], p))
-        # Run sequentially to avoid concurrent_request_limit on shared key
-        for i, t in enumerate(tasks):
-            await t
-            await upd(progress=25 + int(35 * (i + 1) / max(len(tasks), 1)))
-        # 3) TTS full narration
+            await _generate_image(sc["image_prompt"], p)
+            await upd(progress=25 + int(35 * (i + 1) / max(len(scenes), 1)))
+        # 3) TTS
         await upd(stage="generating voiceover", progress=65)
         full_narration = " ".join(s["narration"] for s in scenes)
         audio_path = STORAGE_DIR / "audio" / f"{project_id}.mp3"
         voice = VOICE_MAP.get(proj["voice"], "nova")
         await _generate_tts(full_narration[:4000], voice, audio_path)
-        # 4) Compose MP4 in every registered format
+        # 4) Compose MP4
         await upd(stage="composing video", progress=80)
         total_dur = _ffprobe_duration(audio_path)
         loop = asyncio.get_event_loop()
@@ -1275,39 +1320,29 @@ async def run_pipeline(project_id: str):
         )
         from formats import default_format
         primary = default_format()
-        # Build final scene list w/ image urls
-        final_scenes = []
         per = total_dur / max(len(scenes), 1)
-        for i, sc in enumerate(scenes):
-            final_scenes.append({
-                "idx": i,
-                "heading": sc.get("heading", f"Scene {i+1}"),
-                "narration": sc["narration"],
-                "subtitle": sc["subtitle"],
-                "image_prompt": sc["image_prompt"],
-                "video_prompt": sc.get("video_prompt", sc["image_prompt"]),
-                "image_url": f"/api/media/images/{project_id}/s{i}.png",
-                "duration": per,
-            })
+        final_scenes = [{
+            **sc, "image_url": f"/api/media/images/{project_id}/s{i}.png",
+            "duration": per,
+        } for i, sc in enumerate(scenes)]
         await upd(
             stage="done", progress=100, status="ready",
-            title=script.get("title"), hook=script.get("hook"),
-            script=full_narration, scenes=final_scenes,
+            scenes=final_scenes,
             audio_url=f"/api/media/audio/{project_id}.mp3",
-            video_url=video_urls[primary],   # backwards-compat: default format
-            video_urls=video_urls,           # dict of {format_id: url}
+            video_url=video_urls[primary],
+            video_urls=video_urls,
         )
         logger.info("Project %s ready", project_id)
     except Exception as e:
-        logger.exception("Pipeline failed for %s", project_id)
+        logger.exception("Post-script pipeline failed for %s", project_id)
         await db.projects.update_one({"id": project_id},
                                      {"$set": {"status": "error", "error": str(e),
                                                "stage": "failed"}})
-        # Refund credit
         proj = await db.projects.find_one({"id": project_id}, {"_id": 0})
         if proj:
+            cost = int(proj.get("credit_cost", 1) or 1)
             await db.users.update_one({"user_id": proj["user_id"]},
-                                      {"$inc": {"credits": 1}})
+                                      {"$inc": {"credits": cost}})
 
 
 # --------------------------- Experiments (A/B testing) ---------------------------

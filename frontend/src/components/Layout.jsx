@@ -37,7 +37,7 @@ export function TopBar() {
                 onClick={() => { track("signin_click", { source: "top_nav" }); login(); }}
                 className="hidden sm:inline-flex items-center gap-1.5 text-sm font-semibold text-ink-700 hover:text-brand-600 transition-colors px-2"
                 data-testid="nav-signin-btn">
-                <LogIn className="w-4 h-4" /> Sign in
+                <LogIn className="w-4 h-4" /> Log in
               </button>
               <Button onClick={() => { track("signup_click", { source: "top_nav" }); login(); }}
                 className="rounded-full bg-brand-600 hover:bg-brand-700 text-white px-4 sm:px-5 h-10"
