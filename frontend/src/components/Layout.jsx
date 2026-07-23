@@ -1,8 +1,9 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Video, LayoutDashboard, Shield, LogOut, Sparkles, Users, BarChart3, FlaskConical, Send, Link as LinkIcon } from "lucide-react";
+import { Video, LayoutDashboard, Shield, LogOut, Sparkles, Users, BarChart3, FlaskConical, Send, Link as LinkIcon, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 import { track } from "@/lib/analytics";
+import { login } from "@/pages/AuthCallback";
 
 export function TopBar() {
   const { user, logout } = useAuth();
@@ -40,9 +41,17 @@ export function TopBar() {
               <button onClick={logout} className="text-ink-500 hover:text-ink-900" data-testid="logout-btn"><LogOut className="w-5 h-5" /></button>
             </>
           ) : (
-            <Button onClick={gotoWaitlist} className="rounded-full bg-brand-600 hover:bg-brand-700 text-white px-4 sm:px-5 h-10" data-testid="nav-waitlist-btn">
-              <Sparkles className="w-4 h-4 mr-1.5" /> Join waitlist
-            </Button>
+            <>
+              <button
+                onClick={() => { track("signin_click", { source: "top_nav" }); login(); }}
+                className="hidden sm:inline-flex items-center gap-1.5 text-sm font-semibold text-ink-700 hover:text-brand-600 transition-colors px-2"
+                data-testid="nav-signin-btn">
+                <LogIn className="w-4 h-4" /> Sign in
+              </button>
+              <Button onClick={gotoWaitlist} className="rounded-full bg-brand-600 hover:bg-brand-700 text-white px-4 sm:px-5 h-10" data-testid="nav-waitlist-btn">
+                <Sparkles className="w-4 h-4 mr-1.5" /> Join waitlist
+              </Button>
+            </>
           )}
         </div>
       </div>

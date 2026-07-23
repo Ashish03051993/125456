@@ -10,6 +10,7 @@ import ProjectView from "@/pages/ProjectView";
 import Settings from "@/pages/Settings";
 import AdminPanel from "@/pages/AdminPanel";
 import AuthCallback from "@/pages/AuthCallback";
+import Login from "@/pages/Login";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import ShortLinkRedirect from "@/pages/ShortLinkRedirect";
 
@@ -24,6 +25,7 @@ function AppRouter() {
       <Route path="/" element={<Landing />} />
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
+      <Route path="/login" element={<Login />} />
       <Route path="/l/:slug" element={<ShortLinkRedirect />} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/new" element={<ProtectedRoute><ProjectWizard /></ProtectedRoute>} />
