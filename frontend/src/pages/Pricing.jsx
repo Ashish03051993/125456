@@ -1,10 +1,9 @@
 import { useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Check, Sparkles, Zap, Rocket, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TopBar } from "@/components/Layout";
 import { track } from "@/lib/analytics";
-import { login } from "@/pages/AuthCallback";
 
 const PLANS = [
   {
@@ -100,12 +99,13 @@ const AGENCY = {
 };
 
 export default function Pricing() {
+  const navigate = useNavigate();
   useEffect(() => { track("page_view", { page: "pricing" }); }, []);
 
   const onPlan = (plan) => {
     track("pricing_click", { plan });
     // All CTAs currently route to signup — checkout hooks come with Stripe later
-    login();
+    navigate("/signup");
   };
 
   return (

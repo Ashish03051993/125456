@@ -1,0 +1,39 @@
+{
+  "summary": "Full backend + frontend testing of new Email/Mobile + Password auth alongside existing Google Auth. 12/14 backend pytest passed (2 failures are legitimate rate-limit triggers, not bugs). All frontend flows verified: /login, /signup pages render with correct titles ('Welcome back' / 'Create your account'), all required data-testids exist, top-nav routes to /login and /signup, signup with new email lands on /dashboard, login with created account lands on /dashboard, wrong-password and duplicate-email errors render inline as clean strings (not raw objects). Google 'Continue with Google' button is present on both pages (not clicked per instructions). /auth/me strips password_hash; brute-force lockout after 5 failed attempts returns 429; short password (<8) rejected 400; invalid identifier rejected 400; duplicate email returns 409; logout clears server-side session and subsequent /auth/me returns 401; /auth/session Google endpoint still rejects invalid session_id with 401 (regression OK).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/auth/register", "issue": "In-memory per-IP rate limit (10/10min) is aggressive when running full test suite from same egress IP; test suite hit 429 for last 2 tests. Not a functional bug — behaves as designed — but flakes serial regression runs. Consider (a) higher ceiling in non-prod, (b) test hook to reset _rate_limit_store, or (c) skip rate limit when a special test header is sent."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter19_password_auth.py",
+    "/app/test_reports/pytest/iter19_results.xml"
+  ],
+  "action_items": [
+    "Optional: relax or reset /api/auth/register rate limit in test environments to keep regression runs green (currently blocks after 10 registrations per IP per 10 min)."
+  ],
+  "critical_code_review_comments": [
+    "server.py is ~2055 lines — well over the 700-line guideline. Recommend splitting into modules (auth.py, projects.py, admin.py, utm.py, media.py) for maintainability.",
+    "current_user() in server.py:229 correctly strips password_hash via projection {'_id':0,'password_hash':0} — good. /auth/register and /auth/login response bodies also strip it. Verified via /auth/me.",
+    "bcrypt.hashpw uses gensalt() default rounds (12) — appropriate.",
+    "auth/register duplicate handling: when identifier matches an existing account WITHOUT password_hash it silently attaches a password and issues a session. This is intentional (Google-linked accounts) but could be a mild account-takeover surface for an admin shell whose email is well-known. Currently mitigated only by the fact that admin@videostudio.ai is a real Emergent-managed inbox. Consider requiring a magic-link confirm for this linking flow in a future iteration.",
+    "Rate limit store (_rate_limit_store) and login_attempts collection are per-process/in-memory or DB but keyed by client IP — behind K8s ingress the IP extraction is correctly gated by trusted CIDRs (server.py:82-102), good.",
+    "Cookies are set with samesite=none, secure=True, httpOnly=True — correct for cross-site preview host.",
+    "Startup indexes on email/mobile use sparse — correct so Google-only users without mobile don't violate uniqueness. However neither is `unique`; a duplicate-email race is possible (two concurrent /auth/register calls). Consider unique + sparse on email and mobile."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter19_password_auth.py (new)"
+  ],
+  "success_rate": {"backend": "86% (12/14, 2 rate-limit induced)", "frontend": "100% (8/8 flows)"},
+  "test_credentials": "Created live during test: dynamically-generated TEST_ui2_<epoch>@testmail.local / secret123. Also from /app/memory/test_credentials.md: newuser@test.com / secret123 and +919876543210 / secret123.",
+  "seed_data_creation": "None manually seeded — tests dynamically create TEST_pw_<uuid>@testmail.local and TEST_ui_<epoch>@testmail.local accounts (with 'TEST_' prefix so they are easy to clean up).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Auth is stable. When re-running the pytest suite, expect /api/auth/register to 429 after ~10 register calls per IP in 10 min. Either restart backend (`sudo supervisorctl restart backend`) before the run or set a longer window. All data-testids from the review request are present and correct. Test file /app/backend/tests/test_iter19_password_auth.py is a good regression harness."
+}

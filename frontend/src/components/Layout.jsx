@@ -3,7 +3,6 @@ import { Video, LayoutDashboard, Shield, LogOut, Sparkles, Users, BarChart3, Fla
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 import { track } from "@/lib/analytics";
-import { login } from "@/pages/AuthCallback";
 
 export function TopBar() {
   const { user, logout } = useAuth();
@@ -39,12 +38,12 @@ export function TopBar() {
           ) : (
             <>
               <button
-                onClick={() => { track("signin_click", { source: "top_nav" }); login(); }}
+                onClick={() => { track("signin_click", { source: "top_nav" }); navigate("/login"); }}
                 className="hidden sm:inline-flex items-center gap-1.5 text-sm font-semibold text-ink-700 hover:text-brand-600 transition-colors px-2"
                 data-testid="nav-signin-btn">
                 <LogIn className="w-4 h-4" /> Log in
               </button>
-              <Button onClick={() => { track("signup_click", { source: "top_nav" }); login(); }}
+              <Button onClick={() => { track("signup_click", { source: "top_nav" }); navigate("/signup"); }}
                 className="rounded-full bg-brand-600 hover:bg-brand-700 text-white px-4 sm:px-5 h-10"
                 data-testid="nav-signup-btn">
                 <Sparkles className="w-4 h-4 mr-1.5" /> Sign up free

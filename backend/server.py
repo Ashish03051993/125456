@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
 
+import bcrypt
 import httpx
 from dotenv import load_dotenv
 from emergentintegrations.llm.chat import LlmChat, UserMessage
@@ -225,7 +226,7 @@ async def current_user(request: Request,
         exp = exp.replace(tzinfo=timezone.utc)
     if exp and exp < datetime.now(timezone.utc):
         raise HTTPException(401, "Session expired")
-    user = await db.users.find_one({"user_id": sess["user_id"]}, {"_id": 0})
+    user = await db.users.find_one({"user_id": sess["user_id"]}, {"_id": 0, "password_hash": 0})
     if not user:
         raise HTTPException(401, "User not found")
     return user
@@ -296,6 +297,195 @@ async def auth_logout(response: Response, session_token: Optional[str] = Cookie(
     if session_token:
         await db.user_sessions.delete_one({"session_token": session_token})
     response.delete_cookie("session_token", path="/")
+    return {"ok": True}
+
+
+# --------------------------- Email / Mobile + Password Auth ---------------------------
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# E.164-ish: optional +, 8–15 digits. Also accept plain 10-digit local numbers.
+MOBILE_RE = re.compile(r"^\+?[0-9]{8,15}$")
+
+
+def _hash_password(pw: str) -> str:
+    return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def _verify_password(pw: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(pw.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
+
+
+def _normalize_identifier(raw: str) -> tuple[str, str]:
+    """Return (kind, normalized_value). kind = 'email' | 'mobile'. Raises 400 if invalid."""
+    v = (raw or "").strip()
+    if not v:
+        raise HTTPException(400, "Email or mobile is required")
+    if EMAIL_RE.match(v):
+        return "email", v.lower()
+    digits = v.replace(" ", "").replace("-", "")
+    if MOBILE_RE.match(digits):
+        return "mobile", digits
+    raise HTTPException(400, "Enter a valid email address or mobile number")
+
+
+async def _issue_session(user_id: str, response: Response) -> str:
+    token = f"sess_{uuid.uuid4().hex}{uuid.uuid4().hex[:8]}"
+    await db.user_sessions.insert_one({
+        "user_id": user_id,
+        "session_token": token,
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    response.set_cookie("session_token", token, max_age=7 * 24 * 3600,
+                        httponly=True, secure=True, samesite="none", path="/")
+    return token
+
+
+class RegisterIn(BaseModel):
+    name: str
+    identifier: str          # email or mobile
+    password: str
+    mobile: Optional[str] = None  # optional secondary mobile if identifier is email
+
+
+class LoginIn(BaseModel):
+    identifier: str          # email or mobile
+    password: str
+
+
+async def _brute_force_guard(request: Request, ident: str):
+    ip = _client_ip(request)
+    key = f"{ip}:{ident}"
+    now = datetime.now(timezone.utc)
+    rec = await db.login_attempts.find_one({"key": key})
+    if rec:
+        locked_until = rec.get("locked_until")
+        if isinstance(locked_until, str):
+            try: locked_until = datetime.fromisoformat(locked_until)
+            except Exception: locked_until = None
+        if locked_until and locked_until.tzinfo is None:
+            locked_until = locked_until.replace(tzinfo=timezone.utc)
+        if locked_until and locked_until > now:
+            wait = int((locked_until - now).total_seconds())
+            raise HTTPException(429, f"Too many failed attempts. Try again in {wait}s.")
+
+
+async def _record_login_failure(request: Request, ident: str):
+    ip = _client_ip(request)
+    key = f"{ip}:{ident}"
+    now = datetime.now(timezone.utc)
+    rec = await db.login_attempts.find_one({"key": key}) or {}
+    attempts = int(rec.get("attempts", 0)) + 1
+    update = {"attempts": attempts, "last_attempt_at": now.isoformat()}
+    if attempts >= 5:
+        update["locked_until"] = (now + timedelta(minutes=15)).isoformat()
+        update["attempts"] = 0  # reset counter after lockout
+    await db.login_attempts.update_one({"key": key}, {"$set": update, "$setOnInsert": {"key": key}}, upsert=True)
+
+
+async def _clear_login_failures(request: Request, ident: str):
+    ip = _client_ip(request)
+    await db.login_attempts.delete_one({"key": f"{ip}:{ident}"})
+
+
+@api.post("/auth/register")
+async def auth_register(payload: RegisterIn, request: Request, response: Response):
+    _rate_limit_check(request, "auth_register", limit=10, window_seconds=600)
+    name = (payload.name or "").strip()
+    if len(name) < 2:
+        raise HTTPException(400, "Name must be at least 2 characters")
+    if len(payload.password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+    kind, ident = _normalize_identifier(payload.identifier)
+
+    # Optional secondary mobile
+    mobile_val = None
+    if payload.mobile:
+        mkind, mval = _normalize_identifier(payload.mobile)
+        if mkind != "mobile":
+            raise HTTPException(400, "Secondary mobile must be a valid phone number")
+        mobile_val = mval
+
+    query = {"email": ident} if kind == "email" else {"mobile": ident}
+    existing = await db.users.find_one(query, {"_id": 0})
+    if existing:
+        # If they already have a password → conflict. If Google-only (no password_hash) → attach one.
+        if existing.get("password_hash"):
+            raise HTTPException(409, f"An account with this {kind} already exists. Please log in.")
+        await db.users.update_one(
+            {"user_id": existing["user_id"]},
+            {"$set": {
+                "password_hash": _hash_password(payload.password),
+                "name": existing.get("name") or name,
+                **({"mobile": mobile_val} if mobile_val and not existing.get("mobile") else {}),
+            }},
+        )
+        await _issue_session(existing["user_id"], response)
+        user = await db.users.find_one({"user_id": existing["user_id"]}, {"_id": 0, "password_hash": 0})
+        user = await apply_free_refill(user)
+        return {"user": user, "linked": True}
+
+    user_id = f"user_{uuid.uuid4().hex[:12]}"
+    now_iso = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "user_id": user_id,
+        "name": name,
+        "role": "user",
+        "plan": "free",
+        "credits": 3,
+        "password_hash": _hash_password(payload.password),
+        "created_at": now_iso,
+        "last_refill_at": now_iso,
+        "auth_methods": ["password"],
+    }
+    if kind == "email":
+        doc["email"] = ident
+        if mobile_val:
+            doc["mobile"] = mobile_val
+    else:
+        doc["mobile"] = ident
+    await db.users.insert_one(doc)
+    await _issue_session(user_id, response)
+    user = await db.users.find_one({"user_id": user_id}, {"_id": 0, "password_hash": 0})
+    return {"user": user, "created": True}
+
+
+@api.post("/auth/login")
+async def auth_login(payload: LoginIn, request: Request, response: Response):
+    _rate_limit_check(request, "auth_login", limit=20, window_seconds=600)
+    kind, ident = _normalize_identifier(payload.identifier)
+    await _brute_force_guard(request, ident)
+    query = {"email": ident} if kind == "email" else {"mobile": ident}
+    user = await db.users.find_one(query)
+    if not user or not user.get("password_hash"):
+        await _record_login_failure(request, ident)
+        raise HTTPException(401, "Invalid credentials. If you signed up with Google, use 'Continue with Google'.")
+    if not _verify_password(payload.password, user["password_hash"]):
+        await _record_login_failure(request, ident)
+        raise HTTPException(401, "Invalid credentials")
+    await _clear_login_failures(request, ident)
+    await _issue_session(user["user_id"], response)
+    user_public = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0})
+    user_public = await apply_free_refill(user_public)
+    return {"user": user_public}
+
+
+class SetPasswordIn(BaseModel):
+    password: str
+
+
+@api.post("/auth/set-password")
+async def auth_set_password(payload: SetPasswordIn, user=Depends(current_user)):
+    """Allow an existing (e.g. Google) user to add a password to their account."""
+    if len(payload.password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {"password_hash": _hash_password(payload.password)},
+         "$addToSet": {"auth_methods": "password"}},
+    )
     return {"ok": True}
 
 
@@ -1368,10 +1558,7 @@ async def run_pipeline(project_id: str):
 
 
 async def run_after_script_approval(project_id: str):
-    """Continues the pipeline once the user has approved the script.
-    Batch 2 keeps the remaining stages (images → voice → compose) sequential;
-    Batches 3+4 will further split these into individual approval gates.
-    """
+    """Stage 2: Generate images, then STOP at status='awaiting_image_approval'."""
     async def upd(**fields):
         await db.projects.update_one({"id": project_id}, {"$set": fields})
     try:
@@ -1379,24 +1566,87 @@ async def run_after_script_approval(project_id: str):
         scenes = proj.get("scenes") or []
         if not scenes:
             raise RuntimeError("Cannot continue: no scenes on the project.")
-        # 2) Images (sequential)
-        await upd(stage="generating images", progress=25, status="generating")
-        image_paths: List[Path] = []
+        await upd(stage="generating images", progress=30, status="generating")
         img_dir = STORAGE_DIR / "images" / project_id
         img_dir.mkdir(parents=True, exist_ok=True)
         for i, sc in enumerate(scenes):
             p = img_dir / f"s{i}.png"
-            image_paths.append(p)
             await _generate_image(sc["image_prompt"], p)
-            await upd(progress=25 + int(35 * (i + 1) / max(len(scenes), 1)))
-        # 3) TTS
-        await upd(stage="generating voiceover", progress=65)
+            scenes[i] = {**sc, "image_url": f"/api/media/images/{project_id}/s{i}.png"}
+            await upd(scenes=scenes,
+                      progress=30 + int(30 * (i + 1) / max(len(scenes), 1)))
+        await upd(stage="awaiting image approval", progress=60,
+                  status="awaiting_image_approval", scenes=scenes)
+        logger.info("Project %s images drafted, awaiting image approval", project_id)
+    except Exception as e:
+        logger.exception("Image stage failed for %s", project_id)
+        await db.projects.update_one({"id": project_id},
+                                     {"$set": {"status": "error", "error": str(e),
+                                               "stage": "failed"}})
+        proj = await db.projects.find_one({"id": project_id}, {"_id": 0})
+        if proj:
+            cost = int(proj.get("credit_cost", 1) or 1)
+            await db.users.update_one({"user_id": proj["user_id"]},
+                                      {"$inc": {"credits": cost}})
+
+
+async def regen_single_image(project_id: str, scene_idx: int):
+    """Regenerate one specific scene image without re-running the whole stage."""
+    async def upd(**fields):
+        await db.projects.update_one({"id": project_id}, {"$set": fields})
+    try:
+        proj = await db.projects.find_one({"id": project_id}, {"_id": 0})
+        scenes = proj.get("scenes") or []
+        if scene_idx < 0 or scene_idx >= len(scenes):
+            raise RuntimeError(f"Scene idx {scene_idx} out of range.")
+        sc = scenes[scene_idx]
+        img_dir = STORAGE_DIR / "images" / project_id
+        img_dir.mkdir(parents=True, exist_ok=True)
+        p = img_dir / f"s{scene_idx}.png"
+        await _generate_image(sc["image_prompt"], p)
+        # bust browser cache with cache-buster query param on URL
+        import time as _t
+        scenes[scene_idx] = {**sc, "image_url": f"/api/media/images/{project_id}/s{scene_idx}.png?v={int(_t.time())}"}
+        await upd(scenes=scenes, status="awaiting_image_approval",
+                  stage="awaiting image approval")
+    except Exception as e:
+        logger.exception("Single image regen failed for %s scene %d", project_id, scene_idx)
+
+
+async def run_after_image_approval(project_id: str):
+    """Stage 3: Generate voiceover, then STOP at status='awaiting_voice_approval'."""
+    async def upd(**fields):
+        await db.projects.update_one({"id": project_id}, {"$set": fields})
+    try:
+        proj = await db.projects.find_one({"id": project_id}, {"_id": 0})
+        scenes = proj.get("scenes") or []
+        await upd(stage="generating voiceover", progress=65, status="generating")
         full_narration = " ".join(s["narration"] for s in scenes)
         audio_path = STORAGE_DIR / "audio" / f"{project_id}.mp3"
-        voice = VOICE_MAP.get(proj["voice"], "nova")
+        voice = VOICE_MAP.get(proj.get("voice", "female"), "nova")
         await _generate_tts(full_narration[:4000], voice, audio_path)
-        # 4) Compose MP4
-        await upd(stage="composing video", progress=80)
+        await upd(stage="awaiting voice approval", progress=75,
+                  status="awaiting_voice_approval",
+                  audio_url=f"/api/media/audio/{project_id}.mp3")
+        logger.info("Project %s voice drafted, awaiting voice approval", project_id)
+    except Exception as e:
+        logger.exception("Voice stage failed for %s", project_id)
+        await db.projects.update_one({"id": project_id},
+                                     {"$set": {"status": "error", "error": str(e),
+                                               "stage": "failed"}})
+
+
+async def run_after_voice_approval(project_id: str):
+    """Stage 4 (final): Compose the MP4 in every format."""
+    async def upd(**fields):
+        await db.projects.update_one({"id": project_id}, {"$set": fields})
+    try:
+        proj = await db.projects.find_one({"id": project_id}, {"_id": 0})
+        scenes = proj.get("scenes") or []
+        await upd(stage="composing video", progress=85, status="generating")
+        audio_path = STORAGE_DIR / "audio" / f"{project_id}.mp3"
+        image_paths = [STORAGE_DIR / "images" / project_id / f"s{i}.png"
+                       for i in range(len(scenes))]
         total_dur = _ffprobe_duration(audio_path)
         loop = asyncio.get_event_loop()
         video_urls = await loop.run_in_executor(
@@ -1406,28 +1656,19 @@ async def run_after_script_approval(project_id: str):
         from formats import default_format
         primary = default_format()
         per = total_dur / max(len(scenes), 1)
-        final_scenes = [{
-            **sc, "image_url": f"/api/media/images/{project_id}/s{i}.png",
-            "duration": per,
-        } for i, sc in enumerate(scenes)]
+        final_scenes = [{**sc, "duration": per} for sc in scenes]
         await upd(
             stage="done", progress=100, status="ready",
             scenes=final_scenes,
-            audio_url=f"/api/media/audio/{project_id}.mp3",
             video_url=video_urls[primary],
             video_urls=video_urls,
         )
         logger.info("Project %s ready", project_id)
     except Exception as e:
-        logger.exception("Post-script pipeline failed for %s", project_id)
+        logger.exception("Compose stage failed for %s", project_id)
         await db.projects.update_one({"id": project_id},
                                      {"$set": {"status": "error", "error": str(e),
                                                "stage": "failed"}})
-        proj = await db.projects.find_one({"id": project_id}, {"_id": 0})
-        if proj:
-            cost = int(proj.get("credit_cost", 1) or 1)
-            await db.users.update_one({"user_id": proj["user_id"]},
-                                      {"$inc": {"credits": cost}})
 
 
 # --------------------------- Experiments (A/B testing) ---------------------------
@@ -1736,6 +1977,15 @@ async def digest_get(digest_id: str, _admin=Depends(require_admin)):
 # --------------------------- Startup ---------------------------
 @app.on_event("startup")
 async def startup():
+    # Ensure indexes for auth
+    try:
+        await db.users.create_index("email", sparse=True)
+        await db.users.create_index("mobile", sparse=True)
+        await db.users.create_index("user_id", unique=True)
+        await db.user_sessions.create_index("session_token", unique=True)
+        await db.login_attempts.create_index("key", unique=True)
+    except Exception as e:
+        logger.warning("index_creation_warning: %s", e)
     # Seed admin (empty shell) if not exists so we can promote by email login
     admin = await db.users.find_one({"email": "admin@videostudio.ai"})
     if not admin:

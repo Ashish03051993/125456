@@ -4,7 +4,6 @@ import { Sparkles, Palette, CheckCircle2, ArrowRight, Wand2, Image as ImageIcon,
 import { Button } from "@/components/ui/button";
 import { TopBar } from "@/components/Layout";
 import { track, captureAttribution } from "@/lib/analytics";
-import { login } from "@/pages/AuthCallback";
 import DemoVideoSection from "@/components/DemoVideoSection";
 
 const DURATION_CHIPS = [
@@ -47,7 +46,7 @@ export default function Landing() {
 
   const startFree = (surface) => {
     track("signup_click", { source: surface });
-    login();
+    navigate("/signup");
   };
 
   const scrollToDemo = () => {

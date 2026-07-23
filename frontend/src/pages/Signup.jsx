@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Video, LogIn, Loader2 } from "lucide-react";
+import { Video, Sparkles, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,11 +18,13 @@ function formatApiError(detail) {
   return String(detail);
 }
 
-export default function Login() {
+export default function Signup() {
   const { user, loading, setUser } = useAuth();
   const navigate = useNavigate();
-  const [identifier, setIdentifier] = useState("");
+  const [name, setName] = useState("");
+  const [identifier, setIdentifier] = useState("");   // email OR mobile (required)
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -31,27 +33,33 @@ export default function Login() {
     if (user) navigate("/dashboard", { replace: true });
   }, [user, loading, navigate]);
 
-  useEffect(() => { track("page_view", { page: "login" }); }, []);
+  useEffect(() => { track("page_view", { page: "signup" }); }, []);
 
   const submit = async (e) => {
     e.preventDefault();
     setErr("");
+    if (password !== confirm) { setErr("Passwords do not match."); return; }
+    if (password.length < 8) { setErr("Password must be at least 8 characters."); return; }
     setBusy(true);
     try {
-      const { data } = await api.post("/auth/login", { identifier: identifier.trim(), password });
+      const { data } = await api.post("/auth/register", {
+        name: name.trim(),
+        identifier: identifier.trim(),
+        password,
+      });
       setUser(data.user);
-      track("login_success", { method: "password" });
+      track("signup_success", { method: "password", linked: !!data.linked });
       navigate("/dashboard", { replace: true });
     } catch (e2) {
       setErr(formatApiError(e2.response?.data?.detail) || e2.message);
-      track("login_failed", { method: "password" });
+      track("signup_failed", { method: "password" });
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-ink-50 flex flex-col" data-testid="login-page">
+    <div className="min-h-screen bg-ink-50 flex flex-col" data-testid="signup-page">
       <div className="max-w-md w-full mx-auto px-4 pt-10 pb-6">
         <Link to="/" className="flex items-center gap-2 mb-8" data-testid="brand-link">
           <div className="w-9 h-9 rounded-lg bg-brand-600 flex items-center justify-center shadow-sm">
@@ -61,33 +69,48 @@ export default function Login() {
         </Link>
 
         <div className="bg-white rounded-2xl shadow-sm border border-ink-200 p-6 sm:p-8">
-          <h1 className="font-heading text-3xl font-black tracking-tight text-ink-900" data-testid="login-title">Welcome back</h1>
-          <p className="text-ink-500 mt-1 text-sm">Log in to continue creating videos.</p>
+          <div className="inline-flex items-center gap-2 rounded-full border border-brand-100 bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700 mb-3">
+            <Sparkles className="w-3.5 h-3.5" /> 3 free credits every month
+          </div>
+          <h1 className="font-heading text-3xl font-black tracking-tight text-ink-900" data-testid="signup-title">Create your account</h1>
+          <p className="text-ink-500 mt-1 text-sm">Your first 30-second video is on us.</p>
 
-          <form onSubmit={submit} className="mt-6 space-y-4" data-testid="login-form">
+          <form onSubmit={submit} className="mt-6 space-y-4" data-testid="signup-form">
+            <div>
+              <Label htmlFor="name" className="text-ink-700">Full name</Label>
+              <Input id="name" data-testid="signup-name-input"
+                value={name} onChange={(e) => setName(e.target.value)}
+                placeholder="Jane Doe" autoComplete="name" required minLength={2} className="mt-1.5" />
+            </div>
             <div>
               <Label htmlFor="identifier" className="text-ink-700">Email or mobile</Label>
-              <Input id="identifier" data-testid="login-identifier-input"
+              <Input id="identifier" data-testid="signup-identifier-input"
                 value={identifier} onChange={(e) => setIdentifier(e.target.value)}
                 placeholder="you@example.com or +91xxxxxxxxxx"
                 autoComplete="username" required className="mt-1.5" />
+              <p className="text-xs text-ink-500 mt-1">Use either an email address or a mobile number as your login ID.</p>
             </div>
             <div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-ink-700">Password</Label>
-              </div>
-              <Input id="password" type="password" data-testid="login-password-input"
+              <Label htmlFor="password" className="text-ink-700">Password</Label>
+              <Input id="password" type="password" data-testid="signup-password-input"
                 value={password} onChange={(e) => setPassword(e.target.value)}
-                placeholder="Your password" autoComplete="current-password" required
+                placeholder="At least 8 characters" autoComplete="new-password" required
+                minLength={8} className="mt-1.5" />
+            </div>
+            <div>
+              <Label htmlFor="confirm" className="text-ink-700">Confirm password</Label>
+              <Input id="confirm" type="password" data-testid="signup-confirm-input"
+                value={confirm} onChange={(e) => setConfirm(e.target.value)}
+                placeholder="Re-enter password" autoComplete="new-password" required
                 minLength={8} className="mt-1.5" />
             </div>
 
-            {err && <div className="text-sm text-rose-600 bg-rose-50 border border-rose-200 px-3 py-2 rounded-md" data-testid="login-error">{err}</div>}
+            {err && <div className="text-sm text-rose-600 bg-rose-50 border border-rose-200 px-3 py-2 rounded-md" data-testid="signup-error">{err}</div>}
 
             <Button type="submit" disabled={busy}
               className="w-full h-11 rounded-full bg-brand-600 hover:bg-brand-700 text-white font-semibold"
-              data-testid="login-submit-btn">
-              {busy ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Logging in…</> : <><LogIn className="w-4 h-4 mr-2" /> Log in</>}
+              data-testid="signup-submit-btn">
+              {busy ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Creating account…</> : <><Sparkles className="w-4 h-4 mr-2" /> Create account</>}
             </Button>
           </form>
 
@@ -99,16 +122,19 @@ export default function Login() {
           </div>
 
           <Button type="button" variant="outline"
-            onClick={() => { track("signin_click", { method: "google", source: "login_page" }); googleLogin(); }}
+            onClick={() => { track("signup_click", { method: "google", source: "signup_page" }); googleLogin(); }}
             className="w-full h-11 rounded-full border-ink-300 hover:bg-ink-50 font-semibold"
-            data-testid="login-google-btn">
+            data-testid="signup-google-btn">
             <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09A6.98 6.98 0 0 1 5.5 12c0-.72.13-1.43.34-2.09V7.07H2.18A11 11 0 0 0 1 12c0 1.77.42 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z"/></svg>
             Continue with Google
           </Button>
 
           <p className="text-sm text-ink-500 text-center mt-6">
-            Don't have an account?{" "}
-            <Link to="/signup" className="text-brand-600 font-semibold hover:underline" data-testid="link-to-signup">Sign up free</Link>
+            Already have an account?{" "}
+            <Link to="/login" className="text-brand-600 font-semibold hover:underline" data-testid="link-to-login">Log in</Link>
+          </p>
+          <p className="text-xs text-ink-400 text-center mt-3">
+            By creating an account, you agree to our fair-use policy. We&apos;ll grant you 3 free credits every month.
           </p>
         </div>
       </div>
