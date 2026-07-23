@@ -1979,8 +1979,8 @@ async def digest_get(digest_id: str, _admin=Depends(require_admin)):
 async def startup():
     # Ensure indexes for auth
     try:
-        await db.users.create_index("email", sparse=True)
-        await db.users.create_index("mobile", sparse=True)
+        await db.users.create_index("email", unique=True, sparse=True)
+        await db.users.create_index("mobile", unique=True, sparse=True)
         await db.users.create_index("user_id", unique=True)
         await db.user_sessions.create_index("session_token", unique=True)
         await db.login_attempts.create_index("key", unique=True)

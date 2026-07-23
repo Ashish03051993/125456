@@ -143,3 +143,34 @@ Dashboard, credit system, projects, download, admin panel, pricing.
 - ffmpeg is installed at container level. If the container is ever rebuilt from scratch, ensure `apt-get install -y ffmpeg fonts-dejavu`.
 - All routes are prefixed `/api`. Static media at `/media`.
 - Frontend uses `REACT_APP_BACKEND_URL` for all requests.
+
+## Phase 3 — Freemium Guided Pipeline + Custom Auth (2026-07)
+- ✅ **Custom Email/Mobile + Password Auth** alongside Emergent Google Auth (2026-07-23)
+  - `POST /api/auth/register` — accepts email OR mobile (E.164) + password + name
+  - `POST /api/auth/login` — password auth; issues same `session_token` httpOnly cookie used by Google Auth (unified sessions)
+  - `POST /api/auth/set-password` — lets Google-signed users add a password later
+  - `bcrypt` hashing (rounds=12), 8-char minimum, brute-force lockout after 5 fails (15-min cool-down)
+  - Rate limits: 10 registers / 20 logins per IP per 10 min
+  - Unique + sparse indexes on `users.email` and `users.mobile`
+  - `/api/auth/me` now strips `password_hash` before returning
+- ✅ **Login vs Sign-up split** — previously the same page. Now:
+  - `/login` — Email/Mobile + Password + Continue with Google
+  - `/signup` — Name + Email/Mobile + Password + Confirm + Continue with Google
+  - Top-nav "Log in" and "Sign up free" buttons wired to correct pages
+  - Landing hero and Pricing CTAs → `/signup`
+- ✅ Free tier: 3 credits/month auto-refill (`FREE_MONTHLY_CREDITS=3`, refill on `/auth/me`)
+- ✅ Duration picker: 8 tiers (30s / 45s / 60s / 90s / 2m / 3m / 5m / 10m) with credit cost per tier
+- ✅ Step-gated pipeline: Script approval gate live (`/api/projects/{id}/approve_script` + `regenerate_script`)
+- ⚠️ In progress: Image + Voice approval gates (backend `run_after_*_approval` split, frontend UI still needs Image/Voice cards)
+- ✅ Character dialogue mode (`dialogue_mode` toggle in wizard, multi-voice TTS parsing)
+- ✅ Hindi subtitles rendered via Noto CJK/Devanagari fonts (OS-level `apt install fonts-noto-cjk fonts-noto-devanagari`)
+
+## Backlog after Phase 3
+- P0: Image + Voice approval UI in `ProjectView.jsx` (backend already gated)
+- P1: `/api/health` (already in) + Frontend Error Boundary (already in) + Landing OG meta tags
+- P1: Password reset flow (`/api/auth/forgot-password` + email link via Resend)
+- P1: Rate limiting for public APIs + Sentry error tracking
+- P1: Inline rename, duplicate as new version, public share link on projects
+- P2: `server.py` modular split (routes/, services/, models/)
+- P2: Real Resend email delivery for daily digests
+- P2: Real Stripe checkout for paid credit packs
