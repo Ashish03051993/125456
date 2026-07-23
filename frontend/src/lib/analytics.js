@@ -56,7 +56,7 @@ export async function track(event, properties = {}) {
     } catch { /* ignore */ }
     await api.post("/analytics/track", {
       event,
-      properties: { ...properties, ...attr, variant },
+      properties: { ...attr, ...properties, variant },
       session_id: getSessionId(),
       path: window.location.pathname + window.location.hash,
     });

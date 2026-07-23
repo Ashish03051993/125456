@@ -1,0 +1,67 @@
+{
+  "verdict": "PASS",
+  "summary": "Targeted retest of the iter-14 HIGH-severity bug in /app/frontend/src/lib/analytics.js:59. Spread order fix (from `{...properties, ...attr, variant}` to `{...attr, ...properties, variant}`) verified working: caller-supplied `source` now wins over attribution, and attribution still fills in as fallback when caller does not supply source.",
+  "tests_executed": [
+    {
+      "id": "T1_signin_click_caller_wins",
+      "description": "Anonymous visitor lands with utm_source=linkedin (attribution.source=linkedin). Click [data-testid='nav-signin-btn']. Verify POST /api/analytics/track properties.source === 'top_nav'.",
+      "result": "PASS",
+      "captured_payload": {"event":"signin_click","properties":{"source":"top_nav","medium":"social","campaign":null,"referrer_host":null,"variant":"B"}}
+    },
+    {
+      "id": "T2_waitlist_click_caller_wins",
+      "description": "Same session with attribution.source=linkedin. Click [data-testid='nav-waitlist-btn']. Verify POST properties.source === 'top_nav'.",
+      "result": "PASS",
+      "captured_payload": {"event":"waitlist_button_click","properties":{"source":"top_nav","medium":"social","campaign":null,"referrer_host":null,"variant":"B"}}
+    },
+    {
+      "id": "T3_page_view_attribution_fallback",
+      "description": "page_view is emitted without caller-supplied source. Verify properties.source falls back to attribution ('linkedin' due to utm_source=linkedin).",
+      "result": "PASS",
+      "captured_payload": {"event":"page_view","properties":{"source":"linkedin","medium":"social","campaign":null,"referrer_host":null,"page":"landing","variant":"B"}},
+      "notes": "Confirms attribution logic was NOT broken by the swap - caller-absent still gets attribution."
+    },
+    {
+      "id": "T4_login_dashboard_spotcheck",
+      "description": "Spot-check /login and /dashboard routes for anonymous.",
+      "result": "PASS",
+      "notes": "/dashboard correctly redirects anonymous user to '/' (root landing). /login triggers window.location.href to auth.emergentagent.com (intercepted by Playwright abort as expected)."
+    },
+    {
+      "id": "T5_regression_waitlist_form_testids",
+      "description": "Verify [data-testid='waitlist-email'] and [data-testid='waitlist-submit'] still present on landing.",
+      "result": "PASS"
+    }
+  ],
+  "primary_bug_fix_verification": {
+    "file": "/app/frontend/src/lib/analytics.js",
+    "line": 59,
+    "before": "properties: { ...properties, ...attr, variant }  // attribution overrode caller",
+    "after":  "properties: { ...attr, ...properties, variant }  // caller wins",
+    "status": "VERIFIED FIXED"
+  },
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "console_errors": {
+    "count": 10,
+    "details": "All 10 are HTTP 401 responses from /api/auth/me — expected behavior for anonymous visitors; not related to bug fix.",
+    "action_required": false
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix is correct and minimal. Note: the change means that if a caller intentionally passes {source: null/undefined} it will now leak `null` and override attribution — but current call sites (Layout.jsx track('signin_click',{source:'top_nav'}) and track('waitlist_button_click',{source:'top_nav'})) always pass non-null strings, so this is safe. If future callers pass explicit null, consider a guard: `properties: { ...attr, ...Object.fromEntries(Object.entries(properties).filter(([_,v])=>v!==null&&v!==undefined)), variant }`.",
+    "Minor: page_view event fires only from landing/other pages; attribution keys (medium, campaign, referrer_host) are correctly preserved from attribution when caller only specifies `source`. This means callers overriding source no longer lose the medium/campaign context — verified in captured payloads (medium='social' preserved alongside source='top_nav')."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100% (5/5)"},
+  "test_credentials": "Not used — all tests were anonymous. Admin session_token=test_admin_1784712404860 was available but not needed.",
+  "seed_data_creation": "None — cleared localStorage before test to ensure fresh attribution capture from utm_source=linkedin.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bug fix in analytics.js line 59 (spread-order swap) is verified. Caller-supplied `source` now takes precedence in track() payload while attribution still fills in for callers that omit source. All 5 targeted checks passed with zero non-expected console errors. No action needed from main agent for this iteration."
+}
