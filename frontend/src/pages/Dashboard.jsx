@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState, useRef } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { TopBar, Sidebar } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
-import { Plus, Video, Loader2, AlertCircle, CheckCircle2, Trash2 } from "lucide-react";
+import { Plus, Video, Loader2, AlertCircle, CheckCircle2, Trash2, Pencil, Copy as CopyIcon, Check, X } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_STYLES = {
@@ -16,6 +16,12 @@ const STATUS_STYLES = {
 export default function Dashboard() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState(null);       // project id currently in rename mode
+  const [draftTitle, setDraftTitle] = useState("");
+  const [renameBusy, setRenameBusy] = useState(false);
+  const [dupBusy, setDupBusy] = useState({});
+  const editInputRef = useRef(null);
+  const navigate = useNavigate();
 
   const load = async () => {
     try {
@@ -32,6 +38,41 @@ export default function Dashboard() {
     await api.delete(`/projects/${id}`);
     toast.success("Project deleted");
     load();
+  };
+
+  const startRename = (p) => {
+    setEditingId(p.id);
+    setDraftTitle(p.title || p.topic || "");
+    // Focus + select once React renders the input
+    setTimeout(() => editInputRef.current?.select(), 30);
+  };
+
+  const cancelRename = () => { setEditingId(null); setDraftTitle(""); };
+
+  const saveRename = async (id) => {
+    const title = draftTitle.trim();
+    if (!title) { toast.error("Title cannot be empty"); return; }
+    setRenameBusy(true);
+    try {
+      const { data } = await api.patch(`/projects/${id}/title`, { title });
+      setProjects((ps) => ps.map((p) => (p.id === id ? data : p)));
+      toast.success("Renamed");
+      cancelRename();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Rename failed"); }
+    finally { setRenameBusy(false); }
+  };
+
+  const duplicate = async (id) => {
+    setDupBusy((b) => ({ ...b, [id]: true }));
+    try {
+      const { data } = await api.post(`/projects/${id}/duplicate`);
+      toast.success("Duplicated — opening editor");
+      navigate(`/project/${data.id}`);
+    } catch (e) {
+      // 402 already handled globally by paywall modal; other errors -> toast
+      const detail = e?.response?.data?.detail;
+      if (typeof detail !== "object") toast.error(detail || "Duplicate failed");
+    } finally { setDupBusy((b) => ({ ...b, [id]: false })); }
   };
 
   return (
@@ -81,7 +122,45 @@ export default function Dashboard() {
                     </span>
                   </div>
                   <div className="p-4">
-                    <div className="font-heading font-bold text-lg truncate">{p.title || p.topic}</div>
+                    {editingId === p.id ? (
+                      <div className="flex items-center gap-1" data-testid={`rename-row-${p.id}`}>
+                        <input
+                          ref={editInputRef}
+                          value={draftTitle}
+                          onChange={(e) => setDraftTitle(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") saveRename(p.id);
+                            if (e.key === "Escape") cancelRename();
+                          }}
+                          disabled={renameBusy}
+                          maxLength={200}
+                          className="flex-1 min-w-0 font-heading font-bold text-lg bg-brand-50 border border-brand-300 rounded-md px-2 py-1 outline-none focus:border-brand-600"
+                          data-testid={`rename-input-${p.id}`}
+                        />
+                        <button onClick={() => saveRename(p.id)} disabled={renameBusy}
+                          className="p-1.5 rounded-md text-emerald-600 hover:bg-emerald-50"
+                          data-testid={`rename-save-${p.id}`}>
+                          {renameBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                        </button>
+                        <button onClick={cancelRename} disabled={renameBusy}
+                          className="p-1.5 rounded-md text-ink-400 hover:text-ink-700 hover:bg-ink-50"
+                          data-testid={`rename-cancel-${p.id}`}>
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="group flex items-center gap-1.5">
+                        <div className="font-heading font-bold text-lg truncate flex-1 min-w-0" data-testid={`project-title-${p.id}`}>
+                          {p.title || p.topic}
+                        </div>
+                        <button onClick={() => startRename(p)}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-ink-400 hover:text-brand-600 hover:bg-brand-50 shrink-0"
+                          title="Rename"
+                          data-testid={`rename-btn-${p.id}`}>
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
                     <div className="text-xs text-ink-500 mt-0.5">{p.style} · {p.duration_min} min · {p.voice}</div>
                     {p.status === "generating" && (
                       <div className="mt-3">
@@ -93,7 +172,20 @@ export default function Dashboard() {
                     )}
                     <div className="mt-4 flex items-center justify-between">
                       <Link to={`/project/${p.id}`} className="text-brand-600 font-semibold text-sm hover:underline" data-testid={`open-${p.id}`}>Open →</Link>
-                      <button onClick={() => del(p.id)} className="text-ink-400 hover:text-red-600" data-testid={`delete-${p.id}`}><Trash2 className="w-4 h-4" /></button>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => duplicate(p.id)} disabled={dupBusy[p.id]}
+                          className="p-1.5 rounded-md text-ink-400 hover:text-brand-600 hover:bg-brand-50 disabled:opacity-50"
+                          title="Duplicate as new draft"
+                          data-testid={`duplicate-${p.id}`}>
+                          {dupBusy[p.id] ? <Loader2 className="w-4 h-4 animate-spin" /> : <CopyIcon className="w-4 h-4" />}
+                        </button>
+                        <button onClick={() => del(p.id)}
+                          className="p-1.5 rounded-md text-ink-400 hover:text-red-600 hover:bg-red-50"
+                          title="Delete"
+                          data-testid={`delete-${p.id}`}>
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>

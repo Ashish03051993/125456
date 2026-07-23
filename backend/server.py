@@ -777,6 +777,66 @@ async def delete_project(pid: str, user=Depends(current_user)):
     return {"deleted": r.deleted_count}
 
 
+class RenameProjectIn(BaseModel):
+    title: str
+
+
+@api.patch("/projects/{pid}/title")
+async def rename_project(pid: str, payload: RenameProjectIn, user=Depends(current_user)):
+    """Rename any project (works in ANY status — safe metadata-only edit)."""
+    title = (payload.title or "").strip()
+    if len(title) < 1: raise HTTPException(400, "Title cannot be empty")
+    if len(title) > 200: raise HTTPException(400, "Title too long (max 200 chars)")
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    await db.projects.update_one({"id": pid}, {"$set": {"title": title}})
+    return await db.projects.find_one({"id": pid}, {"_id": 0})
+
+
+@api.post("/projects/{pid}/duplicate")
+async def duplicate_project(pid: str, user=Depends(current_user)):
+    """Create a fresh draft with the same settings (topic/duration/style/voice/
+    dialogue_mode/talking_head + character reference). Does NOT copy generated
+    content (script, scenes, audio, video) — user reruns generation from scratch."""
+    src = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not src: raise HTTPException(404, "Not found")
+    user_fresh = await apply_free_refill(await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0}))
+    cost = int(src.get("credit_cost", credit_cost_for_sec(src.get("duration_sec", 30))))
+    # Duplicating a talking-head project on a downgraded account? Fail fast.
+    if src.get("talking_head") and user_fresh.get("plan", "free") not in PAID_PLANS:
+        raise _paid_feature_required("talking_head",
+            "This project uses Talking Head — Pro plan required to duplicate.")
+    if int(user_fresh.get("credits", 0) or 0) < cost:
+        raise _insufficient_credits(cost, int(user_fresh.get("credits", 0) or 0),
+                                    src.get("duration_sec", 30))
+    new_id = f"proj_{uuid.uuid4().hex[:12]}"
+    now_iso = datetime.now(timezone.utc).isoformat()
+    original_title = src.get("title") or src.get("topic") or "Untitled"
+    doc = {
+        "id": new_id,
+        "user_id": user_fresh["user_id"],
+        "topic": src.get("topic"),
+        "title": f"{original_title[:180]} (copy)",
+        "duration_sec": src.get("duration_sec", 30),
+        "duration_min": src.get("duration_min", 1),
+        "language": src.get("language", "English"),
+        "style": src.get("style", "Educational"),
+        "voice": src.get("voice", "female"),
+        "dialogue_mode": src.get("dialogue_mode", False),
+        "talking_head": src.get("talking_head", False),
+        "character_image_url": src.get("character_image_url"),
+        "character_source": src.get("character_source"),
+        "credit_cost": cost,
+        "status": "draft",
+        "progress": 0,
+        "stage": "queued",
+        "scenes": [],
+        "created_at": now_iso,
+    }
+    await db.projects.insert_one(doc)
+    return await db.projects.find_one({"id": new_id}, {"_id": 0})
+
+
 class ProjectPatchIn(BaseModel):
     topic: Optional[str] = None
     duration_sec: Optional[int] = None

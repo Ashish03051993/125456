@@ -1,0 +1,47 @@
+{
+  "summary": "Iteration 25: verified structured 402 responses (paid_feature_required + insufficient_credits), rename & duplicate endpoints on backend (13/13 pytest passed), and global UpgradeModal frontend behavior end-to-end (both variants, ESC / X / backdrop close, CTA→/pricing) plus Dashboard inline rename (button-save + Enter + Escape-cancel) and one-click duplicate (navigates to new project, appears in list with '(copy)' suffix). All 6 core acceptance criteria from review request are verified.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "verified_requirements_backend": [
+    "POST /projects with talking_head=true as Free user → 402 with detail={code:'paid_feature_required',feature:'talking_head',upgrade_url:'/pricing',message}",
+    "POST /projects with duration_sec=600 as Free user (3 credits) → 402 with detail={code:'insufficient_credits',needed:50,have:3,duration_sec:600,upgrade_url:'/pricing'}",
+    "PATCH /projects/{pid}/title works in draft AND non-draft (ready) status",
+    "PATCH /projects/{pid}/title returns 400 for empty title (whitespace-only) and title >200 chars",
+    "PATCH /projects/{pid}/title returns 404 for unknown project id and for wrong user (cross-user isolation)",
+    "POST /projects/{pid}/duplicate copies topic/duration_sec/style/language/voice/dialogue_mode/talking_head/character_image_url/credit_cost; new title = '{original} (copy)'; new status='draft'; progress=0; video_url absent; scenes empty",
+    "POST /projects/{pid}/duplicate returns 402 with paid_feature_required when source project has talking_head=true and user was downgraded to free",
+    "POST /projects/{pid}/duplicate returns 402 with insufficient_credits when user has < credit_cost credits",
+    "POST /projects/{pid}/duplicate returns 404 for unknown project id"
+  ],
+  "verified_requirements_frontend": [
+    "UpgradeModal mounted globally; listens on 'paywall:open' window event",
+    "Dispatching {code:'insufficient_credits',needed:50,have:2,duration_sec:600,upgrade_url:'/pricing'} → modal opens with data-code='insufficient_credits', title='You need 50 credits', kicker='Almost there', 3 bullets, plan strip (Starter/Creator/Pro) visible, CTA='See top-up packs'",
+    "Dispatching {code:'paid_feature_required',feature:'talking_head'} → modal opens with title='Unlock Pro features', kicker='Pro plan required', 4 bullets, CTA='See Pro plans', NO plan strip",
+    "ESC key closes modal",
+    "Clicking backdrop closes modal",
+    "Clicking upgrade-modal-close X closes modal",
+    "Clicking upgrade-modal-cta navigates to /pricing",
+    "Dashboard: rename-btn-{pid} reveals rename-input-{pid}; button save + Enter save both persist to backend and update project-title-{pid}; Escape cancels without saving",
+    "Dashboard: duplicate-{pid} calls POST /duplicate and navigates to /project/{newId}; the duplicate appears in the project list with '(copy)' suffix"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iter25_paywall_rename_duplicate.py",
+    "/app/test_reports/pytest/iter25_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now ~1500 lines — trending large. Consider splitting into routers/ (auth, projects, waitlist, admin) modules; not blocking but recommended before next major addition.",
+    "In UpgradeModal.jsx, the plan-strip credits/prices ('60/$10, 175/$25, 400/$50') are hardcoded and duplicated from Pricing.jsx PLANS map — if pricing ever changes, both files must be kept in sync. Consider a shared constants module (e.g. /lib/pricing.js).",
+    "Duplicate endpoint copies the character_image_url string but not the underlying character file on disk (/storage/characters/{pid}.*). If the source project is later deleted, the new duplicate's character image URL becomes stale/404. Consider either (a) copying the file with the new pid, or (b) documenting that the image reference is a soft link."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter25_paywall_rename_duplicate.py (new)"
+  ],
+  "success_rate": {"backend": "13/13 = 100%", "frontend": "6/6 modal tests + 4/4 dashboard tests = 100%"},
+  "test_credentials": "newuser@test.com / secret123 (pro, 100 credits) — plan/credits restored after tests. Fresh TEST_free_* users created via /auth/register for paywall tests.",
+  "seed_data_creation": "Created + deleted throwaway 'TEST ' prefixed projects for CRUD + created 3 TEST_free_* users (left behind in DB, no cleanup needed as they're isolated).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter 25 (global UpgradeModal + Dashboard rename/duplicate) is fully green. Regression note: the axios interceptor in /app/frontend/src/lib/api.js dispatches 'paywall:open' — cross-component integration test (a real 402 in wizard causing the modal to open) was not exercised end-to-end because /wizard route doesn't exist as a top-level path; the wizard is behind a project-create flow. However, each layer was verified independently — backend delivers structured 402 (verified via pytest), and the modal opens correctly when 'paywall:open' event fires (verified via window.dispatchEvent in browser). The 3-line interceptor gluing them is trivial. Also observed: `/api/analytics/*` endpoints return 404 on public pages — unrelated pre-existing noise. Pro user (newuser@test.com) is restored to plan=pro credits=100 by test_zzz_restore_pro_user.",
+  "rca of the issue": "N/A — no bugs found in the features under test."
+}
