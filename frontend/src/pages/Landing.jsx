@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Sparkles, Palette, CheckCircle2, ArrowRight, Wand2, Image as ImageIcon, Mic, Film } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,6 @@ const FEATURES = [
 export default function Landing() {
   const fired = useRef(false);
   const navigate = useNavigate();
-  const [demoOpen, setDemoOpen] = useState(false);
 
   useEffect(() => {
     if (fired.current) return;
@@ -72,11 +71,13 @@ export default function Landing() {
             Type your idea. Approve the script. Approve the visuals. Approve the voice. Get a polished video in minutes — with you in control at every step.
           </p>
 
-          {/* Duration chips */}
+          {/* Duration chips — click to sign up */}
           <div className="mt-7 flex flex-wrap gap-2" data-testid="hero-duration-chips">
             {DURATION_CHIPS.map((d) => (
-              <div key={d.label}
-                className="group rounded-xl border border-ink-200 bg-white pl-3 pr-3 py-2 flex items-center gap-3 hover:border-brand-600 hover:shadow-sm transition-all"
+              <button key={d.label}
+                type="button"
+                onClick={() => { track("hero_chip_click", { duration: d.label }); startFree(`hero_chip_${d.label}`); }}
+                className="group rounded-xl border border-ink-200 bg-white pl-3 pr-3 py-2 flex items-center gap-3 hover:border-brand-600 hover:shadow-sm transition-all cursor-pointer text-left"
                 data-testid={`duration-chip-${d.label.replace(/\s|min/gi, "").replace("s","sec")}`}>
                 <div className="flex flex-col leading-tight">
                   <span className="font-heading font-bold text-sm text-ink-900">{d.label}</span>
@@ -86,7 +87,7 @@ export default function Landing() {
                   <span className="text-[10px] text-ink-400 uppercase tracking-widest font-semibold">Credits</span>
                   <span className="font-heading font-black text-brand-600 text-base">{d.credits}</span>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
 
@@ -96,7 +97,7 @@ export default function Landing() {
               <Sparkles className="w-4 h-4 mr-2" /> Start free — 1 video / month
             </Button>
             <Button variant="outline" onClick={scrollToDemo} className="rounded-full h-12 px-6 text-base font-semibold border-ink-200 text-ink-900" data-testid="hero-demo-btn">
-              Watch 60-second demo
+              See what you get
             </Button>
           </div>
           <div className="mt-3 text-xs text-ink-500 flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -107,10 +108,8 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Demo Video */}
-      <div id="demo">
-        <DemoVideoSection open={demoOpen} onOpenChange={setDemoOpen} />
-      </div>
+      {/* Demo section — no props needed, storyboard is self-contained */}
+      <DemoVideoSection />
 
       {/* HOW IT WORKS */}
       <section className="max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-24" data-testid="how-it-works">
@@ -182,8 +181,9 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 text-sm text-ink-500">
           <div>© {new Date().getFullYear()} AI Video Studio</div>
           <div className="flex items-center gap-5">
-            <Link to="/pricing" className="hover:text-brand-600">Pricing</Link>
-            <a href="mailto:hello@videostudio.ai" className="hover:text-brand-600">Contact</a>
+            <Link to="/pricing" className="hover:text-brand-600" data-testid="footer-pricing">Pricing</Link>
+            <Link to="/login" className="hover:text-brand-600" data-testid="footer-login">Log in</Link>
+            <Link to="/signup" className="hover:text-brand-600" data-testid="footer-signup">Sign up</Link>
           </div>
         </div>
       </footer>

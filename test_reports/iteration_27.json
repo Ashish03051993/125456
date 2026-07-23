@@ -1,0 +1,23 @@
+{
+  "summary": "Iteration 27 Landing integrity audit (frontend-only). Verified all 3 fixes: (a) 8 duration chips are now real BUTTONs and navigate to /signup with hero_chip_click analytics; (b) hero-demo-btn renamed to 'See what you get' and smooth-scrolls to #demo (scrollY=752 desktop, 845 mobile); (c) footer mailto is gone — replaced by 3 Router links (footer-pricing/-login/-signup) that navigate correctly. DemoVideoSection renders self-contained demo-storyboard 6-panel grid + outputs-grid — no <video>, no demo-play-btn, no unknown-prop console warnings. All other Landing buttons verified: hero-signup-btn, final CTA, TopBar nav-signin-btn, nav-pricing, brand-link. Regression: /pricing calculator (9 calc chips, 12 plan/pack cards) works; /forgot-password + /reset-password render; login as newuser@test.com succeeds and lands on /dashboard with credit-badge (100 credits), project-card, search input, 8 filter chips, and admin link correctly hidden for non-admin.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_27.json"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Landing.jsx / DemoVideoSection.jsx are clean — no leftover video/play affordances, no misleading contact link.",
+    "DemoVideoSection still declares unused `videoSrc, posterSrc` props in its signature. Not a bug (React ignores unused props, no warning), but suggest removing the destructure to avoid future confusion.",
+    "Landing footer omits legal links (Terms/Privacy). Not required by this iteration's audit but worth adding for production launch."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "newuser@test.com / secret123 (Pro, 100 credits) — used and verified.",
+  "seed_data_creation": "None.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Landing has no misleading affordances remaining. Data-testids removed: demo-video-wrap, demo-video, demo-play-btn. Added: demo-storyboard, footer-pricing, footer-login, footer-signup. All 8 duration-chip-* are <button> elements; each click fires hero_chip_click and navigates to /signup. Console shows only expected 401s from /api/auth/me on public pages — no React warnings, no page errors."
+}
