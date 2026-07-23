@@ -55,7 +55,7 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("videostudio")
 
-app = FastAPI(title="Kadenza API")
+app = FastAPI(title="AI Video Studio")
 api = APIRouter(prefix="/api")
 
 # --------------------------- Sentry (optional, no-op without DSN) ---------------------------
@@ -1185,7 +1185,7 @@ async def public_video(slug: str, request: Request):
         "scenes": [{"idx": s.get("idx"), "heading": s.get("heading"),
                     "subtitle": s.get("subtitle"), "image_url": s.get("image_url")}
                    for s in (p.get("scenes") or [])],
-        "creator_name": creator.get("name") or "A Kadenza creator",
+        "creator_name": creator.get("name") or "An AI Video Studio creator",
         "view_count": (p.get("share_view_count") or 0) + 1,
     }
 

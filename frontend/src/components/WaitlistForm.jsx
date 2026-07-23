@@ -43,7 +43,7 @@ export default function WaitlistForm({ compact = false, source = "landing_hero" 
 
   if (joined) {
     const referralUrl = `${window.location.origin}/?utm_source=referral&utm_medium=share&utm_campaign=waitlist&ref=${joined.position}`;
-    const shareText = `I just joined the Kadenza private beta at position #${joined.position} — turn any topic into a ready-to-post video (16:9 + 9:16) in minutes. Reserve your spot 👇`;
+    const shareText = `I just joined the AI Video Studio private beta at position #${joined.position} — turn any topic into a ready-to-post video (16:9 + 9:16) in minutes. Reserve your spot 👇`;
     const openLinkedIn = () => {
       window.open(
         `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(referralUrl)}&summary=${encodeURIComponent(shareText)}`,

@@ -681,7 +681,7 @@ export default function ProjectView() {
 
                 <div className="mt-4 grid grid-cols-4 gap-2" data-testid="share-social-row">
                   {[
-                    { id: "twitter", label: "X", icon: Twitter, href: `https://twitter.com/intent/tweet?text=${encodeURIComponent("Made this with Kadenza →")}%20${encodeURIComponent(publicUrl)}` },
+                    { id: "twitter", label: "X", icon: Twitter, href: `https://twitter.com/intent/tweet?text=${encodeURIComponent("Made this with AI Video Studio →")}%20${encodeURIComponent(publicUrl)}` },
                     { id: "whatsapp", label: "WhatsApp", icon: null, href: `https://wa.me/?text=${encodeURIComponent(publicUrl)}` },
                     { id: "linkedin", label: "LinkedIn", icon: null, href: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(publicUrl)}` },
                     { id: "email", label: "Email", icon: null, href: `mailto:?subject=${encodeURIComponent("Watch this")}&body=${encodeURIComponent(publicUrl)}` },

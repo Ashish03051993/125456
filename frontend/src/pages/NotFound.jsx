@@ -12,7 +12,7 @@ export default function NotFound() {
           <div className="w-11 h-11 rounded-lg bg-brand-600 flex items-center justify-center shadow-sm">
             <Video className="w-6 h-6 text-white" />
           </div>
-          <div className="font-heading font-extrabold text-xl tracking-tight">Kad<span className="text-brand-600">enza</span></div>
+          <div className="font-heading font-extrabold text-xl tracking-tight">AI Video<span className="text-brand-600">Studio</span></div>
         </div>
 
         <div className="font-heading font-black tracking-tighter text-brand-600 text-[92px] leading-none" data-testid="not-found-code">404</div>

@@ -13,7 +13,7 @@ export function LegalShell({ title, updated, children }) {
             <div className="w-9 h-9 rounded-lg bg-brand-600 flex items-center justify-center shadow-sm group-hover:rotate-6 transition-transform">
               <Video className="w-5 h-5 text-white" />
             </div>
-            <div className="font-heading font-extrabold text-lg tracking-tight">Kad<span className="text-brand-600">enza</span></div>
+            <div className="font-heading font-extrabold text-lg tracking-tight">AI Video<span className="text-brand-600">Studio</span></div>
           </Link>
           <Link to="/" className="text-sm text-ink-500 hover:text-ink-900 inline-flex items-center gap-1" data-testid="back-home">
             <ArrowLeft className="w-3.5 h-3.5" /> Back home
@@ -50,7 +50,7 @@ export function Terms() {
   return (
     <LegalShell title="Terms of Service" updated="July 23, 2026">
       <h2>1. Who we are</h2>
-      <p>Kadenza (the &ldquo;Service&rdquo;) is an AI-powered video generation platform that turns text prompts into polished short-form and long-form video content. By using the Service you agree to these Terms.</p>
+      <p>AI Video Studio (the &ldquo;Service&rdquo;) is an AI-powered video generation platform that turns text prompts into polished short-form and long-form video content. By using the Service you agree to these Terms.</p>
 
       <h2>2. Your account</h2>
       <ul>
@@ -81,7 +81,7 @@ export function Terms() {
       <p>Subject to your compliance with these Terms and applicable law, you own the videos, audio, images and text that you generate using the Service and may use them for any purpose — personal or commercial. We claim no ownership over your creations. However:</p>
       <ul>
         <li>You grant us a limited, non-exclusive licence to store, process and deliver your content solely for the purpose of operating the Service.</li>
-        <li>You grant us the right to display your <strong>publicly shared</strong> videos (those you explicitly enable a share link for) on any &ldquo;Made with Kadenza&rdquo; showcase surface. You can revoke the share link at any time to remove them.</li>
+        <li>You grant us the right to display your <strong>publicly shared</strong> videos (those you explicitly enable a share link for) on any &ldquo;Made with AI Video Studio&rdquo; showcase surface. You can revoke the share link at any time to remove them.</li>
       </ul>
 
       <h2>6. AI limitations and no warranty</h2>

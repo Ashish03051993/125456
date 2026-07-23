@@ -33,7 +33,7 @@ export default function ReferralPanel() {
     if (!data?.share_url) return;
     const shareData = {
       title: "Make videos with AI",
-      text: "I've been making videos with Kadenza — you get 3 bonus credits with my link:",
+      text: "I've been making videos with AI Video Studio — you get 3 bonus credits with my link:",
       url: data.share_url,
     };
     if (navigator.share) {

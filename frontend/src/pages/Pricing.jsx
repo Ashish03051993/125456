@@ -383,7 +383,7 @@ export default function Pricing() {
       {/* FOOTER */}
       <footer className="border-t border-ink-100 py-8">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 text-sm text-ink-500">
-          <div>© {new Date().getFullYear()} Kadenza</div>
+          <div>© {new Date().getFullYear()} AI Video Studio</div>
           <div className="flex items-center gap-5">
             <Link to="/" className="hover:text-brand-600">Home</Link>
             <a href="mailto:hello@videostudio.ai" className="hover:text-brand-600">Contact</a>

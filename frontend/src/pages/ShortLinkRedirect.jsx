@@ -49,7 +49,7 @@ export default function ShortLinkRedirect() {
               <Video className="w-7 h-7 text-white" />
             </div>
             <div className="mt-4 font-heading font-bold text-xl tracking-tight">Taking you there…</div>
-            <p className="mt-1 text-ink-500 text-sm">Redirecting to Kadenza.</p>
+            <p className="mt-1 text-ink-500 text-sm">Redirecting to AI Video Studio.</p>
           </>
         )}
       </div>

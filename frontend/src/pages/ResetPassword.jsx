@@ -53,7 +53,7 @@ export default function ResetPassword() {
           <div className="w-9 h-9 rounded-lg bg-brand-600 flex items-center justify-center shadow-sm">
             <Video className="w-5 h-5 text-white" />
           </div>
-          <div className="font-heading font-extrabold text-lg tracking-tight">Kad<span className="text-brand-600">enza</span></div>
+          <div className="font-heading font-extrabold text-lg tracking-tight">AI Video<span className="text-brand-600">Studio</span></div>
         </Link>
 
         <div className="bg-white rounded-2xl shadow-sm border border-ink-200 p-6 sm:p-8">
