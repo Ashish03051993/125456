@@ -335,6 +335,35 @@ async def auth_logout(response: Response, session_token: Optional[str] = Cookie(
     return {"ok": True}
 
 
+# --------------------------- Referrals API ---------------------------
+def _referral_share_url(request: Request, code: str) -> str:
+    # Prefer explicit public URL from env; else derive from request origin
+    base = os.environ.get("PUBLIC_APP_URL", "").rstrip("/")
+    if not base:
+        base = f"{request.url.scheme}://{request.url.hostname}"
+        if request.url.port and request.url.port not in (80, 443):
+            base += f":{request.url.port}"
+    return f"{base}/signup?ref={code}"
+
+
+@api.get("/referrals/me")
+async def referrals_me(request: Request, user=Depends(current_user)):
+    code = await _ensure_referral_code(user["user_id"])
+    invited_count = await db.users.count_documents({"referred_by": user["user_id"]})
+    fresh = await db.users.find_one(
+        {"user_id": user["user_id"]},
+        {"_id": 0, "referral_credits_earned": 1},
+    )
+    credits_earned = int((fresh or {}).get("referral_credits_earned", 0))
+    return {
+        "code": code,
+        "share_url": _referral_share_url(request, code),
+        "invited_count": invited_count,
+        "credits_earned": credits_earned,
+        "bonus_per_referral": REFERRAL_BONUS,
+    }
+
+
 # --------------------------- Structured Payment-Required errors ---------------------------
 class PaymentRequiredError(HTTPException):
     """HTTPException(402) whose `detail` is a machine-readable dict.
@@ -413,6 +442,7 @@ class RegisterIn(BaseModel):
     identifier: str          # email or mobile
     password: str
     mobile: Optional[str] = None  # optional secondary mobile if identifier is email
+    referral_code: Optional[str] = None  # optional 6-char code from ?ref= or manual entry
 
 
 class LoginIn(BaseModel):
@@ -453,6 +483,50 @@ async def _record_login_failure(request: Request, ident: str):
 async def _clear_login_failures(request: Request, ident: str):
     ip = _client_ip(request)
     await db.login_attempts.delete_one({"key": f"{ip}:{ident}"})
+
+
+# --------------------------- Referrals ---------------------------
+# Both the referrer and the new signup get REFERRAL_BONUS credits. Codes are
+# generated lazily on first fetch/register so existing users are covered.
+REFERRAL_BONUS = 3
+_REFERRAL_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/1/O/I to reduce OCR/copy errors
+
+async def _generate_unique_referral_code() -> str:
+    import secrets
+    for _ in range(8):
+        code = "".join(secrets.choice(_REFERRAL_ALPHABET) for _ in range(6))
+        if not await db.users.find_one({"referral_code": code}, {"_id": 1}):
+            return code
+    # Fallback — collisions this deep are astronomically unlikely
+    return "".join(secrets.choice(_REFERRAL_ALPHABET) for _ in range(8))
+
+async def _ensure_referral_code(user_id: str) -> str:
+    user = await db.users.find_one({"user_id": user_id}, {"_id": 0, "referral_code": 1})
+    if user and user.get("referral_code"):
+        return user["referral_code"]
+    code = await _generate_unique_referral_code()
+    await db.users.update_one({"user_id": user_id}, {"$set": {"referral_code": code}})
+    return code
+
+async def _apply_referral_bonus(new_user_id: str, referral_code: str) -> Optional[str]:
+    """If code is valid and doesn't self-refer, credit both parties. Returns referrer_user_id or None."""
+    code = (referral_code or "").strip().upper()
+    if not code:
+        return None
+    referrer = await db.users.find_one({"referral_code": code}, {"_id": 0, "user_id": 1})
+    if not referrer or referrer["user_id"] == new_user_id:
+        return None
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.users.update_one(
+        {"user_id": referrer["user_id"]},
+        {"$inc": {"credits": REFERRAL_BONUS, "referral_credits_earned": REFERRAL_BONUS}},
+    )
+    await db.users.update_one(
+        {"user_id": new_user_id},
+        {"$inc": {"credits": REFERRAL_BONUS},
+         "$set": {"referred_by": referrer["user_id"], "referred_at": now_iso}},
+    )
+    return referrer["user_id"]
 
 
 @api.post("/auth/register")
@@ -512,9 +586,13 @@ async def auth_register(payload: RegisterIn, request: Request, response: Respons
     else:
         doc["mobile"] = ident
     await db.users.insert_one(doc)
+    # Referral: credit both parties if a valid code was supplied
+    referred_by = await _apply_referral_bonus(user_id, payload.referral_code) if payload.referral_code else None
+    # Give the new user their own referral code so they can invite others immediately
+    await _ensure_referral_code(user_id)
     await _issue_session(user_id, response)
     user = await db.users.find_one({"user_id": user_id}, {"_id": 0, "password_hash": 0})
-    return {"user": user, "created": True}
+    return {"user": user, "created": True, "referred_by": bool(referred_by)}
 
 
 @api.post("/auth/login")

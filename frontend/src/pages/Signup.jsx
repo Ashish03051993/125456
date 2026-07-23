@@ -27,11 +27,24 @@ export default function Signup() {
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [refCode, setRefCode] = useState("");
 
   useEffect(() => {
     if (loading) return;
     if (user) navigate("/dashboard", { replace: true });
   }, [user, loading, navigate]);
+
+  // Pick up referral code from URL (?ref=ABC123) once on mount
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const r = (q.get("ref") || "").trim().toUpperCase();
+      if (/^[A-Z0-9]{4,10}$/.test(r)) {
+        setRefCode(r);
+        track("referral_landing", { code: r });
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   useEffect(() => { track("page_view", { page: "signup" }); }, []);
 
@@ -46,9 +59,10 @@ export default function Signup() {
         name: name.trim(),
         identifier: identifier.trim(),
         password,
+        ...(refCode ? { referral_code: refCode } : {}),
       });
       setUser(data.user);
-      track("signup_success", { method: "password", linked: !!data.linked });
+      track("signup_success", { method: "password", linked: !!data.linked, referred: !!data.referred_by });
       navigate("/dashboard", { replace: true });
     } catch (e2) {
       setErr(formatApiError(e2.response?.data?.detail) || e2.message);
@@ -74,6 +88,16 @@ export default function Signup() {
           </div>
           <h1 className="font-heading text-3xl font-black tracking-tight text-ink-900" data-testid="signup-title">Create your account</h1>
           <p className="text-ink-500 mt-1 text-sm">Your first 30-second video is on us.</p>
+
+          {refCode && (
+            <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 flex items-start gap-2.5" data-testid="referral-banner">
+              <Sparkles className="w-4 h-4 text-emerald-700 mt-0.5 shrink-0" />
+              <div className="text-sm text-emerald-900">
+                <span className="font-semibold">You&apos;re invited!</span> You&apos;ll get <span className="font-bold">3 bonus credits</span> when you sign up
+                <span className="font-mono text-emerald-800 ml-1">({refCode})</span>.
+              </div>
+            </div>
+          )}
 
           <form onSubmit={submit} className="mt-6 space-y-4" data-testid="signup-form">
             <div>

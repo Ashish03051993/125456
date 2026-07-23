@@ -3,6 +3,7 @@ import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Coins, User as UserIcon } from "lucide-react";
 import { Link } from "react-router-dom";
+import ReferralPanel from "@/components/ReferralPanel";
 
 export default function Settings() {
   const { user, logout } = useAuth();
@@ -41,6 +42,8 @@ export default function Settings() {
               </div>
               <Link to="/pricing"><Button className="mt-6 rounded-full bg-brand-600 hover:bg-brand-700 text-white" data-testid="upgrade-btn">Upgrade plan</Button></Link>
             </div>
+
+            <ReferralPanel />
           </div>
         </main>
       </div>

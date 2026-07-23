@@ -27,12 +27,14 @@ Dashboard, credit system, projects, download, admin panel, pricing.
 - Blue & white professional theme (Canva/InVideo inspired)
 
 
-## Phase 13 (2026-02) — Launch Compliance + Wizard Draft-Save + Prod Hardening
+## Phase 13 (2026-02) — Launch Compliance + Wizard Draft-Save + Prod Hardening + Referrals
 - ✅ **Cookie Consent Banner mounted** — `<CookieConsent />` mounted globally in `App.js` (right below `<UpgradeModal />`). Appears 700ms after first paint (avoids CLS), stores choice in `localStorage['avs_cookie_consent_v1']` with `{necessary, analytics, at, v}`, broadcasts `cookie-consent:updated` event so downstream analytics layers can respect user choice. Verified: shows on first visit → hides on Accept/Only-Necessary → stays hidden across reload.
 - ✅ **robots.txt + sitemap.xml verified** — both serve correctly under `/robots.txt` and `/sitemap.xml`; robots.txt allows public routes (`/`, `/pricing`, `/terms`, `/privacy`, `/v/`) and disallows auth/dashboard surfaces; sitemap lists 6 public URLs.
 - ✅ **Wizard draft-save (P2 backlog item cleared)** — `ProjectWizard.jsx` now auto-persists `{topic, durationSec, style, language, voice, dialogueMode}` to `localStorage['avs_wizard_draft_v1']` on every change. On revisit, restores the draft and shows a `Draft restored` toast. Draft is cleared automatically when the user clears the topic or successfully starts generation.
 - ✅ **CORS safe-mode** — CORS middleware now strips whitespace, drops empty entries, and auto-disables `allow_credentials` when the origin list is `*` (browsers reject the wildcard+credentials combination anyway). Emits a startup warning under wildcard so operators know to lock down for production. Verified admin login + `/auth/me` cookie flow still works.
 - ✅ **Sentry-ready init** — lazy import behind `SENTRY_DSN` env var. When DSN is set + `sentry-sdk[fastapi]` is installed, it initialises Starlette + FastAPI integrations with `send_default_pii=False` and configurable `SENTRY_ENV` / `SENTRY_TRACES_RATE`. Gracefully warns and no-ops if SDK is missing so the app never fails to boot.
+- ✅ **Referral Program (viral growth loop)** — 6-char OCR-safe codes (`_REFERRAL_ALPHABET` skips 0/1/O/I). On signup with valid `?ref=CODE` both referrer and referee get +3 credits (`REFERRAL_BONUS`). New endpoint `GET /api/referrals/me` returns `{code, share_url, invited_count, credits_earned, bonus_per_referral}`. Codes are generated lazily on first fetch/register so existing users are covered without a migration. New `ReferralPanel` component mounted on `Settings` page (Give/get card + copy/share buttons + live stats). Signup page shows a green "You're invited!" banner when `?ref=` is present. E2E verified: invited count `0→1`, earned `0→3`, referrer balance `10006→10009`, invalid codes silently skip bonus without erroring.
+
 
 
 
