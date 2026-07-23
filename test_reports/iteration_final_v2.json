@@ -1,0 +1,61 @@
+{
+  "verdict": "PRODUCTION_READY",
+  "summary": "FIX VERIFICATION for iter_final DO_NOT_DEPLOY blocker (ffmpeg missing). Confirmed ffmpeg 5.1.9 + ffprobe + DejaVu fonts are now installed. Re-ran the 7 previously-failing ffmpeg-related tests plus the full 56-test pair (test_iter10_ffmpeg_and_video_missing.py + test_iter_final_prelaunch.py) — 56/56 PASSED. Also executed a synthetic ffmpeg compose smoke test (color+sine+drawtext -> mp4) confirming the full h264/aac/drawtext pipeline works end-to-end in this container.",
+  "fix_verification": {
+    "blocker": "ffmpeg missing from container caused _ffmpeg_compose_all guard (server.py:1020) to raise RuntimeError",
+    "status": "RESOLVED",
+    "evidence": {
+      "which_ffmpeg": "/usr/bin/ffmpeg",
+      "ffmpeg_version": "5.1.9-0+deb12u1",
+      "which_ffprobe": "/usr/bin/ffprobe",
+      "dejavu_fonts_present": true,
+      "shutil_which_ffmpeg_from_backend_context": "/usr/bin/ffmpeg",
+      "guard_check_passes": "shutil.which('ffmpeg') truthy -> RuntimeError NOT raised"
+    }
+  },
+  "test_results": {
+    "test_iter10_ffmpeg_and_video_missing.py": "13/13 PASSED (includes TestFFmpegPresence + TestFFmpegGuard + TestVideoMissingContract)",
+    "test_iter_final_prelaunch.py": "43/43 PASSED (includes TestVideoPipelineContract::test_ffmpeg_installed)",
+    "combined_run": "56 passed, 0 failed, 7 deprecation warnings (unrelated: FastAPI on_event lifespan)",
+    "synthetic_ffmpeg_smoke_test": "PASSED - composed 320x240 1s h264+aac mp4 with drawtext overlay using DejaVuSans.ttf"
+  },
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "N/A", "issue": "FastAPI on_event startup/shutdown handlers are deprecated (server.py:1411, 1452, 1476) — should migrate to lifespan handlers. Non-blocking for deployment."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "note": "Frontend was NOT retested per review_request instructions — main agent has not modified frontend since iter_final."
+  },
+  "deployment_notes": [
+    "PRODUCTION deployment container (managed by Emergent platform) may or may not have ffmpeg pre-installed — this is a platform-level concern outside the code repo.",
+    "Recommended post-deploy verification: (a) call /api/health if it exposes ffmpeg status, or (b) issue a single test video-generation request against the deployed URL and confirm the video renders without a 'FFmpeg not installed on server' error.",
+    "The RuntimeError guard at server.py:1020-1021 will fail LOUD (500 with clear message) if the production container lacks ffmpeg — this is safe fail-fast behavior, not silent corruption."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iter10_ffmpeg_and_video_missing.py",
+    "/app/backend/tests/test_iter_final_prelaunch.py",
+    "/app/test_reports/iteration_final.json"
+  ],
+  "action_items": [
+    "OPTIONAL (nice-to-have, non-blocking): expose ffmpeg availability in /api/health response so deploy verification is a single curl.",
+    "OPTIONAL (tech debt): migrate FastAPI on_event startup/shutdown -> lifespan context manager to silence deprecation warnings."
+  ],
+  "critical_code_review_comments": [
+    "server.py::_ffmpeg_compose_all guard is well-implemented — fails fast with actionable install command in error message.",
+    "No hardcoded ffmpeg paths in code — relies on PATH via shutil.which/subprocess, which is portable.",
+    "DejaVu font path in drawtext filter is hardcoded to /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf (verified present); acceptable for the target Debian container but worth noting if platform changes."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "not_tested_this_iteration"},
+  "test_credentials": "Admin session_token=test_admin_1784712404860 (not used — ffmpeg tests do not require auth)",
+  "seed_data_creation": "None — synthetic ffmpeg smoke test used lavfi generators, no persistent data created.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iter_final ffmpeg blocker is CLOSED. If any future changes touch server.py::_ffmpeg_compose_all or video pipeline, re-run the 56-test pair above. Do NOT re-run full LLM-backed video generation E2E — cost-prohibitive.",
+  "rca of the issue": "ROOT CAUSE: previous container image did not include ffmpeg apt package. FIX: main agent ran `apt-get install -y ffmpeg fonts-dejavu-core` which installed ffmpeg 5.1.9-0+deb12u1 (and ffprobe via same package) plus DejaVu font family required by the drawtext subtitle overlay filter. VERIFICATION: shutil.which('ffmpeg') now returns /usr/bin/ffmpeg from the backend Python context; the guard at server.py:1020 no longer raises; synthetic compose smoke test proves the h264/aac/drawtext pipeline is fully operational. MITIGATION FOR PROD: the fail-fast RuntimeError guard ensures that if the production container ever lacks ffmpeg, users see a clear 500 error message instead of silent partial failures — a post-deploy smoke test is still recommended."
+}
