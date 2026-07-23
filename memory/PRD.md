@@ -217,6 +217,17 @@ Dashboard, credit system, projects, download, admin panel, pricing.
   - Empty statuses render disabled chips so users see the whole taxonomy at a glance
   - "Showing X of Y matching …" summary line + no-match empty state with Reset Filters button
   - Zero backend changes — all filtering is memoised client-side for instant response
+- ✅ **Share Analytics for Creators** (2026-07-23)
+  - Every `/v/:slug` view now inserts a `share_events` doc with referrer host + coarse UA bucket (mobile / desktop / bot_preview / unknown)
+  - `GET /projects/{id}/share/analytics` returns {total_views, last_viewed_at, 14-day timeline, top-6 referrers, ua_breakdown}
+  - Referrer parser strips `www.`/`m.`/`mobile.` prefixes and treats own-domain hits as `direct`
+  - Frontend: Share modal on ProjectView now has 2 tabs — "Share link" (existing) and "Insights" — with total-views card, 14-day CSS bar chart, top-referrer bars with %, and device pill chips
+- ✅ **Landing Integrity Audit** (2026-07-23)
+  - **Duration chips**: converted from decorative `<div>` to real `<button>` — clicking now navigates to `/signup` with tracked chip source
+  - **"Watch 60-second demo" button**: renamed to **"See what you get"** — previously scrolled to a broken `<DemoVideoSection>` where the play button silently did nothing (missing `videoSrc` prop)
+  - **DemoVideoSection rewritten** as a self-contained "Sample storyboard" — 6-panel gradient grid showing Scene 1-5 + Export card + the outputs-grid; no video element, no broken play button, no misleading affordance
+  - **Footer mailto removed**: was `mailto:hello@videostudio.ai` (dead domain); replaced with 3 real Router links (Pricing / Log in / Sign up)
+  - Iteration 27: 100% frontend regression pass, zero console errors on desktop + mobile viewports
 
 ## Backlog after Phase 3
 - P0: Password reset flow (`/api/auth/forgot-password` + email link via Resend) — needs Resend API key from user
