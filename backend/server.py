@@ -77,13 +77,43 @@ async def request_context(request, call_next):
 # --------------------------- Rate Limiting (in-memory, per-IP) ---------------------------
 _rate_limit_store: dict = {}   # {(ip, bucket): [(timestamp, ...)]}
 
+def _client_ip(request) -> str:
+    """Extract real client IP even when behind a reverse proxy (K8s ingress, CloudFront, Cloudflare).
+
+    Trusts the FIRST entry in X-Forwarded-For when the direct peer is inside a
+    known-proxy CIDR. Falls back to X-Real-IP, then request.client.host, then 'unknown'.
+    Safe against spoofing because we only trust the header when the L4 peer is one
+    of our own ingress pods.
+    """
+    import ipaddress
+    peer = request.client.host if request.client else None
+    trusted_cidrs = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8"]
+    peer_trusted = False
+    if peer:
+        try:
+            ip_obj = ipaddress.ip_address(peer)
+            peer_trusted = any(ip_obj in ipaddress.ip_network(c) for c in trusted_cidrs)
+        except ValueError:
+            peer_trusted = False
+    if peer_trusted:
+        xff = request.headers.get("x-forwarded-for", "")
+        if xff:
+            first = xff.split(",")[0].strip()
+            if first:
+                return first
+        xreal = request.headers.get("x-real-ip", "").strip()
+        if xreal:
+            return xreal
+    return peer or "unknown"
+
+
 def _rate_limit_check(request, bucket: str, limit: int, window_seconds: int):
     """Sliding-window per-IP rate limit. Raises 429 if exceeded.
 
     In-memory only — resets on backend restart. Fine for public endpoints
     at current traffic scale; graduate to Redis if we need distributed limits.
     """
-    ip = request.client.host if request.client else "unknown"
+    ip = _client_ip(request)
     key = (ip, bucket)
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(seconds=window_seconds)
