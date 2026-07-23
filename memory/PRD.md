@@ -203,6 +203,14 @@ Dashboard, credit system, projects, download, admin panel, pricing.
   - Free plan explicitly shows `—` for non-30s durations (transparent about the free-tier limit)
   - "See exactly what you get ↓" scroll link on paid cards → jumps to calculator
   - Iteration 24: 97% pass (63/65) — no bugs, 2 non-passes were test-env artifacts
+- ✅ **Global Upgrade Modal + Structured 402s + Dashboard Rename/Duplicate** (2026-07-23)
+  - Backend: New `PaymentRequiredError` class returns 402 with machine-readable detail: `{message, code, upgrade_url, ...}`. Two codes: `paid_feature_required` (with `feature`) and `insufficient_credits` (with `needed`, `have`, `duration_sec`)
+  - Frontend: Axios response interceptor catches every 402 and dispatches a `paywall:open` window event
+  - New `<UpgradeModal>` component mounted at App root — two variants: (a) "Almost there / You need X credits" with a mini plan strip, (b) "Pro plan required / Unlock Pro features" with benefit bullets
+  - Wizard's local Talking-Head upsell replaced with the unified global modal (single source of truth)
+  - Backend: `PATCH /api/projects/{id}/title` — rename works in any status; `POST /api/projects/{id}/duplicate` — creates a fresh draft with same settings, empty scenes; copies the character portrait file to a new pid-keyed path so source deletion doesn't break the duplicate; enforces paid-plan gate + credit balance via structured 402s
+  - Frontend: Dashboard cards have hover-revealed rename pencil + inline input with Enter/Escape/save/cancel; duplicate icon in every card footer
+  - Iteration 25: 100% backend (13/13) + 100% frontend (10/10)
 
 ## Backlog after Phase 3
 - P0: Password reset flow (`/api/auth/forgot-password` + email link via Resend) — needs Resend API key from user

@@ -810,6 +810,23 @@ async def duplicate_project(pid: str, user=Depends(current_user)):
         raise _insufficient_credits(cost, int(user_fresh.get("credits", 0) or 0),
                                     src.get("duration_sec", 30))
     new_id = f"proj_{uuid.uuid4().hex[:12]}"
+
+    # Copy the character portrait file to a new path keyed by new_id so
+    # deleting the source project won't break the duplicate.
+    new_char_url = None
+    src_char_url = src.get("character_image_url")
+    if src_char_url:
+        for ext in (".png", ".jpg", ".webp"):
+            src_file = STORAGE_DIR / "characters" / f"{src['id']}{ext}"
+            if src_file.exists():
+                dst_file = STORAGE_DIR / "characters" / f"{new_id}{ext}"
+                try:
+                    dst_file.write_bytes(src_file.read_bytes())
+                    new_char_url = f"/api/media/characters/{new_id}{ext}?v={int(datetime.now(timezone.utc).timestamp())}"
+                except Exception:
+                    logger.exception("Failed to copy character file on duplicate")
+                break
+
     now_iso = datetime.now(timezone.utc).isoformat()
     original_title = src.get("title") or src.get("topic") or "Untitled"
     doc = {
@@ -824,8 +841,8 @@ async def duplicate_project(pid: str, user=Depends(current_user)):
         "voice": src.get("voice", "female"),
         "dialogue_mode": src.get("dialogue_mode", False),
         "talking_head": src.get("talking_head", False),
-        "character_image_url": src.get("character_image_url"),
-        "character_source": src.get("character_source"),
+        "character_image_url": new_char_url,
+        "character_source": src.get("character_source") if new_char_url else None,
         "credit_cost": cost,
         "status": "draft",
         "progress": 0,
