@@ -1,0 +1,71 @@
+{
+  "verdict": "DO_NOT_DEPLOY",
+  "verdict_reason": "One HIGH-severity blocker: `ffmpeg` binary is NOT installed on the production container (`which ffmpeg` returns nothing, `shutil.which('ffmpeg')` is None). Every user-facing video generation will fail at the `composing video` stage with `RuntimeError: FFmpeg not installed on server. Install with apt-get install -y ffmpeg` (server.py line 1021). Backend gracefully refunds the credit (server.py lines 1096-1104), so no data corruption — but the core product feature is broken. All other 14 review-spec sections are 100% green: auth, waitlist flow, UTM/short URLs, analytics, attribution matrix + CSV, sanity + untagged drilldown, A/B assignment, waitlist admin filters + CSV, daily digest scheduler + Resend graceful skip, video pipeline contract on synthetic projects (both video_urls surface correctly), all 6 required Mongo collections present, migration coalesces legacy source=null → 'direct', production config env vars set, no hardcoded localhost/preview URLs in src, /api/media static path correct, CORS from env. Fix ffmpeg → then re-run iter-10 (test_iter10_ffmpeg_and_video_missing.py) → deploy.",
+  "summary": "PRE-LAUNCH final sweep: wrote /app/backend/tests/test_iter_final_prelaunch.py (43 pytest cases spanning auth, waitlist, analytics, matrix+CSV, sanity+untagged, A/B, waitlist admin, UTM+short, digest, video pipeline contract on synthetic ready projects, DB collections, prod config, performance). Also re-ran the full iter-9→iter-13 regression suite (99 tests). All prior iterations preserved. Frontend playwright pass on / (landing renders with A/B variant B assigned + persisted to localStorage.avs_client_id + avs_exp_landing_hero), full waitlist submission → success screen (#11 position badge visible) → all 3 share CTAs present → referral URL contains utm_source=referral&utm_medium=share&utm_campaign=waitlist&ref=11 — verified via [data-testid='waitlist-referral-url']. /admin (cookie session_token=test_admin_1784712404860) loads: Overview tab shows sanity-panel + sanity-verdict + orphans/unattributed/duplicates cards. Untagged drilldown Dialog opens with 'Top referrer hosts' + 'Top landing paths' + session table + 'tracked UTM link' banner. /admin?tab=experiments shows attribution-matrix + matrix-export-csv-btn. UTM + Digest tabs also functional. Book-a-demo Dialog opens from hero. Zero console errors on any page. Only failing tests are the 7 that check ffmpeg installation (6 in test_iter10 + 1 in test_iter_final).",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "video generation pipeline (server.py:_ffmpeg_compose_all L1016-L1029)",
+        "issue": "ffmpeg binary is NOT installed on the container. Verified: `which ffmpeg` → empty, `shutil.which('ffmpeg')` → None. Every /api/projects/{id}/generate call will fail at 'composing video' stage. The guard at L1020-L1021 raises RuntimeError with the correct install command; pipeline exception handler refunds the credit (L1101-L1104). No data corruption but core product feature is broken. Fix: `apt-get update && apt-get install -y ffmpeg`.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Landing early-access section (Landing.jsx bg-ink-900 wrapper around WaitlistForm success card)",
+        "issues": [
+          "OPEN from iter-12 (still not fixed): variant='outline' buttons ('Share on X' + 'Copy referral link') on the WaitlistForm success screen inherit text-white from ancestor <section class='bg-ink-900 text-white'> — invisible on white card until hover. Function 100% intact (clicks fire correctly, referral URL builds correctly). Fix: WaitlistForm.jsx lines 109 + 114 — add `text-ink-900` to className. Priority MEDIUM."
+        ]
+      },
+      {
+        "screen": "AdminPanel.jsx footnote (matrix panel)",
+        "issues": [
+          "Carry-over from iter-13: matrix legend footnote div renders without a data-testid — cosmetic, not blocking. If future tests need to target it add data-testid='matrix-footnote'."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter_final_prelaunch.py",
+    "/app/test_reports/pytest/iter_final.xml",
+    "/app/test_reports/pytest/iter_final_regression.xml"
+  ],
+  "action_items": [
+    "HIGH: Install ffmpeg on the container. `apt-get update && apt-get install -y ffmpeg` (and typically `fonts-dejavu` for subtitle overlay). Then re-run `pytest /app/backend/tests/test_iter10_ffmpeg_and_video_missing.py -v` to confirm all 6 ffmpeg installation checks turn green. Without this, DO NOT DEPLOY — every video generation will 500.",
+    "MEDIUM: (Carry-over iter-12) Add `text-ink-900` to className on WaitlistForm.jsx L109 (Share on X) + L114 (Copy referral link) so they stay legible when embedded inside dark parent sections (landing early-access section).",
+    "LOW: (Carry-over iter-13) Add `data-testid='matrix-footnote'` to the matrix legend footnote if future test coverage wants to target it.",
+    "LOW: Consider using `datetime.now(timezone.utc).date()` instead of `date.today()` for the matrix CSV filename (server.py L730) — consistency with the rest of the codebase which already uses timezone.utc everywhere. Non-blocking."
+  ],
+  "critical_code_review_comments": [
+    "server.py L1016-L1029 (_ffmpeg_compose_all) — the ffmpeg guard is correctly placed BEFORE any subprocess.run calls, so users get a clean error rather than a cryptic subprocess CalledProcessError. Good defensive pattern. Recommend adding the same shutil.which('ffmpeg') check to the FastAPI startup event so ops teams see the warning at boot instead of at first user generation.",
+    "server.py L1411-L1446 (startup event) — admin seed is correctly idempotent (checks find_one before inserting). Migration `update_many({source: null/missing})` also safely idempotent. Scheduler is started via AsyncIOScheduler on the FastAPI event loop — clean shutdown wired at L1452-L1455. All good.",
+    "server.py L1467-L1473 — CORS middleware allow_origins=* is fine for a public marketing site, but once production traffic is on a custom domain, tighten this via env var. `allow_credentials=True` + `allow_origins=['*']` is technically invalid per CORS spec (browsers will refuse credentialed requests with wildcard origin) — user MUST set CORS_ORIGINS to their real domain(s) before switching auth cookies to that domain. Currently working in preview because emergent proxy handles it.",
+    "server.py L264-L300 (waitlist_join) — uses `email = payload.email.strip().lower()` for the dedupe check (case-insensitive). Good. However the `position` assignment is a naive `count_documents + 1` which is racy under concurrent submissions — two simultaneous first-time signups could theoretically get the same position. At current traffic scale (60 total) this is fine but worth flagging for post-scale.",
+    "server.py L703-L735 (attribution-matrix.csv) — clean re-use of admin_attribution_matrix() as single source of truth; guarantees JSON↔CSV numeric consistency (verified via iter-13 round-trip pytest, all 12 cells + 3 row-totals + 4 col-totals + grand match exactly).",
+    "server.py L518-L599 (sanity/untagged) — limit correctly clamped max(1, min(limit, 500)); rollups aggregated over ALL untagged not just the paginated slice; sort DESC by n. Solid diagnostic endpoint.",
+    "AdminPanel.jsx — All previously green testids still work: sanity-panel/verdict/orphans/unattributed/duplicates, attribution-matrix, matrix-export-csv-btn, tab-* nav testids, digest controls. Zero regressions.",
+    "WaitlistForm.jsx L45-L67 — referralUrl builder is deterministic and correctly URL-encodes for LinkedIn + Twitter share intents. clipboard.writeText has try/catch fallback. 3 track() calls fire waitlist_share_click{channel:'linkedin'|'twitter'|'copy'} — closes the attribution loop for referral traffic. Only outstanding issue is the outline-button text-color cascade (see design_issues).",
+    "billing.py — Stripe stub returns {enabled:false, phase:'waitlist'} correctly. No live payment risk pre-launch.",
+    "digest.py + apscheduler CronTrigger(hour=8, tz=IST) — scheduler correctly registered at startup; RESEND_API_KEY missing → email skipped gracefully with delivery.reason='no_api_key'; digest still stored in Mongo + returnable via /admin/digest and /admin/digest/preview. Solid graceful degradation."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter_final_prelaunch.py (NEW — 43 pytest cases covering the full pre-launch spec)",
+    "/app/test_reports/pytest/iter_final.xml (NEW — junit results, 42 pass / 1 ffmpeg fail)",
+    "/app/test_reports/pytest/iter_final_regression.xml (NEW — full iter-9→iter-13 regression: 93 pass / 6 ffmpeg fail / 1 skip)"
+  ],
+  "success_rate": {
+    "backend": "97.7% (42/43 iter_final + 93/99 iter-9→13 regression = 135/142 overall = 95.1%. All 7 failures are the SAME ffmpeg-installation check counted across test files. Excluding ffmpeg checks: 100%)",
+    "frontend": "100% (all data-testids present, all flows working: landing → A/B variant persisted → waitlist submit → position badge → 3 share CTAs → referral URL with correct UTM params → admin panel with cookie auth → sanity panel + untagged drilldown → attribution matrix + CSV export button → UTM tab → digest tab. Zero console errors on any page.)"
+  },
+  "test_credentials": "Admin session_token=test_admin_1784712404860 (cookie, SameSite=None; Secure) — still valid, expires 2026-07-29. Verified via mongosh find on user_sessions.",
+  "seed_data_creation": "Ephemeral only, all cleaned up: (1) TEST_prelaunch_* + TEST_CI_* emails via POST /api/waitlist — 2 rows total, deleted post-run via mongosh. (2) Synthetic 'ready' project proj_TEST_* + legacy proj_TEST_leg_* + TEST_video_user_* + TEST_video_sess_* — inserted in setup_class, deleted in teardown_class. (3) 1 test UTM link (TEST prelaunch <hex>) created + deleted via /api/admin/utm-links DELETE. (4) 1 landing-page test_ui_<ts>@example.com waitlist row (via UI playwright) — deleted via mongosh. (5) 1 ephemeral analytics_event with event=iter_final_probe (inert, not counted in matrix). Post-test DB state matches pre-test.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Full pre-launch sweep completed. Only 1 blocker: ffmpeg NOT installed. Everything else is 100% green. Admin session_token still test_admin_1784712404860 (cookie-based, withCredentials:true). Once ffmpeg is installed on the container (via apt-get install -y ffmpeg), re-run: (1) `pytest /app/backend/tests/test_iter10_ffmpeg_and_video_missing.py -v` — must be 8/8 green. (2) `pytest /app/backend/tests/test_iter_final_prelaunch.py::TestVideoPipelineContract::test_ffmpeg_installed` — must be green. Then verdict flips to PRODUCTION_READY. Live DB waitlist_total=59 as of test run (was 60 briefly during test, cleaned back down). Frontend testids validated: waitlist-email/name/plan/usecase/submit (long form), waitlist-email-compact/waitlist-submit-compact (hero compact form — variant-dependent, may not always render), waitlist-position-badge, waitlist-share-linkedin/twitter, waitlist-copy-referral, waitlist-referral-url, sanity-panel/verdict/orphans/unattributed/duplicates, attribution-matrix, matrix-export-csv-btn, tab-overview/waitlist/experiments/analytics/utm/digest (no tab-sanity — sanity is embedded in Overview). Iter-12 outline-button cascade bug in WaitlistForm.jsx L109/L114 still open. iter-13 matrix footnote testid still absent.",
+  "rca_of_the_issue": "ffmpeg is a system apt package, not a Python dependency. Container images sometimes drop it during rebuilds. The backend correctly detects this at pipeline-runtime (server.py L1020) and raises a clear RuntimeError. The fix is a single command: `apt-get update && apt-get install -y ffmpeg fonts-dejavu-core` and restart the backend supervisor. This will additionally give ffprobe (used at L949 for duration probing) and the DejaVu font family (used by ffmpeg drawtext filter in formats.py). No code changes required. Previous iterations reported ffmpeg was present — either the container was rebuilt without it or a cleanup script removed it since iter-10."
+}
