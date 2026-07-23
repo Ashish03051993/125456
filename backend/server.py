@@ -337,12 +337,19 @@ async def auth_logout(response: Response, session_token: Optional[str] = Cookie(
 
 # --------------------------- Referrals API ---------------------------
 def _referral_share_url(request: Request, code: str) -> str:
-    # Prefer explicit public URL from env; else derive from request origin
+    # Prefer explicit public URL from env; else honour reverse-proxy X-Forwarded-* headers
+    # (Kubernetes ingress rewrites the Host header, so request.url.hostname is the internal
+    # cluster hostname and would produce unusable share links)
     base = os.environ.get("PUBLIC_APP_URL", "").rstrip("/")
     if not base:
-        base = f"{request.url.scheme}://{request.url.hostname}"
-        if request.url.port and request.url.port not in (80, 443):
-            base += f":{request.url.port}"
+        fwd_host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+        fwd_proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "https"
+        if fwd_host:
+            base = f"{fwd_proto}://{fwd_host}"
+        else:
+            base = f"{request.url.scheme}://{request.url.hostname}"
+            if request.url.port and request.url.port not in (80, 443):
+                base += f":{request.url.port}"
     return f"{base}/signup?ref={code}"
 
 
