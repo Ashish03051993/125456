@@ -18,6 +18,7 @@ import PublicVideo from "@/pages/PublicVideo";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import ShortLinkRedirect from "@/pages/ShortLinkRedirect";
+import UpgradeModal from "@/components/UpgradeModal";
 
 function AppRouter() {
   const location = useLocation();
@@ -52,6 +53,7 @@ export default function App() {
         <BrowserRouter>
           <AuthProvider>
             <AppRouter />
+            <UpgradeModal />
             <Toaster position="top-right" richColors />
           </AuthProvider>
         </BrowserRouter>

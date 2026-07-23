@@ -55,6 +55,15 @@ export default function ProjectWizard() {
 
   const isPaidUser = user && feature.paid_plans.includes(user.plan);
 
+  // Open the global upgrade modal (same one the axios 402 interceptor uses)
+  const openPaywall = () => {
+    window.dispatchEvent(new CustomEvent("paywall:open", {
+      detail: { code: "paid_feature_required", feature: "talking_head",
+                message: "Talking-head is available on Pro plan and above.",
+                upgrade_url: "/pricing" },
+    }));
+  };
+
   useEffect(() => {
     api.get("/durations").then(({ data }) => { if (Array.isArray(data) && data.length) setDurations(data); }).catch(() => {});
     api.get("/features/talking_head").then(({ data }) => setFeature(data)).catch(() => {});
@@ -70,7 +79,7 @@ export default function ProjectWizard() {
   const ensureDraftProject = async () => {
     if (draftIdRef.current) return draftIdRef.current;
     if (!topic.trim()) { toast.error("Please enter a topic first — we'll attach the character to this project."); return null; }
-    if (!isPaidUser) { setShowUpsell(true); return null; }
+    if (!isPaidUser) { openPaywall(); return null; }
     try {
       const { data } = await api.post("/projects", {
         topic, duration_sec: durationSec, style, language, voice,
@@ -87,7 +96,7 @@ export default function ProjectWizard() {
   const onUploadCharacter = async (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    if (!isPaidUser) { setShowUpsell(true); e.target.value = ""; return; }
+    if (!isPaidUser) { openPaywall(); e.target.value = ""; return; }
     const pid = await ensureDraftProject();
     if (!pid) { e.target.value = ""; return; }
     setCharBusy(true);
@@ -106,7 +115,7 @@ export default function ProjectWizard() {
   };
 
   const onGenerateCharacter = async () => {
-    if (!isPaidUser) { setShowUpsell(true); return; }
+    if (!isPaidUser) { openPaywall(); return; }
     if (charDesc.trim().length < 8) { toast.error("Describe the character in a few words (e.g. 'confident Indian entrepreneur, 30s')."); return; }
     const pid = await ensureDraftProject();
     if (!pid) return;
@@ -294,7 +303,7 @@ export default function ProjectWizard() {
                   </div>
                   <button type="button"
                     onClick={() => {
-                      if (!isPaidUser) { setShowUpsell(true); return; }
+                      if (!isPaidUser) { openPaywall(); return; }
                       setTalkingHead(v => !v);
                     }}
                     role="switch"

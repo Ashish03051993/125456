@@ -312,6 +312,36 @@ async def auth_logout(response: Response, session_token: Optional[str] = Cookie(
     return {"ok": True}
 
 
+# --------------------------- Structured Payment-Required errors ---------------------------
+class PaymentRequiredError(HTTPException):
+    """HTTPException(402) whose `detail` is a machine-readable dict.
+    Response body: {"detail": {"message": "...", "code": "...", ...extras}}
+    Client interceptor keys off `code` to render the right upgrade modal."""
+
+    def __init__(self, message: str, code: str, **extras):
+        super().__init__(status_code=402, detail={"message": message, "code": code, **extras})
+
+
+def _paid_feature_required(feature: str, message: Optional[str] = None):
+    return PaymentRequiredError(
+        message or "This feature is available on Pro plan and above.",
+        code="paid_feature_required",
+        feature=feature,
+        upgrade_url="/pricing",
+    )
+
+
+def _insufficient_credits(need: int, have: int, duration_sec: int):
+    return PaymentRequiredError(
+        f"Need {need} credits for a {duration_sec}-sec video, you have {have}. Top up to continue.",
+        code="insufficient_credits",
+        needed=need,
+        have=have,
+        duration_sec=duration_sec,
+        upgrade_url="/pricing",
+    )
+
+
 # --------------------------- Email / Mobile + Password Auth ---------------------------
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # E.164-ish: optional +, 8–15 digits. Also accept plain 10-digit local numbers.
@@ -709,11 +739,11 @@ async def create_project(payload: CreateProjectIn, user=Depends(current_user)):
     cost = credit_cost_for_sec(sec)
     # Talking-head is a paid-plan-only feature
     if payload.talking_head and user.get("plan", "free") not in PAID_PLANS:
-        raise HTTPException(402, "Talking-head is available on Pro plan and above. "
-                                 "Upgrade to enable a realistic on-screen speaker.")
+        raise _paid_feature_required("talking_head",
+            "Talking-head is available on Pro plan and above. "
+            "Upgrade to enable a realistic on-screen speaker.")
     if int(user.get("credits", 0) or 0) < cost:
-        raise HTTPException(402, f"Need {cost} credits for a {sec}-sec video, "
-                                 f"you have {user.get('credits', 0)}. Top up to continue.")
+        raise _insufficient_credits(cost, int(user.get("credits", 0) or 0), sec)
     project = Project(
         user_id=user["user_id"],
         topic=payload.topic,
@@ -773,7 +803,7 @@ async def patch_project(pid: str, payload: ProjectPatchIn, user=Depends(current_
     if updates.get("talking_head"):
         user_fresh = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0})
         if (user_fresh or {}).get("plan", "free") not in PAID_PLANS:
-            raise HTTPException(402, "Talking-head is available on Pro plan and above.")
+            raise _paid_feature_required("talking_head")
     if updates:
         await db.projects.update_one({"id": pid}, {"$set": updates})
     return await db.projects.find_one({"id": pid}, {"_id": 0})
@@ -786,7 +816,7 @@ CHAR_ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp"}
 
 def _require_paid_plan(user: dict):
     if user.get("plan", "free") not in PAID_PLANS:
-        raise HTTPException(402, "Talking-head is available on Pro plan and above.")
+        raise _paid_feature_required("talking_head")
 
 
 @api.post("/projects/{pid}/character/upload")
