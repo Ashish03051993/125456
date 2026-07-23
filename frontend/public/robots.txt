@@ -1,0 +1,21 @@
+User-agent: *
+Allow: /
+Allow: /pricing
+Allow: /terms
+Allow: /privacy
+Allow: /v/
+
+# Auth + user surfaces — no need to index
+Disallow: /login
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /dashboard
+Disallow: /new
+Disallow: /project/
+Disallow: /settings
+Disallow: /admin
+Disallow: /auth/
+Disallow: /api/
+
+Sitemap: https://kadenza.app/sitemap.xml

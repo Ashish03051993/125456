@@ -32,6 +32,16 @@ const FALLBACK_DURATIONS = [
   { sec: 600, credits: 50, label: "10 min" },
 ];
 
+// Local draft-save so users don't lose their in-progress wizard state on reload / accidental nav
+const DRAFT_KEY = "avs_wizard_draft_v1";
+const loadDraft = () => {
+  try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "null"); } catch { return null; }
+};
+const saveDraft = (d) => {
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...d, at: Date.now() })); } catch {}
+};
+const clearDraft = () => { try { localStorage.removeItem(DRAFT_KEY); } catch {} };
+
 export default function ProjectWizard() {
   const nav = useNavigate();
   const { refresh, user } = useAuth();
@@ -67,7 +77,27 @@ export default function ProjectWizard() {
   useEffect(() => {
     api.get("/durations").then(({ data }) => { if (Array.isArray(data) && data.length) setDurations(data); }).catch(() => {});
     api.get("/features/talking_head").then(({ data }) => setFeature(data)).catch(() => {});
+    // Restore any saved wizard draft from a previous session
+    const d = loadDraft();
+    if (d && (d.topic || d.dialogueMode)) {
+      if (d.topic) setTopic(d.topic);
+      if (typeof d.durationSec === "number") setDurationSec(d.durationSec);
+      if (d.style) setStyle(d.style);
+      if (d.language) setLanguage(d.language);
+      if (d.voice) setVoice(d.voice);
+      if (typeof d.dialogueMode === "boolean") setDialogueMode(d.dialogueMode);
+      if (d.topic?.trim()) {
+        toast.info("Draft restored", { description: "Picked up where you left off — clear the topic to start fresh." });
+      }
+    }
   }, []);
+
+  // Persist wizard state whenever the user tweaks anything (debounced via effect batching)
+  useEffect(() => {
+    // Only save if the user actually put a topic in — avoids resurrecting a blank wizard
+    if (!topic.trim()) { clearDraft(); return; }
+    saveDraft({ topic, durationSec, style, language, voice, dialogueMode });
+  }, [topic, durationSec, style, language, voice, dialogueMode]);
 
   const activeCredits = durations.find((d) => d.sec === durationSec)?.credits ?? 3;
   const currentCredits = user?.credits ?? 0;
@@ -161,6 +191,7 @@ export default function ProjectWizard() {
       }
       await api.post(`/projects/${pid}/generate`);
       await refresh();
+      clearDraft(); // draft is now a real project — no need to keep the local copy
       toast.success("Generation started");
       nav(`/project/${pid}`);
     } catch (e) {

@@ -21,6 +21,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import ShortLinkRedirect from "@/pages/ShortLinkRedirect";
 import UpgradeModal from "@/components/UpgradeModal";
+import CookieConsent from "@/components/CookieConsent";
 
 function AppRouter() {
   const location = useLocation();
@@ -59,6 +60,7 @@ export default function App() {
           <AuthProvider>
             <AppRouter />
             <UpgradeModal />
+            <CookieConsent />
             <Toaster position="top-right" richColors />
           </AuthProvider>
         </BrowserRouter>
