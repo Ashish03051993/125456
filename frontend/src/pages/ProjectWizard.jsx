@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { TopBar, Sidebar } from "@/components/Layout";
@@ -18,25 +18,46 @@ const STYLES = [
   { id: "Cinematic", icon: Camera, desc: "Dramatic, evocative, slow" },
   { id: "Storytelling", icon: BookOpen, desc: "Warm, character-driven" },
 ];
-const DURATIONS = [1, 3, 5, 10];
 const LANGS = ["English", "Hindi", "Spanish", "French", "German", "Portuguese", "Japanese"];
+
+// Fallback used if /api/durations is momentarily unreachable
+const FALLBACK_DURATIONS = [
+  { sec: 30,  credits: 3,  label: "30 sec" },
+  { sec: 45,  credits: 4,  label: "45 sec" },
+  { sec: 60,  credits: 5,  label: "60 sec" },
+  { sec: 90,  credits: 7,  label: "90 sec" },
+  { sec: 120, credits: 10, label: "2 min" },
+  { sec: 180, credits: 15, label: "3 min" },
+  { sec: 300, credits: 25, label: "5 min" },
+  { sec: 600, credits: 50, label: "10 min" },
+];
 
 export default function ProjectWizard() {
   const nav = useNavigate();
   const { refresh, user } = useAuth();
   const [topic, setTopic] = useState("");
-  const [duration, setDuration] = useState(1);
+  const [durations, setDurations] = useState(FALLBACK_DURATIONS);
+  const [durationSec, setDurationSec] = useState(30);
   const [style, setStyle] = useState("Educational");
   const [language, setLanguage] = useState("English");
   const [voice, setVoice] = useState("female");
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    api.get("/durations").then(({ data }) => { if (Array.isArray(data) && data.length) setDurations(data); }).catch(() => {});
+  }, []);
+
+  const activeCredits = durations.find((d) => d.sec === durationSec)?.credits ?? 3;
+  const currentCredits = user?.credits ?? 0;
+  const canAfford = currentCredits >= activeCredits;
+
   const create = async () => {
     if (!topic.trim()) return toast.error("Please enter a topic.");
+    if (!canAfford) return toast.error(`Need ${activeCredits} credits, you have ${currentCredits}. Top up to continue.`);
     setBusy(true);
     try {
       const { data } = await api.post("/projects", {
-        topic, duration_min: duration, style, language, voice,
+        topic, duration_sec: durationSec, style, language, voice,
       });
       await api.post(`/projects/${data.id}/generate`);
       await refresh();
@@ -56,7 +77,7 @@ export default function ProjectWizard() {
           <div className="max-w-3xl">
             <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">New video</div>
             <h1 className="mt-1 font-heading text-4xl font-extrabold tracking-tighter">Describe your video.</h1>
-            <p className="mt-2 text-ink-500">We&apos;ll draft the script and storyboard, then generate images, voice and MP4.</p>
+            <p className="mt-2 text-ink-500">We&apos;ll draft the script, then walk you through visuals and voice — you approve every step before the video is rendered.</p>
 
             <div className="mt-8 bg-white border border-ink-200 rounded-2xl p-6 space-y-6">
               <div>
@@ -69,14 +90,22 @@ export default function ProjectWizard() {
 
               <div>
                 <Label className="text-sm font-semibold">Duration</Label>
-                <div className="mt-2 grid grid-cols-4 gap-2">
-                  {DURATIONS.map((d) => (
-                    <button key={d} data-testid={`duration-${d}`}
-                      onClick={() => setDuration(d)}
-                      className={`h-11 rounded-lg border font-medium text-sm transition-colors ${
-                        duration === d ? "bg-brand-600 text-white border-brand-600" : "bg-white border-ink-200 hover:border-brand-600"
-                      }`}>{d} min</button>
-                  ))}
+                <div className="mt-2 grid grid-cols-4 sm:grid-cols-8 gap-2">
+                  {durations.map((d) => {
+                    const active = durationSec === d.sec;
+                    const affordable = currentCredits >= d.credits;
+                    return (
+                      <button key={d.sec} data-testid={`duration-${d.sec}`}
+                        onClick={() => setDurationSec(d.sec)}
+                        className={`h-16 rounded-lg border font-medium text-sm transition-colors flex flex-col items-center justify-center gap-0.5 ${
+                          active ? "bg-brand-600 text-white border-brand-600"
+                                 : affordable ? "bg-white border-ink-200 hover:border-brand-600"
+                                              : "bg-ink-50 border-ink-200 text-ink-400"}`}>
+                        <span className="font-semibold">{d.label}</span>
+                        <span className={`text-[10px] font-mono ${active ? "text-white/80" : "text-ink-500"}`}>{d.credits} cr</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -118,9 +147,12 @@ export default function ProjectWizard() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-2">
-                <div className="text-xs text-ink-500">Uses 1 credit · {user?.credits} remaining</div>
-                <Button onClick={create} disabled={busy || !topic.trim()}
+              <div className="flex items-center justify-between pt-2 flex-wrap gap-3">
+                <div className="text-xs text-ink-500" data-testid="cost-summary">
+                  Uses <span className="font-bold text-brand-700">{activeCredits} credits</span> · You have <span className="font-bold text-ink-900">{currentCredits}</span>
+                  {!canAfford && <span className="ml-2 text-amber-700 font-semibold">(insufficient)</span>}
+                </div>
+                <Button onClick={create} disabled={busy || !topic.trim() || !canAfford}
                   className="h-11 rounded-full bg-brand-600 hover:bg-brand-700 text-white px-7"
                   data-testid="generate-btn">
                   {busy ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Starting…</> : <><Sparkles className="w-4 h-4 mr-2" /> Generate video</>}

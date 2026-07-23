@@ -1,0 +1,56 @@
+{
+  "summary": "Iter-16 credit-based pivot verification. Backend 20/21 pytest pass (1 real defect: legacy duration_min payload broken). Frontend Landing/Pricing/Wizard 100% pass — all new testids present, waitlist removed, 8-tier duration picker + cost summary + affordability check all work. One minor: hero-demo-btn is a no-op because DemoVideoSection doesn't accept open/onOpenChange props.",
+  "verdict": "MOSTLY PASS — 1 backend defect + 1 minor frontend defect",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/projects",
+        "issue": "Legacy payload {topic, duration_min: 3} is silently coerced to duration_sec=30 (credit_cost=3) instead of duration_sec=180 (credit_cost=15) as required by spec. Root cause: CreateProjectIn.duration_sec has default=30 (server.py:200), so any payload without an explicit duration_sec still arrives with duration_sec=30. In resolve_duration_sec() (server.py:324) the first branch 'if payload.duration_sec and payload.duration_sec in DURATION_BY_SEC: return payload.duration_sec' short-circuits BEFORE the duration_min fallback is checked. Fix: change 'duration_sec: int = 30' → 'duration_sec: Optional[int] = None' in CreateProjectIn, OR reorder resolve_duration_sec to prefer duration_min when it is explicitly provided. Also update the default duration_sec constant lookup accordingly.",
+        "priority": "HIGH",
+        "reproduction": "curl -X POST $URL/api/projects -H 'Authorization: Bearer <tok>' -H 'Content-Type: application/json' -d '{\"topic\":\"x\",\"duration_min\":3}' → returns {\"duration_sec\":30, \"credit_cost\":3, \"duration_min\":1}. Expected duration_sec=180, credit_cost=15."
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Landing (hero-demo-btn)",
+        "issue": "Clicking data-testid='hero-demo-btn' sets demoOpen=true but the DemoVideoSection component signature is `({videoSrc, posterSrc})` — it does NOT accept `open`/`onOpenChange` props (see /app/frontend/src/components/DemoVideoSection.jsx:12). So the button is effectively a no-op. No dialog appears. If the demo is meant to be inline (as rendered below the hero), remove the state + prop pass and either scroll the demo section into view on click, or convert DemoVideoSection into a Dialog that honors the open prop. Spec explicitly states 'data-testid=hero-demo-btn opens demo dialog' — currently fails silently.",
+        "selector": "[data-testid='hero-demo-btn']",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter16_credit_pivot.py",
+    "/app/test_reports/pytest/iter16_results.xml"
+  ],
+  "action_items": [
+    "HIGH: Fix POST /api/projects legacy duration_min handling — make CreateProjectIn.duration_sec Optional[int]=None (or reorder resolve_duration_sec). This is called out explicitly in the spec.",
+    "MED: Make hero-demo-btn actually open a demo dialog (or scroll to the existing inline DemoVideoSection). Currently the click has no visible effect."
+  ],
+  "critical_code_review_comments": [
+    "server.py CreateProjectIn.duration_sec default=30 defeats the legacy-fallback branch in resolve_duration_sec() — see failing test test_create_project_legacy_duration_min.",
+    "server.py apply_free_refill correctly no-ops for plan!='free', correctly upserts last_refill_at, and correctly uses max(current, FREE_MONTHLY_CREDITS) so existing balances are not clobbered. Idempotency within same calendar month verified.",
+    "server.py:333-337 credit_cost_for_sec / scenes_for_sec fall back to DEFAULT_DURATION_SEC for unknown seconds. Not reachable in practice because resolve_duration_sec always snaps first — good.",
+    "Landing.jsx duration-chip labels use label.replace(' ', '-') — this only replaces the FIRST space. For all current labels ('30 sec', '2 min') there is only ONE space so this is fine. Should any future label contain 2+ spaces (e.g. '1 h 30 min') the id would break. Minor.",
+    "ProjectWizard.jsx fetches /api/durations and merges into state — good pattern for keeping FE + BE tier list in sync without redeploy.",
+    "Pricing.jsx CTA table hardcodes the 8 tiers (215-222) — duplicates the source of truth in server.py. Consider fetching /api/durations here too, or extracting into a shared constants module."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter16_credit_pivot.py"
+  ],
+  "success_rate": {
+    "backend": "20/21 = 95.2%",
+    "frontend": "45/46 = 97.8% (Landing 31/32, Pricing 13/13, Wizard 20/20, Dashboard/Login 3/3; 1 fail = hero-demo-btn no-op)"
+  },
+  "test_credentials": "ADMIN_TOKEN=test_admin_1784712404860 (verified — /api/admin/* endpoints all responded 200). Test user seeded via Mongo: user_id=TEST_iter16_ui_1784794314517, session_token=TEST_iter16_uitok_1784794314517 (credits=5, plan=free). Cleaned up in teardown.",
+  "seed_data_creation": "5 ephemeral users + sessions seeded via Mongo for backend pytest (each cleaned up in its own test fixture). 1 additional user for UI test — cleaned in teardown (see mongosh delete counts).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend tests in /app/backend/tests/test_iter16_credit_pivot.py; run with `python -m pytest tests/test_iter16_credit_pivot.py -v -n 0`. The one failing test (test_create_project_legacy_duration_min) will KEEP failing until main agent fixes CreateProjectIn.duration_sec default. Frontend covered: Landing (/), /pricing, /new (wizard). Wizard route is /new not /create — spec was slightly off. Session injection worked via cookie with sameSite=None, secure=True, path=/ on the preview domain. No console errors on Landing/Dashboard/Pricing.",
+  "rca_of_the_issue": "resolve_duration_sec logic uses a truthy short-circuit on payload.duration_sec, but the Pydantic model gives duration_sec a default of 30 rather than making it Optional. Result: for legacy clients sending only duration_min, the request arrives at the server with duration_sec=30 (from defaults), matches DURATION_BY_SEC, and returns immediately — never entering the duration_min branch. Two-line fix: (1) `duration_sec: Optional[int] = None` in CreateProjectIn; (2) update the first line of resolve_duration_sec accordingly (the current guard `if payload.duration_sec and payload.duration_sec in DURATION_BY_SEC` already handles None correctly)."
+}

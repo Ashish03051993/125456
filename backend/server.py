@@ -176,7 +176,8 @@ class Project(BaseModel):
     id: str = Field(default_factory=lambda: f"proj_{uuid.uuid4().hex[:12]}")
     user_id: str
     topic: str
-    duration_min: int = 1
+    duration_sec: int = 30                # New: precise duration in seconds
+    duration_min: int = 1                 # Legacy: kept for backwards compat
     language: str = "English"
     style: str = "Educational"
     voice: str = "female"
@@ -189,13 +190,15 @@ class Project(BaseModel):
     scenes: List[Scene] = []
     audio_url: Optional[str] = None
     video_url: Optional[str] = None
+    credit_cost: int = 3                  # Credits charged when generation started
     error: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class CreateProjectIn(BaseModel):
     topic: str
-    duration_min: int = 1
+    duration_sec: int = 30                # Preferred
+    duration_min: Optional[int] = None    # Legacy fallback
     language: str = "English"
     style: str = "Educational"
     voice: str = "female"
@@ -282,7 +285,7 @@ async def auth_session(payload: SessionIn, response: Response):
 
 @api.get("/auth/me")
 async def auth_me(user=Depends(current_user)):
-    return user
+    return await apply_free_refill(user)
 
 
 @api.post("/auth/logout")
@@ -300,15 +303,94 @@ async def list_projects(user=Depends(current_user)):
     return await cur.to_list(200)
 
 
+# --------------------------- Duration Registry (single source of truth) ---------------------------
+DURATION_TIERS: list = [
+    # (duration_sec, credit_cost, num_scenes, label)
+    (30,   3,  3,  "30 sec"),
+    (45,   4,  4,  "45 sec"),
+    (60,   5,  5,  "60 sec"),
+    (90,   7,  7,  "90 sec"),
+    (120, 10,  9,  "2 min"),
+    (180, 15, 12,  "3 min"),
+    (300, 25, 16,  "5 min"),
+    (600, 50, 22,  "10 min"),
+]
+DURATION_BY_SEC = {t[0]: t for t in DURATION_TIERS}
+DEFAULT_DURATION_SEC = 30
+
+def resolve_duration_sec(payload: "CreateProjectIn") -> int:
+    """Coerce input into a supported duration tier. Prefers duration_sec; falls
+    back to legacy duration_min. Snaps to the nearest supported tier."""
+    if payload.duration_sec and payload.duration_sec in DURATION_BY_SEC:
+        return payload.duration_sec
+    if payload.duration_min:
+        return {1: 30, 3: 180, 5: 300, 10: 600}.get(payload.duration_min, DEFAULT_DURATION_SEC)
+    if payload.duration_sec:
+        supported = [t[0] for t in DURATION_TIERS]
+        return min(supported, key=lambda s: abs(s - payload.duration_sec))
+    return DEFAULT_DURATION_SEC
+
+def credit_cost_for_sec(sec: int) -> int:
+    return DURATION_BY_SEC.get(sec, DURATION_BY_SEC[DEFAULT_DURATION_SEC])[1]
+
+def scenes_for_sec(sec: int) -> int:
+    return DURATION_BY_SEC.get(sec, DURATION_BY_SEC[DEFAULT_DURATION_SEC])[2]
+
+
+# --------------------------- Free-tier credit refill ---------------------------
+FREE_MONTHLY_CREDITS = 3   # Enough for exactly one 30-sec video
+
+async def apply_free_refill(user: dict) -> dict:
+    """If the user's `last_refill_at` is in a previous calendar month (or missing),
+    top them up to at least FREE_MONTHLY_CREDITS. Idempotent: only fires once per
+    calendar month per user. Returns the (possibly refilled) user doc.
+    """
+    if user.get("plan") and user["plan"] != "free":
+        return user  # Paid users don't auto-refill; they buy credit packs.
+    now = datetime.now(timezone.utc)
+    last = user.get("last_refill_at")
+    if isinstance(last, str):
+        try: last = datetime.fromisoformat(last)
+        except Exception: last = None
+    if last and last.tzinfo is None: last = last.replace(tzinfo=timezone.utc)
+    same_month = last and last.year == now.year and last.month == now.month
+    if same_month:
+        return user
+    # New month → top up to at least the free grant
+    current = int(user.get("credits", 0) or 0)
+    new_credits = max(current, FREE_MONTHLY_CREDITS)
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {"credits": new_credits, "last_refill_at": now.isoformat(),
+                  "plan": user.get("plan") or "free"}},
+    )
+    user["credits"] = new_credits
+    user["last_refill_at"] = now.isoformat()
+    return user
+
+
 @api.post("/projects")
 async def create_project(payload: CreateProjectIn, user=Depends(current_user)):
-    if user.get("credits", 0) <= 0:
-        raise HTTPException(402, "No credits remaining. Upgrade your plan.")
-    p = Project(user_id=user["user_id"], **payload.model_dump())
-    doc = p.model_dump()
+    user = await apply_free_refill(user)
+    sec = resolve_duration_sec(payload)
+    cost = credit_cost_for_sec(sec)
+    if int(user.get("credits", 0) or 0) < cost:
+        raise HTTPException(402, f"Need {cost} credits for a {sec}-sec video, "
+                                 f"you have {user.get('credits', 0)}. Top up to continue.")
+    project = Project(
+        user_id=user["user_id"],
+        topic=payload.topic,
+        duration_sec=sec,
+        duration_min=max(1, sec // 60),      # legacy field, best-effort mapping
+        language=payload.language,
+        style=payload.style,
+        voice=payload.voice,
+        credit_cost=cost,
+    )
+    doc = project.model_dump()
     doc["created_at"] = doc["created_at"].isoformat()
     await db.projects.insert_one(doc)
-    return await db.projects.find_one({"id": p.id}, {"_id": 0})
+    return await db.projects.find_one({"id": project.id}, {"_id": 0})
 
 
 @api.get("/projects/{pid}")
@@ -335,8 +417,9 @@ async def start_generate(pid: str, bg: BackgroundTasks, user=Depends(current_use
     await db.projects.update_one({"id": pid},
                                  {"$set": {"status": "generating", "progress": 5,
                                            "stage": "writing script", "error": None}})
-    # Decrement one credit up-front
-    await db.users.update_one({"user_id": user["user_id"]}, {"$inc": {"credits": -1}})
+    # Decrement credits based on project's stored cost (set at creation time)
+    cost = int(p.get("credit_cost", 1) or 1)
+    await db.users.update_one({"user_id": user["user_id"]}, {"$inc": {"credits": -cost}})
     bg.add_task(run_pipeline, pid)
     return {"ok": True}
 
@@ -524,6 +607,15 @@ async def admin_waitlist_csv(_admin=Depends(require_admin),
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{fname}.csv"'},
     )
+
+
+@api.get("/durations")
+async def list_durations():
+    """Public list of supported video durations + credit costs (source of truth for FE picker)."""
+    return [
+        {"sec": s, "credits": c, "scenes": n, "label": lbl}
+        for (s, c, n, lbl) in DURATION_TIERS
+    ]
 
 
 @api.get("/formats")
@@ -1007,7 +1099,9 @@ def scenes_for_duration(minutes: int) -> int:
 
 
 async def _generate_script(project: dict) -> dict:
-    n_scenes = scenes_for_duration(project["duration_min"])
+    # Prefer new duration_sec, fall back to legacy duration_min-based count
+    sec = project.get("duration_sec")
+    n_scenes = scenes_for_sec(sec) if sec else scenes_for_duration(project.get("duration_min", 1))
     sys = ("You write concise scripts for AI-generated short videos. "
            "Return ONLY valid JSON matching the schema, no prose, no code fences.")
     schema = ("{\"title\": str, \"hook\": str, \"scenes\": ["

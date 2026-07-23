@@ -1,218 +1,179 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import { Sparkles, Zap, Palette, Layers, Video, Check, Play, ArrowRight, CalendarClock } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { Sparkles, Palette, CheckCircle2, ArrowRight, Wand2, Image as ImageIcon, Mic, Film } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TopBar } from "@/components/Layout";
 import { track, captureAttribution } from "@/lib/analytics";
-import { fetchVariant } from "@/lib/experiments";
-import WaitlistForm from "@/components/WaitlistForm";
+import { login } from "@/pages/AuthCallback";
 import DemoVideoSection from "@/components/DemoVideoSection";
-import BookDemoDialog from "@/components/BookDemoDialog";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const DEMO_VIDEO = `${BACKEND_URL}/api/media/videos/demo.mp4`;
-const DEMO_POSTER = `${BACKEND_URL}/api/media/videos/demo_poster.jpg`;
+const DURATION_CHIPS = [
+  { label: "30 sec", credits: 3 },
+  { label: "45 sec", credits: 4 },
+  { label: "60 sec", credits: 5 },
+  { label: "90 sec", credits: 7 },
+  { label: "2 min",  credits: 10 },
+  { label: "3 min",  credits: 15 },
+  { label: "5 min",  credits: 25 },
+  { label: "10 min", credits: 50 },
+];
 
-// Fallback content in case the experiment endpoint is unreachable.
-const FALLBACK = {
-  eyebrow: "Now in private beta — join the waitlist",
-  headline_pre: "Turn a",
-  headline_highlight: "topic",
-  headline_mid: "into a",
-  headline_after: "cinematic video",
-  subtitle: "AI Video Studio writes the script, storyboards every scene, generates the imagery, records the voiceover and renders a finished MP4 — then repurposes the same idea into a LinkedIn post, blog and newsletter.",
-  cta_primary: "Reserve my spot",
-  cta_secondary: "Watch demo",
-};
+const STEPS = [
+  { icon: Wand2,     title: "1. Share your idea",   body: "Type a topic. Pick a duration between 30 seconds and 10 minutes." },
+  { icon: Sparkles,  title: "2. Approve the script", body: "Our AI writes the story. You edit or approve — nothing moves until you say yes." },
+  { icon: ImageIcon, title: "3. Approve the visuals",body: "Every scene rendered as an image. Regenerate any frame you don't love." },
+  { icon: Mic,       title: "4. Approve the voice",  body: "Pick a voice, listen, refine. You&apos;re always in the driver&apos;s seat." },
+  { icon: Film,      title: "5. Video ready",        body: "16:9 for YouTube. 9:16 for LinkedIn & Reels. Download in minutes." },
+];
 
 const FEATURES = [
-  { icon: Sparkles, title: "Prompt to Video", body: "Type a topic. We write the script, storyboard, and generate every scene." , span: "md:col-span-2" },
-  { icon: Palette,  title: "5 Cinematic Styles", body: "Business, Documentary, Educational, Cinematic, Storytelling.", span: "md:col-span-1" },
-  { icon: Zap,      title: "60 sec generation", body: "Parallel image + voice + compose. First cut in under a minute.", span: "md:col-span-1" },
-  { icon: Layers,   title: "Repurpose Everything", body: "One idea. Video, LinkedIn post, blog article, email newsletter — from a single prompt.", span: "md:col-span-2" },
+  { icon: Sparkles,  title: "Guided step-by-step",   body: "Approve script, visuals and voice before your video is rendered — never a surprise output.", span: "md:col-span-2" },
+  { icon: Palette,   title: "5 cinematic styles",    body: "Business, Documentary, Educational, Cinematic, Storytelling.", span: "md:col-span-1" },
+  { icon: Film,      title: "Two formats included",  body: "Every render ships in 16:9 (YouTube) and 9:16 (LinkedIn, Reels, Shorts).", span: "md:col-span-1" },
+  { icon: CheckCircle2, title: "One free 30-sec video every month", body: "New users get 3 credits every month, forever. No credit card needed to start.", span: "md:col-span-2" },
 ];
 
 export default function Landing() {
   const fired = useRef(false);
+  const navigate = useNavigate();
   const [demoOpen, setDemoOpen] = useState(false);
-  const [content, setContent] = useState(FALLBACK);
-  const [variant, setVariant] = useState(null);
 
   useEffect(() => {
     if (fired.current) return;
     fired.current = true;
     captureAttribution();
-    // Fetch A/B variant, then track exposure + page view (so events carry variant).
-    fetchVariant("landing_hero")
-      .then((data) => { setContent(data.content); setVariant(data.variant); })
-      .catch(() => { /* fallback stays */ })
-      .finally(() => {
-        track("page_view", { page: "landing" });
-      });
+    track("page_view", { page: "landing" });
   }, []);
 
-  const scrollToWaitlist = (source) => {
-    track("waitlist_button_click", { source });
-    document.getElementById("waitlist")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
-  const scrollToDemo = () => {
-    track("cta_click", { target: "demo_section" });
-    document.getElementById("demo")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
-  const openBookDemo = (source) => {
-    track("book_demo_click", { source });
-    setDemoOpen(true);
+  const startFree = (surface) => {
+    track("signup_click", { source: surface });
+    login();
   };
 
   return (
-    <div className="min-h-screen bg-ink-50 text-ink-900 overflow-x-hidden">
+    <div className="min-h-screen bg-white text-ink-900 selection:bg-brand-600 selection:text-white">
       <TopBar />
 
       {/* HERO */}
-      <section className="relative">
-        <div className="blue-orb bg-brand-500 hidden sm:block" style={{ width: 480, height: 480, top: -160, right: -120 }} />
-        <div className="blue-orb bg-cyan-400 hidden sm:block" style={{ width: 380, height: 380, bottom: -140, left: -100 }} />
-        <div className="dot-grid absolute inset-0 opacity-40" />
-        <div className="relative max-w-7xl mx-auto px-5 sm:px-6 pt-14 sm:pt-24 pb-16 sm:pb-28 grid md:grid-cols-12 gap-10 md:gap-12 items-center">
-          <div className="md:col-span-7 stagger">
-            <div className="inline-flex items-center gap-2 bg-white border border-ink-200 rounded-full px-3 py-1 text-[11px] sm:text-xs font-semibold text-brand-700 shadow-sm" data-testid="hero-eyebrow">
-              <Sparkles className="w-3.5 h-3.5" /> {content.eyebrow}
-              {variant && <span className="ml-1 text-ink-400 font-mono">· {variant}</span>}
-            </div>
-            <h1 className="mt-5 sm:mt-6 font-heading font-extrabold text-4xl sm:text-5xl md:text-6xl lg:text-7xl tracking-tighter leading-[0.95]" data-testid="hero-headline">
-              {content.headline_pre} <span className="text-brand-600">{content.headline_highlight}</span> {content.headline_mid}<br className="hidden sm:block" />
-              {" "}{content.headline_after}<span className="text-brand-600">.</span>
-            </h1>
-            <p className="mt-5 sm:mt-6 text-base sm:text-lg text-ink-500 max-w-xl" data-testid="hero-subtitle">
-              {content.subtitle}
-            </p>
-            <div className="mt-7 sm:mt-8 flex flex-wrap gap-3">
-              <Button onClick={() => scrollToWaitlist("hero")}
-                className="rounded-full h-12 px-6 sm:px-7 bg-brand-600 hover:bg-brand-700 text-white text-base w-full sm:w-auto"
-                data-testid="hero-cta-waitlist">
-                {content.cta_primary} <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-              <Button onClick={scrollToDemo} variant="outline"
-                className="rounded-full h-12 px-6 sm:px-7 border-ink-300 text-base w-full sm:w-auto"
-                data-testid="hero-cta-demo">
-                <Play className="w-4 h-4 mr-2 fill-brand-600 text-brand-600" /> {content.cta_secondary}
-              </Button>
-            </div>
-            <div className="mt-6 sm:mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-ink-500">
-              <div className="flex items-center gap-2"><Check className="w-4 h-4 text-brand-600" /> Early-access credits</div>
-              <div className="flex items-center gap-2"><Check className="w-4 h-4 text-brand-600" /> No credit card</div>
-              <button onClick={() => openBookDemo("hero_link")} className="text-brand-700 font-semibold hover:underline" data-testid="hero-book-demo-link">
-                Agency or 5+ seats? Book a demo →
-              </button>
-            </div>
+      <section className="relative overflow-hidden">
+        <div className="absolute inset-0 -z-10 bg-[radial-gradient(60%_50%_at_50%_0%,rgba(79,70,229,0.10),transparent)]" />
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-14 sm:pt-24 pb-12 sm:pb-20">
+          <div className="inline-flex items-center gap-2 rounded-full border border-brand-100 bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700" data-testid="hero-eyebrow">
+            <Sparkles className="w-3.5 h-3.5" /> Your first 30-second video is on us — every month
           </div>
-          <div className="md:col-span-5 relative animate-fade-up">
-            <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-ink-200 bg-white md:animate-float-slow">
-              <img alt="Editor preview" src="https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?crop=entropy&cs=srgb&fm=jpg&w=940&q=85" className="w-full h-auto" />
-              <button onClick={scrollToDemo} className="absolute inset-0 flex items-center justify-center" data-testid="hero-image-play">
-                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white/95 backdrop-blur border border-ink-200 flex items-center justify-center shadow-lg hover:scale-110 transition-transform">
-                  <Play className="w-5 sm:w-6 h-5 sm:h-6 text-brand-600 fill-brand-600 ml-1" />
-                </div>
-              </button>
-            </div>
-            <div className="hidden sm:block absolute -bottom-6 -left-6 rounded-xl bg-white border border-ink-200 shadow-lg p-4 w-56">
-              <div className="text-xs uppercase tracking-widest text-ink-500 font-semibold">Scene 3 / 12</div>
-              <div className="mt-1 font-heading font-bold text-ink-900">Rainforest at dawn</div>
-              <div className="mt-2 h-1.5 bg-ink-100 rounded-full overflow-hidden">
-                <div className="h-full w-2/3 bg-brand-600" />
+          <h1 className="mt-5 font-heading font-black tracking-tighter text-4xl sm:text-6xl lg:text-7xl max-w-4xl" data-testid="hero-headline">
+            Turn any idea into a video — <span className="text-brand-600">from 30 seconds to 10 minutes.</span>
+          </h1>
+          <p className="mt-5 text-ink-500 text-base sm:text-lg max-w-2xl" data-testid="hero-subtitle">
+            Type your idea. Approve the script. Approve the visuals. Approve the voice. Get a polished video in minutes — with you in control at every step.
+          </p>
+
+          {/* Duration chips */}
+          <div className="mt-7 flex flex-wrap gap-2" data-testid="hero-duration-chips">
+            {DURATION_CHIPS.map((d) => (
+              <div key={d.label} className="rounded-full border border-ink-200 bg-white px-3 py-1.5 text-xs font-mono text-ink-700 flex items-center gap-2"
+                data-testid={`duration-chip-${d.label.replace(" ","-")}`}>
+                {d.label}
+                <span className="text-brand-600 font-semibold">{d.credits}c</span>
               </div>
-            </div>
+            ))}
+          </div>
+
+          {/* CTAs */}
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Button onClick={() => startFree("hero_primary")} className="rounded-full bg-brand-600 hover:bg-brand-700 text-white h-12 px-6 text-base font-semibold" data-testid="hero-signup-btn">
+              <Sparkles className="w-4 h-4 mr-2" /> Start free — 1 video / month
+            </Button>
+            <Button variant="outline" onClick={() => setDemoOpen(true)} className="rounded-full h-12 px-6 text-base font-semibold border-ink-200 text-ink-900" data-testid="hero-demo-btn">
+              Watch 60-second demo
+            </Button>
+          </div>
+          <div className="mt-3 text-xs text-ink-500 flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> No credit card</span>
+            <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Sign up with Google</span>
+            <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Free credits auto-refill</span>
           </div>
         </div>
       </section>
 
-      {/* DEMO VIDEO */}
-      <DemoVideoSection videoSrc={DEMO_VIDEO} posterSrc={DEMO_POSTER} />
+      {/* Demo Video */}
+      <DemoVideoSection open={demoOpen} onOpenChange={setDemoOpen} />
 
       {/* HOW IT WORKS */}
-      <section className="max-w-7xl mx-auto px-5 sm:px-6 py-16 sm:py-24">
-        <div className="max-w-2xl">
-          <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">How it works</div>
-          <h2 className="mt-3 font-heading text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight">From idea to MP4 in one flow.</h2>
-        </div>
-        <div className="mt-10 sm:mt-14 grid md:grid-cols-3 gap-4 sm:gap-6">
-          {[
-            { n: "01", title: "Describe the idea", body: "Topic, duration, language, style, voice — that's it." },
-            { n: "02", title: "AI builds the story", body: "Title, hook, full script, and a scene-by-scene storyboard." },
-            { n: "03", title: "Render & repurpose", body: "MP4, LinkedIn caption, blog draft and email — all from one prompt." },
-          ].map((s) => (
-            <div key={s.n} className="rounded-2xl bg-white border border-ink-200 p-6 sm:p-8 hover:-translate-y-1 hover:shadow-lg transition-all">
-              <div className="text-5xl sm:text-6xl font-heading font-extrabold text-brand-100">{s.n}</div>
-              <div className="mt-3 sm:mt-4 font-heading font-bold text-xl sm:text-2xl">{s.title}</div>
-              <p className="mt-2 text-ink-500">{s.body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* BENTO FEATURES */}
-      <section className="max-w-7xl mx-auto px-5 sm:px-6 pb-16 sm:pb-24">
-        <div className="grid md:grid-cols-3 gap-3 sm:gap-4 md:auto-rows-[220px]">
-          {FEATURES.map((f) => (
-            <div key={f.title} className={`${f.span} rounded-2xl bg-white border border-ink-200 p-6 sm:p-8 hover:-translate-y-1 hover:shadow-lg transition-all relative overflow-hidden`}>
-              <f.icon className="w-8 h-8 text-brand-600" />
-              <div className="mt-3 sm:mt-4 font-heading font-bold text-xl">{f.title}</div>
-              <p className="mt-2 text-ink-500 text-sm max-w-md">{f.body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* WAITLIST + BOOK DEMO */}
-      <section id="waitlist" className="max-w-7xl mx-auto px-5 sm:px-6 pb-16 sm:pb-24 scroll-mt-20">
-        <div className="rounded-3xl bg-ink-900 text-white p-6 sm:p-14 relative overflow-hidden">
-          <div className="blue-orb bg-brand-500 hidden sm:block" style={{ width: 340, height: 340, top: -80, right: -40, opacity: 0.4 }} />
-          <div className="relative grid lg:grid-cols-5 gap-8 lg:gap-12 items-center">
-            <div className="lg:col-span-3">
-              <div className="text-xs uppercase tracking-widest text-brand-300 font-semibold">Early access</div>
-              <h3 className="mt-2 font-heading text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tighter">
-                Be one of the first 500.
-              </h3>
-              <p className="mt-4 text-ink-400 max-w-xl">
-                We&apos;re rolling out access week by week. Waitlist members get bonus credits,
-                priority support and a founding-member discount when paid plans launch.
-              </p>
-              <div className="mt-6 flex items-center gap-6 text-sm">
-                <div className="flex items-center gap-2 text-ink-300"><Check className="w-4 h-4 text-brand-400" /> No credit card</div>
-                <div className="flex items-center gap-2 text-ink-300"><Check className="w-4 h-4 text-brand-400" /> One-tap unsubscribe</div>
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-24" data-testid="how-it-works">
+        <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">How it works</div>
+        <h2 className="mt-2 font-heading font-extrabold text-3xl sm:text-5xl tracking-tighter max-w-3xl">
+          Five steps. You approve every one.
+        </h2>
+        <div className="mt-10 grid md:grid-cols-2 lg:grid-cols-5 gap-4">
+          {STEPS.map((s, i) => (
+            <div key={s.title} className="rounded-2xl border border-ink-200 bg-white p-5" data-testid={`step-${i+1}`}>
+              <div className="w-10 h-10 rounded-xl bg-brand-50 text-brand-700 flex items-center justify-center">
+                <s.icon className="w-5 h-5" />
               </div>
-              <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
-                <div className="w-11 h-11 rounded-lg bg-brand-500/30 border border-brand-400/40 flex items-center justify-center shrink-0">
-                  <CalendarClock className="w-5 h-5 text-brand-200" />
+              <div className="mt-4 font-heading font-bold text-base">{s.title}</div>
+              <div className="mt-1 text-sm text-ink-500" dangerouslySetInnerHTML={{ __html: s.body }} />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* FEATURES */}
+      <section className="bg-ink-50 border-y border-ink-100">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-24">
+          <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">What&apos;s inside</div>
+          <h2 className="mt-2 font-heading font-extrabold text-3xl sm:text-5xl tracking-tighter max-w-3xl">
+            Everything you need to ship a video. Nothing you don&apos;t.
+          </h2>
+          <div className="mt-10 grid md:grid-cols-3 gap-4">
+            {FEATURES.map((f) => (
+              <div key={f.title} className={`rounded-2xl border border-ink-200 bg-white p-6 ${f.span}`} data-testid={`feature-${f.title.toLowerCase().split(" ")[0]}`}>
+                <div className="w-10 h-10 rounded-xl bg-brand-50 text-brand-700 flex items-center justify-center">
+                  <f.icon className="w-5 h-5" />
                 </div>
-                <div className="flex-1">
-                  <div className="font-heading font-bold text-white text-base sm:text-lg">Running an agency or team?</div>
-                  <div className="text-ink-400 text-sm mt-0.5">Get a personalized walkthrough and volume pricing.</div>
-                </div>
-                <Button onClick={() => openBookDemo("waitlist_section")}
-                  className="rounded-full bg-white text-ink-900 hover:bg-ink-100 h-11 px-5 whitespace-nowrap"
-                  data-testid="waitlist-book-demo-btn">
-                  <CalendarClock className="w-4 h-4 mr-2" /> Book a demo
+                <div className="mt-4 font-heading font-bold text-lg">{f.title}</div>
+                <div className="mt-1 text-sm text-ink-500">{f.body}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FINAL CTA */}
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-24">
+        <div className="rounded-3xl bg-gradient-to-br from-ink-900 via-brand-700 to-violet-600 text-white p-8 sm:p-12 relative overflow-hidden" data-testid="final-cta">
+          <div className="absolute -right-24 -top-24 w-80 h-80 rounded-full bg-white/10 blur-3xl" />
+          <div className="relative">
+            <h2 className="font-heading font-black text-3xl sm:text-5xl tracking-tighter max-w-3xl">
+              Your first video is on us. Every single month.
+            </h2>
+            <p className="mt-3 text-white/80 max-w-2xl">
+              Free plan gives you 3 credits every month — enough for one polished 30-second video. Need more? Top up any time, credits never expire.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Button onClick={() => startFree("final_cta")} className="rounded-full bg-white text-ink-900 hover:bg-white/90 h-12 px-6 font-semibold" data-testid="final-signup-btn">
+                <Sparkles className="w-4 h-4 mr-2" /> Get started free
+              </Button>
+              <Link to="/pricing" data-testid="final-pricing-link">
+                <Button variant="outline" className="rounded-full h-12 px-6 font-semibold border-white/40 bg-transparent text-white hover:bg-white/10">
+                  See pricing <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
-              </div>
-            </div>
-            <div className="lg:col-span-2">
-              <WaitlistForm source="landing_waitlist_section" />
+              </Link>
             </div>
           </div>
         </div>
       </section>
 
-      <footer className="border-t border-ink-200 py-8">
-        <div className="max-w-7xl mx-auto px-5 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-ink-500">
-          <div className="flex items-center gap-2"><Video className="w-4 h-4 text-brand-600" /> AI Video Studio</div>
-          <div>© 2026 — Private beta</div>
+      {/* FOOTER */}
+      <footer className="border-t border-ink-100 py-8">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 text-sm text-ink-500">
+          <div>© {new Date().getFullYear()} AI Video Studio</div>
+          <div className="flex items-center gap-5">
+            <Link to="/pricing" className="hover:text-brand-600">Pricing</Link>
+            <a href="mailto:hello@videostudio.ai" className="hover:text-brand-600">Contact</a>
+          </div>
         </div>
       </footer>
-
-      <BookDemoDialog open={demoOpen} onOpenChange={setDemoOpen} source="landing" />
     </div>
   );
 }

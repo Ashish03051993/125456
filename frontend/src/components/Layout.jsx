@@ -8,15 +8,6 @@ import { login } from "@/pages/AuthCallback";
 export function TopBar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const gotoWaitlist = () => {
-    track("waitlist_button_click", { source: "top_nav" });
-    if (window.location.pathname === "/") {
-      document.getElementById("waitlist")?.scrollIntoView({ behavior: "smooth" });
-    } else {
-      navigate("/#waitlist");
-      setTimeout(() => document.getElementById("waitlist")?.scrollIntoView({ behavior: "smooth" }), 100);
-    }
-  };
   return (
     <header className="glass-nav sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
@@ -48,8 +39,10 @@ export function TopBar() {
                 data-testid="nav-signin-btn">
                 <LogIn className="w-4 h-4" /> Sign in
               </button>
-              <Button onClick={gotoWaitlist} className="rounded-full bg-brand-600 hover:bg-brand-700 text-white px-4 sm:px-5 h-10" data-testid="nav-waitlist-btn">
-                <Sparkles className="w-4 h-4 mr-1.5" /> Join waitlist
+              <Button onClick={() => { track("signup_click", { source: "top_nav" }); login(); }}
+                className="rounded-full bg-brand-600 hover:bg-brand-700 text-white px-4 sm:px-5 h-10"
+                data-testid="nav-signup-btn">
+                <Sparkles className="w-4 h-4 mr-1.5" /> Sign up free
               </Button>
             </>
           )}
