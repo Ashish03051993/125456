@@ -14,6 +14,35 @@ Each format specifies:
 """
 from typing import Dict, List
 
+# Language → font mapping (Noto family covers every major script — fixes the
+# "subtitle renders as boxes" issue for non-Latin languages like Hindi, Arabic, CJK).
+LANG_FONT = {
+    "English":    "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+    "Spanish":    "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+    "French":     "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+    "German":     "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+    "Portuguese": "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+    "Italian":    "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+    "Hindi":      "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf",
+    "Marathi":    "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf",
+    "Bengali":    "/usr/share/fonts/truetype/noto/NotoSansBengali-Bold.ttf",
+    "Tamil":      "/usr/share/fonts/truetype/noto/NotoSansTamil-Bold.ttf",
+    "Telugu":     "/usr/share/fonts/truetype/noto/NotoSansTelugu-Bold.ttf",
+    "Arabic":     "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf",
+    "Japanese":   "/usr/share/fonts/opentype/noto-cjk/NotoSansCJK-Bold.ttc",
+    "Chinese":    "/usr/share/fonts/opentype/noto-cjk/NotoSansCJK-Bold.ttc",
+    "Korean":     "/usr/share/fonts/opentype/noto-cjk/NotoSansCJK-Bold.ttc",
+}
+DEFAULT_FONT = "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf"
+
+
+def font_for_language(language: str) -> str:
+    import os as _os
+    path = LANG_FONT.get(language, DEFAULT_FONT)
+    return path if _os.path.exists(path) else DEFAULT_FONT
+
+
+
 FORMATS: Dict[str, dict] = {
     "landscape": {
         "label": "YouTube / Web",
@@ -71,10 +100,11 @@ def default_format() -> str:
     return next(iter(FORMATS))
 
 
-def build_scene_vf(spec: dict, per_scene_seconds: float, sub_text_esc: str) -> str:
+def build_scene_vf(spec: dict, per_scene_seconds: float, sub_text_esc: str, language: str = "English") -> str:
     """Build the ffmpeg -vf filtergraph for a single scene image → clip.
 
     Handles cover-crop and blurred-pad fits for arbitrary aspect ratios.
+    Uses the correct font for the target language so non-Latin scripts render.
     """
     w, h = spec["width"], spec["height"]
     frames = max(int(per_scene_seconds * 30), 1)
@@ -104,10 +134,11 @@ def build_scene_vf(spec: dict, per_scene_seconds: float, sub_text_esc: str) -> s
     box_h = spec["subtitle_box_height"]
     y_off = spec["subtitle_y_offset"]
     font_sz = spec["subtitle_font"]
+    font_path = font_for_language(language)
     return (
         f"{base},"
         f"drawbox=y=ih-{box_h}:color=black@0.55:width=iw:height={box_h}:t=fill,"
-        f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+        f"drawtext=fontfile={font_path}:"
         f"text='{sub_text_esc}':fontcolor=white:fontsize={font_sz}:"
         f"x=(w-text_w)/2:y=h-{y_off}"
     )

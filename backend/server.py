@@ -1263,7 +1263,7 @@ def _wrap_text(s: str, width: int = 34) -> str:
 def _ffmpeg_compose_format(project_id: str, fmt_id: str, spec: dict,
                            scenes: list, images: list,
                            audio_path: Path, out_path: Path,
-                           total_duration: float):
+                           total_duration: float, language: str = "English"):
     """Compose a single output MP4 for one aspect-ratio format spec."""
     per = total_duration / max(len(images), 1)
     tmp_dir = STORAGE_DIR / "videos" / f"tmp_{project_id}_{fmt_id}"
@@ -1274,7 +1274,7 @@ def _ffmpeg_compose_format(project_id: str, fmt_id: str, spec: dict,
         clip = tmp_dir / f"c{i}.mp4"
         sub = _wrap_text(sc.get("subtitle", ""), width=spec.get("subtitle_wrap_chars", 34))
         sub_esc = sub.replace(":", "\\:").replace("'", "\u2019")
-        vf = build_scene_vf(spec, per, sub_esc)
+        vf = build_scene_vf(spec, per, sub_esc, language=language)
         subprocess.run([
             "ffmpeg", "-y", "-loop", "1", "-i", str(img), "-t", f"{per:.2f}",
             "-vf", vf, "-r", "30", "-pix_fmt", "yuv420p",
@@ -1304,7 +1304,8 @@ def _ffmpeg_compose_format(project_id: str, fmt_id: str, spec: dict,
 
 
 def _ffmpeg_compose_all(project_id: str, scenes: list, images: list,
-                        audio_path: Path, total_duration: float) -> dict:
+                        audio_path: Path, total_duration: float,
+                        language: str = "English") -> dict:
     """Compose every registered format. Returns {format_id: relative_url}."""
     import shutil
     if not shutil.which("ffmpeg"):
@@ -1314,7 +1315,7 @@ def _ffmpeg_compose_all(project_id: str, scenes: list, images: list,
     for fid, spec in FORMATS.items():
         out = STORAGE_DIR / "videos" / f"{project_id}_{fid}.mp4"
         _ffmpeg_compose_format(project_id, fid, spec, scenes, images, audio_path,
-                               out, total_duration)
+                               out, total_duration, language=language)
         urls[fid] = f"/api/media/videos/{project_id}_{fid}.mp4"
     return urls
 
@@ -1400,7 +1401,7 @@ async def run_after_script_approval(project_id: str):
         loop = asyncio.get_event_loop()
         video_urls = await loop.run_in_executor(
             None, _ffmpeg_compose_all, project_id, scenes, image_paths,
-            audio_path, total_dur,
+            audio_path, total_dur, proj.get("language", "English"),
         )
         from formats import default_format
         primary = default_format()
