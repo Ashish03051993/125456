@@ -168,7 +168,17 @@ Dashboard, credit system, projects, download, admin panel, pricing.
   - Frontend: `image-approval-panel` (per-scene regen buttons + Approve/Regen All) and `voice-approval-panel` (audio preview + voice switch + regenerate/approve) in ProjectView
 - ✅ Character dialogue mode (`dialogue_mode` toggle in wizard, multi-voice TTS parsing)
 - ✅ Hindi subtitles rendered via Noto CJK/Devanagari fonts (OS-level `apt install fonts-noto-cjk fonts-noto-devanagari`)
-- ✅ Testing: iteration 19 (auth, 100% frontend / 86% backend rate-limit-noise) + iteration 20 (image/voice gates, 100% both)
+- ✅ Testing: iteration 19 (auth, 100% frontend / 86% backend rate-limit-noise) + iteration 20 (image/voice gates, 100% both) + iteration 21 (talking-head feature, 100% both)
+- ✅ **Realistic Talking Head — Pro feature** (2026-07-23)
+  - `POST /api/projects/{id}/character/upload` — user uploads own portrait (JPG/PNG/WEBP, max 5MB)
+  - `POST /api/projects/{id}/character/generate` — AI-generates photorealistic portrait via Nano Banana from user description
+  - `DELETE /api/projects/{id}/character` — clears character
+  - `GET /api/features/talking_head` — feature flag exposure (enabled + provider + live_render + paid_plans + max_upload_mb)
+  - `PATCH /api/projects/{id}` — draft-only project updates (topic/duration/style/voice/dialogue_mode/talking_head) with plan gate + credit recompute
+  - Backend Project model extended: `talking_head`, `character_image_url`, `character_source` fields
+  - Free plan gets **402 Payment Required** on any talking-head or character operation — Pro/Business/Enterprise unlocked
+  - Frontend wizard: new "Realistic Talking Head [PRO]" section, upsell modal for Free users, upload OR AI-generate character with live preview, character-source badge (upload vs AI-generated), replace-character button
+  - Actual lip-sync render is **stubbed behind env `TALKING_HEAD_PROVIDER=stub`** — UI shows "Preview mode" badge and honest disclosure. When user provides fal.ai API key, flip env to `fal_sonic` to activate real lip-sync render (~$0.02/sec of output)
 
 ## Backlog after Phase 3
 - P0: Password reset flow (`/api/auth/forgot-password` + email link via Resend) — needs Resend API key from user

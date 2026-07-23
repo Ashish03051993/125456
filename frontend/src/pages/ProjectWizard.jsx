@@ -416,7 +416,7 @@ export default function ProjectWizard() {
                   Uses <span className="font-bold text-brand-700">{activeCredits} credits</span> · You have <span className="font-bold text-ink-900">{currentCredits}</span>
                   {!canAfford && <span className="ml-2 text-amber-700 font-semibold">(insufficient)</span>}
                 </div>
-                <Button onClick={create} disabled={busy || !topic.trim() || !canAfford}
+                <Button onClick={create} disabled={busy || !topic.trim() || !canAfford || (talkingHead && !charImageUrl)}
                   className="h-11 rounded-full bg-brand-600 hover:bg-brand-700 text-white px-7"
                   data-testid="generate-btn">
                   {busy ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Starting…</> : <><Sparkles className="w-4 h-4 mr-2" /> Generate video</>}
