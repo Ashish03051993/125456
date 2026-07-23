@@ -4,9 +4,10 @@ import { api } from "@/lib/api";
 import { TopBar, Sidebar } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Video, Loader2, AlertCircle, CheckCircle2, Trash2, Pencil, Copy as CopyIcon, Check, X, Search, SlidersHorizontal } from "lucide-react";
+import { Plus, Video, Loader2, AlertCircle, CheckCircle2, Trash2, Pencil, Copy as CopyIcon, Check, X, Search, SlidersHorizontal, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import LowCreditNudge from "@/components/LowCreditNudge";
+import { useAuth } from "@/lib/auth";
 
 const STATUS_STYLES = {
   draft: "bg-ink-100 text-ink-700",
@@ -34,6 +35,22 @@ export default function Dashboard() {
   const [statusFilter, setStatusFilter] = useState("all");
   const editInputRef = useRef(null);
   const navigate = useNavigate();
+  const { user, setUser } = useAuth();
+
+  // Celebrate a monthly free-credit refill exactly once (backend sets a transient
+  // refill_delta on the /auth/me response the first time the new month is seen).
+  useEffect(() => {
+    const delta = user?.refill_delta;
+    if (!delta || delta <= 0) return;
+    toast.success(`${delta} free credits refilled — enjoy!`, {
+      description: "Your monthly free grant just landed. One more video is on us.",
+      icon: <Sparkles className="w-4 h-4 text-brand-600" />,
+      duration: 6000,
+    });
+    // Clear the transient flag so the toast fires exactly once per session
+    setUser({ ...user, refill_delta: 0 });
+  }, [user?.refill_delta]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   const load = async () => {
     try {

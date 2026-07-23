@@ -815,6 +815,10 @@ async def apply_free_refill(user: dict) -> dict:
     """If the user's `last_refill_at` is in a previous calendar month (or missing),
     top them up to at least FREE_MONTHLY_CREDITS. Idempotent: only fires once per
     calendar month per user. Returns the (possibly refilled) user doc.
+
+    When a refill actually fires, the returned dict gains a transient
+    `refill_delta` field (not persisted) so the frontend can show a
+    celebration toast exactly once.
     """
     if user.get("plan") and user["plan"] != "free":
         return user  # Paid users don't auto-refill; they buy credit packs.
@@ -828,8 +832,8 @@ async def apply_free_refill(user: dict) -> dict:
     if same_month:
         return user
     # New month → top up to at least the free grant
-    current = int(user.get("credits", 0) or 0)
-    new_credits = max(current, FREE_MONTHLY_CREDITS)
+    prev_credits = int(user.get("credits", 0) or 0)
+    new_credits = max(prev_credits, FREE_MONTHLY_CREDITS)
     await db.users.update_one(
         {"user_id": user["user_id"]},
         {"$set": {"credits": new_credits, "last_refill_at": now.isoformat(),
@@ -837,6 +841,8 @@ async def apply_free_refill(user: dict) -> dict:
     )
     user["credits"] = new_credits
     user["last_refill_at"] = now.isoformat()
+    # Transient — informs the UI to celebrate. Not persisted to Mongo.
+    user["refill_delta"] = new_credits - prev_credits
     return user
 
 
