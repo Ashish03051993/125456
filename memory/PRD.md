@@ -27,10 +27,13 @@ Dashboard, credit system, projects, download, admin panel, pricing.
 - Blue & white professional theme (Canva/InVideo inspired)
 
 
-## Phase 13 (2026-02) — Launch Compliance + Wizard Draft-Save
+## Phase 13 (2026-02) — Launch Compliance + Wizard Draft-Save + Prod Hardening
 - ✅ **Cookie Consent Banner mounted** — `<CookieConsent />` mounted globally in `App.js` (right below `<UpgradeModal />`). Appears 700ms after first paint (avoids CLS), stores choice in `localStorage['avs_cookie_consent_v1']` with `{necessary, analytics, at, v}`, broadcasts `cookie-consent:updated` event so downstream analytics layers can respect user choice. Verified: shows on first visit → hides on Accept/Only-Necessary → stays hidden across reload.
 - ✅ **robots.txt + sitemap.xml verified** — both serve correctly under `/robots.txt` and `/sitemap.xml`; robots.txt allows public routes (`/`, `/pricing`, `/terms`, `/privacy`, `/v/`) and disallows auth/dashboard surfaces; sitemap lists 6 public URLs.
 - ✅ **Wizard draft-save (P2 backlog item cleared)** — `ProjectWizard.jsx` now auto-persists `{topic, durationSec, style, language, voice, dialogueMode}` to `localStorage['avs_wizard_draft_v1']` on every change. On revisit, restores the draft and shows a `Draft restored` toast. Draft is cleared automatically when the user clears the topic or successfully starts generation.
+- ✅ **CORS safe-mode** — CORS middleware now strips whitespace, drops empty entries, and auto-disables `allow_credentials` when the origin list is `*` (browsers reject the wildcard+credentials combination anyway). Emits a startup warning under wildcard so operators know to lock down for production. Verified admin login + `/auth/me` cookie flow still works.
+- ✅ **Sentry-ready init** — lazy import behind `SENTRY_DSN` env var. When DSN is set + `sentry-sdk[fastapi]` is installed, it initialises Starlette + FastAPI integrations with `send_default_pii=False` and configurable `SENTRY_ENV` / `SENTRY_TRACES_RATE`. Gracefully warns and no-ops if SDK is missing so the app never fails to boot.
+
 
 
 ## Phase 12 (2026-02) — Sign-in Access + Analytics Correctness Fix

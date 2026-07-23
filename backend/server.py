@@ -58,6 +58,29 @@ logger = logging.getLogger("videostudio")
 app = FastAPI(title="AI Video Studio")
 api = APIRouter(prefix="/api")
 
+# --------------------------- Sentry (optional, no-op without DSN) ---------------------------
+# Ready-to-activate: operator drops `SENTRY_DSN` into .env and installs `sentry-sdk`
+# — no code changes required. Kept lazy so the app still boots cleanly if the SDK
+# isn't installed yet.
+_SENTRY_DSN = os.environ.get("SENTRY_DSN", "").strip()
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            environment=os.environ.get("SENTRY_ENV", "production"),
+            traces_sample_rate=float(os.environ.get("SENTRY_TRACES_RATE", "0.1")),
+            send_default_pii=False,
+            integrations=[StarletteIntegration(), FastApiIntegration()],
+        )
+        logger.info("Sentry error tracking initialised.")
+    except ImportError:
+        logger.warning("SENTRY_DSN set but `sentry-sdk` not installed. Run: pip install 'sentry-sdk[fastapi]'")
+    except Exception as e:
+        logger.warning(f"Sentry init failed: {e}")
+
 
 # --------------------------- Request ID + Structured Logs Middleware ---------------------------
 @app.middleware("http")
@@ -2752,13 +2775,26 @@ app.include_router(api)
 # Phase 1 stub: architecture only, no live payments. See /app/backend/billing.py
 from billing import router as billing_router  # noqa: E402
 app.include_router(billing_router)
+
+# CORS — parse env allowlist safely.
+# Browsers reject `allow_credentials=True` combined with wildcard `*`, so when the
+# operator uses "*" (typical in preview) we disable credentials automatically to
+# keep the API reachable. Production should set an explicit comma-separated list
+# of origins (e.g. "https://kadenza.com,https://www.kadenza.com").
+_cors_raw = os.environ.get("CORS_ORIGINS", "*")
+_cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()]
+_cors_wildcard = ("*" in _cors_origins) or (not _cors_origins)
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    allow_credentials=not _cors_wildcard,
+    allow_origins=["*"] if _cors_wildcard else _cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+if _cors_wildcard:
+    logger.warning("CORS_ORIGINS is wildcard '*' — credentialed cookie auth will not work cross-origin. Set an explicit allowlist for production.")
+else:
+    logger.info(f"CORS locked to {len(_cors_origins)} origin(s): {_cors_origins}")
 
 
 @app.on_event("shutdown")
