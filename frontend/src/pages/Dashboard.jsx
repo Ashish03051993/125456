@@ -34,6 +34,7 @@ export default function Dashboard() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const editInputRef = useRef(null);
+  const prevStatusRef = useRef(new Map()); // { projectId → previous status } for transition detection
   const navigate = useNavigate();
   const { user, setUser } = useAuth();
 
@@ -55,6 +56,38 @@ export default function Dashboard() {
   const load = async () => {
     try {
       const { data } = await api.get("/projects");
+      // Detect projects that transitioned generating → ready or → error since the
+      // last poll, and fire a celebration/error toast so users never miss a completion.
+      const prev = prevStatusRef.current;
+      if (prev.size > 0) {
+        for (const p of data) {
+          const was = prev.get(p.id);
+          if (!was) continue;
+          const wasBusy = was === "generating" || was?.startsWith?.("awaiting_");
+          if (wasBusy && p.status === "ready") {
+            toast.success("Video ready 🎬", {
+              description: p.title || p.topic || "Your generation just finished.",
+              icon: <CheckCircle2 className="w-4 h-4 text-emerald-600" />,
+              duration: 8000,
+              action: {
+                label: "Open",
+                onClick: () => navigate(`/project/${p.id}`),
+              },
+            });
+          } else if (wasBusy && p.status === "error") {
+            toast.error("Generation failed", {
+              description: `${p.title || p.topic || "This project"} couldn't complete. Credits were refunded.`,
+              icon: <AlertCircle className="w-4 h-4 text-rose-600" />,
+              duration: 8000,
+              action: {
+                label: "Review",
+                onClick: () => navigate(`/project/${p.id}`),
+              },
+            });
+          }
+        }
+      }
+      prevStatusRef.current = new Map(data.map((p) => [p.id, p.status]));
       setProjects(data);
     } catch (e) {
       toast.error("Could not load projects");
