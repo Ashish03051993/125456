@@ -690,6 +690,91 @@ async def approve_script(pid: str, bg: BackgroundTasks, user=Depends(current_use
     return {"ok": True}
 
 
+# --------------------------- Guided Approval Endpoints (Batch 3: Images) ---------------------------
+@api.post("/projects/{pid}/images/regenerate/{idx}")
+async def regenerate_single_image(pid: str, idx: int, user=Depends(current_user)):
+    """Regenerate one scene's image. Runs synchronously (await) so the caller
+    gets back the updated project with a fresh image_url + cache-buster."""
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    if p["status"] != "awaiting_image_approval":
+        raise HTTPException(400, f"Images not editable in status '{p['status']}'.")
+    await regen_single_image(pid, idx)
+    return await db.projects.find_one({"id": pid}, {"_id": 0})
+
+
+@api.post("/projects/{pid}/images/regenerate")
+async def regenerate_all_images(pid: str, bg: BackgroundTasks, user=Depends(current_user)):
+    """Regenerate every scene's image (rare — user hated all of them)."""
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    if p["status"] != "awaiting_image_approval":
+        raise HTTPException(400, f"Cannot regenerate from status '{p['status']}'.")
+    await db.projects.update_one(
+        {"id": pid},
+        {"$set": {"status": "generating", "stage": "regenerating images",
+                  "progress": 30, "error": None}},
+    )
+    bg.add_task(run_after_script_approval, pid)   # regenerates all images, stops at awaiting_image_approval
+    return {"ok": True}
+
+
+@api.post("/projects/{pid}/images/approve")
+async def approve_images(pid: str, bg: BackgroundTasks, user=Depends(current_user)):
+    """User approved all visuals — kick off voice generation."""
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    if p["status"] != "awaiting_image_approval":
+        raise HTTPException(400, f"Cannot approve from status '{p['status']}'.")
+    await db.projects.update_one(
+        {"id": pid},
+        {"$set": {"status": "generating", "stage": "generating voiceover",
+                  "progress": 65, "error": None}},
+    )
+    bg.add_task(run_after_image_approval, pid)
+    return {"ok": True}
+
+
+# --------------------------- Guided Approval Endpoints (Batch 4: Voice) ---------------------------
+class VoiceRegenIn(BaseModel):
+    voice: Optional[str] = None   # optional new voice preset ("female", "male", etc.)
+
+
+@api.post("/projects/{pid}/voice/regenerate")
+async def regenerate_voice(pid: str, payload: VoiceRegenIn, bg: BackgroundTasks,
+                           user=Depends(current_user)):
+    """Regenerate the voiceover (optionally with a different voice)."""
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    if p["status"] != "awaiting_voice_approval":
+        raise HTTPException(400, f"Cannot regenerate voice from status '{p['status']}'.")
+    updates = {"status": "generating", "stage": "regenerating voiceover",
+               "progress": 70, "error": None}
+    if payload.voice is not None:
+        if payload.voice not in VOICE_MAP:
+            raise HTTPException(400, f"Unknown voice '{payload.voice}'. Allowed: {list(VOICE_MAP)}")
+        updates["voice"] = payload.voice
+    await db.projects.update_one({"id": pid}, {"$set": updates})
+    bg.add_task(run_after_image_approval, pid)   # regenerates voice, stops at awaiting_voice_approval
+    return {"ok": True}
+
+
+@api.post("/projects/{pid}/voice/approve")
+async def approve_voice(pid: str, bg: BackgroundTasks, user=Depends(current_user)):
+    """User approved the voiceover — final compose (ffmpeg) starts now."""
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    if p["status"] != "awaiting_voice_approval":
+        raise HTTPException(400, f"Cannot approve from status '{p['status']}'.")
+    await db.projects.update_one(
+        {"id": pid},
+        {"$set": {"status": "generating", "stage": "composing video",
+                  "progress": 85, "error": None}},
+    )
+    bg.add_task(run_after_voice_approval, pid)
+    return {"ok": True}
+
+
 # --------------------------- Admin ---------------------------
 @api.get("/admin/users")
 async def admin_users(_admin=Depends(require_admin)):
@@ -1634,6 +1719,11 @@ async def run_after_image_approval(project_id: str):
         await db.projects.update_one({"id": project_id},
                                      {"$set": {"status": "error", "error": str(e),
                                                "stage": "failed"}})
+        proj = await db.projects.find_one({"id": project_id}, {"_id": 0})
+        if proj:
+            cost = int(proj.get("credit_cost", 1) or 1)
+            await db.users.update_one({"user_id": proj["user_id"]},
+                                      {"$inc": {"credits": cost}})
 
 
 async def run_after_voice_approval(project_id: str):
@@ -1669,6 +1759,11 @@ async def run_after_voice_approval(project_id: str):
         await db.projects.update_one({"id": project_id},
                                      {"$set": {"status": "error", "error": str(e),
                                                "stage": "failed"}})
+        proj = await db.projects.find_one({"id": project_id}, {"_id": 0})
+        if proj:
+            cost = int(proj.get("credit_cost", 1) or 1)
+            await db.users.update_one({"user_id": proj["user_id"]},
+                                      {"$inc": {"credits": cost}})
 
 
 # --------------------------- Experiments (A/B testing) ---------------------------
@@ -1979,6 +2074,13 @@ async def digest_get(digest_id: str, _admin=Depends(require_admin)):
 async def startup():
     # Ensure indexes for auth
     try:
+        # If pre-existing indexes are non-unique, drop them and recreate as unique+sparse.
+        existing = await db.users.index_information()
+        for name, spec in list(existing.items()):
+            keys = dict(spec.get("key") or {})
+            if keys in ({"email": 1}, {"mobile": 1}) and not spec.get("unique"):
+                try: await db.users.drop_index(name)
+                except Exception: pass
         await db.users.create_index("email", unique=True, sparse=True)
         await db.users.create_index("mobile", unique=True, sparse=True)
         await db.users.create_index("user_id", unique=True)

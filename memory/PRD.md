@@ -160,17 +160,24 @@ Dashboard, credit system, projects, download, admin panel, pricing.
   - Landing hero and Pricing CTAs → `/signup`
 - ✅ Free tier: 3 credits/month auto-refill (`FREE_MONTHLY_CREDITS=3`, refill on `/auth/me`)
 - ✅ Duration picker: 8 tiers (30s / 45s / 60s / 90s / 2m / 3m / 5m / 10m) with credit cost per tier
-- ✅ Step-gated pipeline: Script approval gate live (`/api/projects/{id}/approve_script` + `regenerate_script`)
-- ⚠️ In progress: Image + Voice approval gates (backend `run_after_*_approval` split, frontend UI still needs Image/Voice cards)
+- ✅ **Full step-gated pipeline** — script → images → voice → compose (2026-07-23)
+  - Script gate: `/api/projects/{id}/script/{approve|regenerate}` + PATCH edit
+  - **Image gate**: `/api/projects/{id}/images/{approve|regenerate}` + `/images/regenerate/{idx}` for per-scene refresh
+  - **Voice gate**: `/api/projects/{id}/voice/{approve|regenerate}` — regenerate accepts optional `{voice}` to switch preference (returns 400 on unknown voice)
+  - Credit refund on failure now covers all pipeline stages (script, image, voice, compose)
+  - Frontend: `image-approval-panel` (per-scene regen buttons + Approve/Regen All) and `voice-approval-panel` (audio preview + voice switch + regenerate/approve) in ProjectView
 - ✅ Character dialogue mode (`dialogue_mode` toggle in wizard, multi-voice TTS parsing)
 - ✅ Hindi subtitles rendered via Noto CJK/Devanagari fonts (OS-level `apt install fonts-noto-cjk fonts-noto-devanagari`)
+- ✅ Testing: iteration 19 (auth, 100% frontend / 86% backend rate-limit-noise) + iteration 20 (image/voice gates, 100% both)
 
 ## Backlog after Phase 3
-- P0: Image + Voice approval UI in `ProjectView.jsx` (backend already gated)
-- P1: `/api/health` (already in) + Frontend Error Boundary (already in) + Landing OG meta tags
-- P1: Password reset flow (`/api/auth/forgot-password` + email link via Resend)
-- P1: Rate limiting for public APIs + Sentry error tracking
+- P0: Password reset flow (`/api/auth/forgot-password` + email link via Resend) — needs Resend API key from user
+- P0: Sentry error tracking (FE + BE) — needs Sentry DSN from user
+- P1: CORS lockdown to final production domain (currently `CORS_ORIGINS=*`)
+- P1: Landing OG meta tags + `sitemap.xml` for SEO
+- P1: Rate limiting on more public APIs
 - P1: Inline rename, duplicate as new version, public share link on projects
-- P2: `server.py` modular split (routes/, services/, models/)
+- P2: `server.py` modular split (routes/, services/, models/) — currently ~2140 lines
 - P2: Real Resend email delivery for daily digests
 - P2: Real Stripe checkout for paid credit packs
+- P2: Per-project image regen cooldown (throttle abuse of `/images/regenerate/{idx}`)

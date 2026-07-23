@@ -3,7 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { TopBar, Sidebar } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
-import { Loader2, Download, Youtube, Instagram, AlertCircle, ArrowLeft, PlayCircle, Monitor, Smartphone, Pencil, Copy as CopyIcon, RefreshCw, Check, X } from "lucide-react";
+import { Loader2, Download, Youtube, Instagram, AlertCircle, ArrowLeft, PlayCircle, Monitor, Smartphone, Pencil, Copy as CopyIcon, RefreshCw, Check, X, Image as ImageIcon, Mic, Play, Pause, Volume2 } from "lucide-react";
 import { toast } from "sonner";
 
 const STAGES = ["writing script","generating images","generating voiceover","composing video","done"];
@@ -20,6 +20,11 @@ export default function ProjectView() {
   const [draftScenes, setDraftScenes] = useState([]);
   const [draftTitle, setDraftTitle] = useState("");
   const [scriptBusy, setScriptBusy] = useState(false);
+  // Image + Voice approval state
+  const [imgBusy, setImgBusy] = useState({});           // { [sceneIdx]: true } for per-scene regen
+  const [imgAllBusy, setImgAllBusy] = useState(false);  // approving/regenerating all
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [pickedVoice, setPickedVoice] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -103,6 +108,63 @@ export default function ProjectView() {
       setP(data);
     } catch (e) { toast.error(e?.response?.data?.detail || "Approve failed"); }
     finally { setScriptBusy(false); }
+  };
+
+  // --- Image approval handlers ---
+  const regenerateOneImage = async (idx) => {
+    setImgBusy((b) => ({ ...b, [idx]: true }));
+    try {
+      const { data } = await api.post(`/projects/${id}/images/regenerate/${idx}`);
+      setP(data);
+      toast.success(`Scene ${idx + 1} refreshed`);
+    } catch (e) { toast.error(e?.response?.data?.detail || "Regen failed"); }
+    finally { setImgBusy((b) => ({ ...b, [idx]: false })); }
+  };
+
+  const regenerateAllImages = async () => {
+    setImgAllBusy(true);
+    try {
+      await api.post(`/projects/${id}/images/regenerate`);
+      toast.success("Regenerating all visuals…");
+      const { data } = await api.get(`/projects/${id}`);
+      setP(data);
+    } catch (e) { toast.error(e?.response?.data?.detail || "Regen failed"); }
+    finally { setImgAllBusy(false); }
+  };
+
+  const approveImages = async () => {
+    setImgAllBusy(true);
+    try {
+      await api.post(`/projects/${id}/images/approve`);
+      toast.success("Visuals approved — generating voiceover");
+      const { data } = await api.get(`/projects/${id}`);
+      setP(data);
+    } catch (e) { toast.error(e?.response?.data?.detail || "Approve failed"); }
+    finally { setImgAllBusy(false); }
+  };
+
+  // --- Voice approval handlers ---
+  const regenerateVoice = async (newVoice) => {
+    setVoiceBusy(true);
+    try {
+      await api.post(`/projects/${id}/voice/regenerate`, newVoice ? { voice: newVoice } : {});
+      toast.success("Regenerating voiceover…");
+      const { data } = await api.get(`/projects/${id}`);
+      setP(data);
+      setPickedVoice(null);
+    } catch (e) { toast.error(e?.response?.data?.detail || "Regen failed"); }
+    finally { setVoiceBusy(false); }
+  };
+
+  const approveVoice = async () => {
+    setVoiceBusy(true);
+    try {
+      await api.post(`/projects/${id}/voice/approve`);
+      toast.success("Voice approved — composing your final video");
+      const { data } = await api.get(`/projects/${id}`);
+      setP(data);
+    } catch (e) { toast.error(e?.response?.data?.detail || "Approve failed"); }
+    finally { setVoiceBusy(false); }
   };
 
   if (!p) return (
@@ -277,6 +339,147 @@ export default function ProjectView() {
             </div>
           )}
 
+          {/* Image Approval Gate — Step 2 of 3 */}
+          {p.status === "awaiting_image_approval" && (
+            <div className="mt-6 space-y-4" data-testid="image-approval-panel">
+              <div className="bg-brand-600 text-white rounded-2xl p-5 flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <div className="text-xs uppercase tracking-widest font-bold opacity-80">Step 2 of 3 · Your approval needed</div>
+                  <div className="mt-1 font-heading font-extrabold text-2xl tracking-tighter">Review your visuals</div>
+                  <p className="text-sm opacity-90 mt-1 max-w-lg">Regenerate any scene you don't love. When you're happy, approve to unlock the voiceover.</p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button variant="outline" onClick={regenerateAllImages} disabled={imgAllBusy}
+                    className="rounded-full bg-transparent border-white/50 text-white hover:bg-white/10"
+                    data-testid="images-regen-all-btn">
+                    <RefreshCw className="w-4 h-4 mr-2" /> Regenerate all
+                  </Button>
+                  <Button onClick={approveImages} disabled={imgAllBusy}
+                    className="rounded-full bg-white text-brand-700 hover:bg-white/90 font-semibold"
+                    data-testid="images-approve-btn">
+                    <Check className="w-4 h-4 mr-2" /> Approve & generate voice
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {(p.scenes || []).map((sc) => (
+                  <div key={sc.idx} className="bg-white border border-ink-200 rounded-2xl overflow-hidden" data-testid={`img-scene-${sc.idx}`}>
+                    <div className="aspect-video bg-ink-100 relative">
+                      {sc.image_url ? (
+                        <img src={`${process.env.REACT_APP_BACKEND_URL}${sc.image_url}`} alt={sc.heading}
+                             className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-ink-400"><ImageIcon className="w-8 h-8" /></div>
+                      )}
+                      <div className="absolute bottom-2 left-2 bg-black/70 text-white text-[11px] px-2 py-1 rounded font-mono">Scene {sc.idx + 1}</div>
+                      {imgBusy[sc.idx] && (
+                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                          <Loader2 className="w-6 h-6 text-white animate-spin" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-3 flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-ink-700 truncate">{sc.heading}</div>
+                        <div className="text-[11px] text-ink-400 mt-0.5 line-clamp-2">{sc.image_prompt}</div>
+                      </div>
+                      <Button size="sm" variant="outline"
+                        onClick={() => regenerateOneImage(sc.idx)} disabled={imgBusy[sc.idx] || imgAllBusy}
+                        className="rounded-full text-xs shrink-0"
+                        data-testid={`img-regen-${sc.idx}`}>
+                        <RefreshCw className="w-3.5 h-3.5 mr-1" /> Regen
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Voice Approval Gate — Step 3 of 3 */}
+          {p.status === "awaiting_voice_approval" && (
+            <div className="mt-6 space-y-4" data-testid="voice-approval-panel">
+              <div className="bg-brand-600 text-white rounded-2xl p-5 flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <div className="text-xs uppercase tracking-widest font-bold opacity-80">Step 3 of 3 · Your approval needed</div>
+                  <div className="mt-1 font-heading font-extrabold text-2xl tracking-tighter">Preview your voiceover</div>
+                  <p className="text-sm opacity-90 mt-1 max-w-lg">Listen back, switch voice, or regenerate. When it sounds right, we'll compose the final video.</p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button onClick={approveVoice} disabled={voiceBusy}
+                    className="rounded-full bg-white text-brand-700 hover:bg-white/90 font-semibold"
+                    data-testid="voice-approve-btn">
+                    <Check className="w-4 h-4 mr-2" /> Approve & compose video
+                  </Button>
+                </div>
+              </div>
+
+              <div className="bg-white border border-ink-200 rounded-2xl p-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-full bg-brand-50 border border-brand-200 flex items-center justify-center">
+                    <Volume2 className="w-5 h-5 text-brand-700" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-heading font-bold text-lg">Full voiceover</div>
+                    <div className="text-xs text-ink-500">Voice: <span className="font-semibold text-ink-700 uppercase">{p.voice}</span> · Language: {p.language}</div>
+                  </div>
+                </div>
+                {p.audio_url && (
+                  <audio controls className="w-full mt-4"
+                         src={`${process.env.REACT_APP_BACKEND_URL}${p.audio_url}`}
+                         data-testid="voice-audio-player" />
+                )}
+
+                <div className="mt-6 flex flex-wrap items-center gap-3">
+                  <div className="text-xs uppercase tracking-widest text-ink-500 font-semibold">Switch voice:</div>
+                  {["female", "male"].map((v) => {
+                    const isCurrent = p.voice === v && !pickedVoice;
+                    const isPicked = pickedVoice === v;
+                    return (
+                      <button key={v} onClick={() => setPickedVoice(v)}
+                        disabled={voiceBusy}
+                        className={`inline-flex items-center gap-1.5 text-xs font-semibold rounded-full px-3 py-1.5 border transition-colors ${
+                          isPicked ? "bg-brand-600 text-white border-brand-600"
+                          : isCurrent ? "bg-brand-50 text-brand-700 border-brand-200"
+                          : "bg-white text-ink-700 border-ink-200 hover:border-brand-600"
+                        }`}
+                        data-testid={`voice-pick-${v}`}>
+                        <Mic className="w-3.5 h-3.5" /> {v.charAt(0).toUpperCase() + v.slice(1)}
+                        {isCurrent && <span className="text-[10px] opacity-70">· current</span>}
+                      </button>
+                    );
+                  })}
+                  <Button variant="outline" onClick={() => regenerateVoice(pickedVoice)} disabled={voiceBusy}
+                    className="rounded-full ml-auto" data-testid="voice-regen-btn">
+                    {voiceBusy ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Regenerating…</>
+                              : <><RefreshCw className="w-4 h-4 mr-2" /> Regenerate {pickedVoice && pickedVoice !== p.voice ? `with ${pickedVoice}` : ""}</>}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Read-along storyboard for context while previewing voice */}
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {(p.scenes || []).map((sc) => (
+                  <div key={sc.idx} className="bg-white border border-ink-200 rounded-2xl overflow-hidden">
+                    <div className="aspect-video bg-ink-100 relative">
+                      {sc.image_url && (
+                        <img src={`${process.env.REACT_APP_BACKEND_URL}${sc.image_url}`} alt={sc.heading}
+                             className="w-full h-full object-cover" />
+                      )}
+                      <div className="absolute bottom-2 left-2 bg-black/70 text-white text-[11px] px-2 py-1 rounded font-mono">Scene {sc.idx + 1}</div>
+                    </div>
+                    <div className="p-3">
+                      <div className="text-[11px] text-brand-700 font-mono">&ldquo;{sc.subtitle}&rdquo;</div>
+                      <div className="text-xs text-ink-500 mt-1 line-clamp-2">{sc.narration}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+
           {/* Video Player + Format Switcher */}
           {p.status === "ready" && active && (
             <div className="mt-6" data-testid="format-switcher-wrap">
@@ -324,8 +527,8 @@ export default function ProjectView() {
             </div>
           )}
 
-          {/* Scenes storyboard (only shown after script approval) */}
-          {p.status !== "awaiting_script_approval" && p.scenes?.length > 0 && (
+          {/* Scenes storyboard (only shown after all approvals) */}
+          {!["awaiting_script_approval", "awaiting_image_approval", "awaiting_voice_approval"].includes(p.status) && p.scenes?.length > 0 && (
             <div className="mt-10">
               <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">Storyboard</div>
               <h2 className="mt-1 font-heading text-3xl font-bold tracking-tight">Scenes ({p.scenes.length})</h2>
@@ -349,8 +552,8 @@ export default function ProjectView() {
             </div>
           )}
 
-          {/* Script (only shown after script approval) */}
-          {p.status !== "awaiting_script_approval" && p.script && (
+          {/* Script (only shown after all approvals) */}
+          {!["awaiting_script_approval", "awaiting_image_approval", "awaiting_voice_approval"].includes(p.status) && p.script && (
             <div className="mt-10">
               <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">Script</div>
               <div className="mt-2 bg-white border border-ink-200 rounded-2xl p-6 text-ink-700 leading-relaxed whitespace-pre-line" data-testid="script-text">{p.script}</div>
