@@ -1,6 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Check, Sparkles, Zap, Rocket, Building2 } from "lucide-react";
+import { Check, Sparkles, Zap, Rocket, Building2, Calculator } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TopBar } from "@/components/Layout";
 import { track } from "@/lib/analytics";
@@ -13,7 +13,8 @@ const PLANS = [
     price: "$0",
     tagline: "One 30-second video every month, forever",
     credits: "3 credits / month",
-    refill: "Auto-refills on the 1st",
+    creditsNum: 3,
+    refill: "= 1 × 30-second video every month",
     cta: "Get started free",
     features: [
       "1 × 30-second video every month",
@@ -32,7 +33,8 @@ const PLANS = [
     price: "$10",
     tagline: "One-time top-up. Credits never expire.",
     credits: "60 credits",
-    refill: "≈ 20 × 30-sec or 4 × 3-min videos",
+    creditsNum: 60,
+    refill: "See exactly what you get ↓",
     cta: "Buy 60 credits",
     features: [
       "Everything in Free",
@@ -51,7 +53,8 @@ const PLANS = [
     price: "$25",
     tagline: "Most popular · +10% bonus credits",
     credits: "175 credits",
-    refill: "≈ 58 × 30-sec or 7 × 5-min videos",
+    creditsNum: 175,
+    refill: "See exactly what you get ↓",
     cta: "Buy 175 credits",
     features: [
       "Everything in Starter",
@@ -70,7 +73,8 @@ const PLANS = [
     price: "$50",
     tagline: "Best value · +20% bonus credits",
     credits: "400 credits",
-    refill: "≈ 133 × 30-sec or 8 × 10-min videos",
+    creditsNum: 400,
+    refill: "See exactly what you get ↓",
     cta: "Buy 400 credits",
     features: [
       "Everything in Creator",
@@ -82,6 +86,18 @@ const PLANS = [
     highlight: false,
     color: "border-ink-200",
   },
+];
+
+// Single source of truth for duration → credit mapping (matches backend DURATION_TIERS)
+const DURATIONS = [
+  { sec: 30,  label: "30 sec",  credits: 3,  bestFor: "Instagram Stories, TikTok teasers", usd: "$0.60" },
+  { sec: 45,  label: "45 sec",  credits: 4,  bestFor: "LinkedIn feed videos",              usd: "$0.80" },
+  { sec: 60,  label: "60 sec",  credits: 5,  bestFor: "Instagram Reels, YouTube Shorts",   usd: "$1.00" },
+  { sec: 90,  label: "90 sec",  credits: 7,  bestFor: "X/Twitter video posts",             usd: "$1.40" },
+  { sec: 120, label: "2 min",   credits: 10, bestFor: "Product demos",                     usd: "$2.00" },
+  { sec: 180, label: "3 min",   credits: 15, bestFor: "Deep explainers",                   usd: "$3.00" },
+  { sec: 300, label: "5 min",   credits: 25, bestFor: "Tutorials, walkthroughs",           usd: "$5.00" },
+  { sec: 600, label: "10 min",  credits: 50, bestFor: "Long-form YouTube",                 usd: "$10.00" },
 ];
 
 const AGENCY = {
@@ -100,7 +116,10 @@ const AGENCY = {
 
 export default function Pricing() {
   const navigate = useNavigate();
+  const [pickedSec, setPickedSec] = useState(30);
   useEffect(() => { track("page_view", { page: "pricing" }); }, []);
+
+  const pickedDuration = DURATIONS.find((d) => d.sec === pickedSec) || DURATIONS[0];
 
   const onPlan = (plan) => {
     track("pricing_click", { plan });
@@ -147,7 +166,16 @@ export default function Pricing() {
               <div className="mt-1 text-xs text-ink-500">{p.tagline}</div>
               <div className="mt-4 rounded-xl bg-brand-50 border border-brand-100 px-3 py-2">
                 <div className="text-xs uppercase tracking-widest text-brand-700 font-semibold">{p.credits}</div>
-                <div className="text-xs text-ink-500 mt-0.5">{p.refill}</div>
+                {p.id === "free" ? (
+                  <div className="text-xs text-ink-500 mt-0.5">{p.refill}</div>
+                ) : (
+                  <a href="#calculator"
+                     onClick={() => track("pricing_scroll_calc", { plan: p.id })}
+                     className="text-xs text-brand-600 hover:text-brand-700 font-semibold mt-0.5 inline-block"
+                     data-testid={`plan-calc-link-${p.id}`}>
+                    See exactly what you get ↓
+                  </a>
+                )}
               </div>
               <ul className="mt-5 space-y-2 text-sm text-ink-700 flex-1">
                 {p.features.map((f) => (
@@ -194,45 +222,139 @@ export default function Pricing() {
         </div>
       </section>
 
-      {/* PER-DURATION COST TABLE */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
-        <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">Per-video cost</div>
+      {/* INTERACTIVE CREDIT CALCULATOR */}
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-12" id="calculator">
+        <div className="flex items-center gap-2 text-brand-600">
+          <Calculator className="w-4 h-4" />
+          <div className="text-xs uppercase tracking-widest font-semibold">Credit calculator</div>
+        </div>
         <h2 className="mt-2 font-heading font-extrabold text-2xl sm:text-3xl tracking-tighter">
-          Credits by duration
+          Pick a duration — see exactly what each pack gets you.
         </h2>
-        <div className="mt-6 rounded-2xl border border-ink-200 overflow-hidden" data-testid="duration-cost-table">
+        <p className="mt-2 text-ink-500 text-sm max-w-2xl">
+          No math required. Tap a duration below and every plan card updates with the exact number of videos you can generate.
+        </p>
+
+        {/* Duration chip picker */}
+        <div className="mt-6 flex flex-wrap gap-2" data-testid="calc-duration-picker">
+          {DURATIONS.map((d) => {
+            const active = pickedSec === d.sec;
+            return (
+              <button key={d.sec}
+                type="button"
+                onClick={() => { setPickedSec(d.sec); track("calc_duration_pick", { sec: d.sec }); }}
+                data-testid={`calc-duration-${d.sec}`}
+                className={[
+                  "rounded-xl border px-4 py-2.5 text-left transition-all",
+                  active
+                    ? "bg-brand-600 border-brand-600 text-white shadow-lg shadow-brand-600/20"
+                    : "bg-white border-ink-200 hover:border-brand-600 hover:shadow-sm text-ink-900",
+                ].join(" ")}>
+                <div className={`font-heading font-bold text-sm leading-none ${active ? "text-white" : "text-ink-900"}`}>{d.label}</div>
+                <div className={`mt-1 text-[10px] uppercase tracking-widest font-semibold ${active ? "text-white/70" : "text-ink-400"}`}>
+                  {d.credits} credits
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Selected duration summary */}
+        <div className="mt-5 rounded-2xl bg-brand-50 border border-brand-100 p-4 flex flex-wrap items-center gap-3 text-sm" data-testid="calc-selected-summary">
+          <div className="font-semibold text-brand-900">Selected:</div>
+          <div className="font-heading font-bold text-ink-900">{pickedDuration.label}</div>
+          <span className="text-ink-400">·</span>
+          <div className="font-mono font-bold text-brand-700">{pickedDuration.credits} credits / video</div>
+          <span className="text-ink-400">·</span>
+          <div className="text-ink-500">Best for: {pickedDuration.bestFor}</div>
+        </div>
+
+        {/* Pack payoff cards */}
+        <div className="mt-6 grid md:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="calc-pack-payoff">
+          {PLANS.map((p) => {
+            const videos = Math.floor(p.creditsNum / pickedDuration.credits);
+            const remainder = p.creditsNum % pickedDuration.credits;
+            return (
+              <div key={p.id}
+                className={`rounded-2xl border p-5 ${p.highlight ? "border-brand-600 bg-brand-50/40" : "border-ink-200 bg-white"}`}
+                data-testid={`calc-payoff-${p.id}`}>
+                <div className="flex items-center gap-2">
+                  <p.icon className="w-4 h-4 text-brand-600" />
+                  <div className="text-xs uppercase tracking-widest text-brand-700 font-semibold">{p.name}</div>
+                </div>
+                <div className="mt-3 flex items-baseline gap-2">
+                  <span className="font-heading font-black text-4xl tracking-tighter text-ink-900" data-testid={`calc-count-${p.id}`}>{videos}</span>
+                  <span className="text-sm text-ink-500">{videos === 1 ? "video" : "videos"}</span>
+                </div>
+                <div className="mt-1 text-xs text-ink-500">
+                  at {pickedDuration.label} each
+                  {remainder > 0 && <> · <span className="text-ink-400">({remainder} credits left over)</span></>}
+                </div>
+                <div className="mt-3 pt-3 border-t border-ink-100 text-xs text-ink-500">
+                  <span className="font-semibold text-ink-700">{p.credits}</span> · <span className="font-mono">{p.price}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* FULL MATRIX — every pack × every duration */}
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+        <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">Full transparency</div>
+        <h2 className="mt-2 font-heading font-extrabold text-2xl sm:text-3xl tracking-tighter">
+          Every pack × every duration
+        </h2>
+        <p className="mt-2 text-ink-500 text-sm max-w-2xl">
+          The complete lookup — number of videos you can generate from each pack at every supported duration. Credit cost + approx. USD cost per video shown for clarity.
+        </p>
+        <div className="mt-6 rounded-2xl border border-ink-200 overflow-x-auto" data-testid="duration-cost-table">
           <table className="w-full text-sm">
             <thead className="bg-ink-50 text-ink-500 uppercase tracking-widest text-xs">
               <tr>
-                <th className="text-left px-4 py-3 font-semibold">Duration</th>
+                <th className="text-left px-4 py-3 font-semibold sticky left-0 bg-ink-50">Duration</th>
                 <th className="text-right px-4 py-3 font-semibold">Credits</th>
-                <th className="text-right px-4 py-3 font-semibold">Approx. cost</th>
-                <th className="text-left px-4 py-3 font-semibold pl-6">Best for</th>
+                <th className="text-right px-4 py-3 font-semibold">Cost / video</th>
+                {PLANS.map((p) => (
+                  <th key={p.id} className="text-right px-4 py-3 font-semibold whitespace-nowrap">
+                    {p.name}
+                    <div className="text-[10px] text-ink-400 font-normal normal-case tracking-normal mt-0.5">{p.credits}</div>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {[
-                ["30 sec",  3,  "$0.60", "Instagram Stories, TikTok teasers"],
-                ["45 sec",  4,  "$0.80", "LinkedIn feed videos"],
-                ["60 sec",  5,  "$1.00", "Instagram Reels, YouTube Shorts"],
-                ["90 sec",  7,  "$1.40", "X/Twitter video posts"],
-                ["2 min",  10,  "$2.00", "Product demos"],
-                ["3 min",  15,  "$3.00", "Deep explainers"],
-                ["5 min",  25,  "$5.00", "Tutorials, walkthroughs"],
-                ["10 min", 50,  "$10.00", "Long-form YouTube"],
-              ].map(([dur, cr, usd, best]) => (
-                <tr key={dur} className="border-t border-ink-100" data-testid={`dur-row-${dur.replace(" ","-")}`}>
-                  <td className="px-4 py-3 font-semibold">{dur}</td>
-                  <td className="px-4 py-3 text-right font-mono text-brand-700 font-bold">{cr}</td>
-                  <td className="px-4 py-3 text-right text-ink-500 font-mono">{usd}</td>
-                  <td className="px-4 py-3 pl-6 text-ink-500">{best}</td>
+              {DURATIONS.map((d) => (
+                <tr key={d.sec} className="border-t border-ink-100 hover:bg-brand-50/30 transition-colors" data-testid={`dur-row-${d.label.replace(" ","-")}`}>
+                  <td className="px-4 py-3 font-semibold sticky left-0 bg-white">
+                    {d.label}
+                    <div className="text-[11px] text-ink-400 font-normal mt-0.5">{d.bestFor}</div>
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono text-brand-700 font-bold">{d.credits}</td>
+                  <td className="px-4 py-3 text-right text-ink-500 font-mono">{d.usd}</td>
+                  {PLANS.map((p) => {
+                    const videos = Math.floor(p.creditsNum / d.credits);
+                    return (
+                      <td key={p.id} className="px-4 py-3 text-right font-mono"
+                          data-testid={`matrix-${p.id}-${d.sec}`}>
+                        {p.id === "free" && d.sec !== 30 ? (
+                          <span className="text-ink-300">—</span>
+                        ) : (
+                          <>
+                            <span className={`font-bold ${videos > 0 ? "text-ink-900" : "text-ink-400"}`}>{videos}</span>
+                            <span className="text-ink-400 text-[11px] ml-1">×</span>
+                          </>
+                        )}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
         <p className="mt-4 text-xs text-ink-500">
-          All prices in USD. Every generation includes both 16:9 (YouTube/Web) and 9:16 (LinkedIn/Reels) exports at no extra credits.
+          All prices in USD. Every generation includes both 16:9 (YouTube/Web) and 9:16 (LinkedIn/Reels) exports at no extra credits. Free plan is limited to 30-sec videos only — upgrade to any pack for full duration access.
         </p>
       </section>
 
