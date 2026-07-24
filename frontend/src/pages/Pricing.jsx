@@ -10,23 +10,24 @@ import { api } from "@/lib/api";
 // Pricing tiles + duration calculator. All numbers are pulled from
 // /api/pricing/config so backend + frontend can never drift.
 const FALLBACK_PLANS = [
-  { id: "free",     name: "Free",     price_inr: 0,     credits: 50,    tagline: "1 × 30-second video every month" },
-  { id: "creator",  name: "Creator",  price_inr: 1999,  credits: 500,   tagline: "50 posts or ~5 mins of slideshow" },
-  { id: "business", name: "Business", price_inr: 6999,  credits: 2000,  tagline: "Unlocks premium AI video + higher volume", popular: true },
-  { id: "agency",   name: "Agency",   price_inr: 24999, credits: 8000,  tagline: "Multi-workspace + priority support" },
+  { id: "free",     name: "Free",     price_inr: 0,     credits: 5,    tagline: "1 × 30-sec video every month" },
+  { id: "starter",  name: "Starter",  price_inr: 499,   credits: 10,   tagline: "2 × 30-sec videos or 1 × 60-sec video every month" },
+  { id: "creator",  name: "Creator",  price_inr: 1999,  credits: 50,   tagline: "10 × 30-sec videos or ~5 mins of slideshow" },
+  { id: "business", name: "Business", price_inr: 6999,  credits: 200,  tagline: "Unlocks premium AI video + higher volume", popular: true },
+  { id: "agency",   name: "Agency",   price_inr: 24999, credits: 800,  tagline: "Multi-workspace + priority support" },
 ];
 const FALLBACK_DURATIONS = [
-  { sec: 30,  credits: 50,   label: "30 sec",  bestFor: "Instagram Stories, TikTok teasers" },
-  { sec: 45,  credits: 75,   label: "45 sec",  bestFor: "LinkedIn feed videos" },
-  { sec: 60,  credits: 100,  label: "60 sec",  bestFor: "Instagram Reels, YouTube Shorts" },
-  { sec: 90,  credits: 150,  label: "90 sec",  bestFor: "X/Twitter video posts" },
-  { sec: 120, credits: 200,  label: "2 min",   bestFor: "Product demos" },
-  { sec: 180, credits: 300,  label: "3 min",   bestFor: "Deep explainers" },
-  { sec: 300, credits: 500,  label: "5 min",   bestFor: "Tutorials, walkthroughs" },
-  { sec: 600, credits: 1000, label: "10 min",  bestFor: "Long-form YouTube" },
+  { sec: 30,  credits: 5,   label: "30 sec",  bestFor: "Instagram Stories, TikTok teasers" },
+  { sec: 45,  credits: 8,   label: "45 sec",  bestFor: "LinkedIn feed videos" },
+  { sec: 60,  credits: 10,  label: "60 sec",  bestFor: "Instagram Reels, YouTube Shorts" },
+  { sec: 90,  credits: 15,  label: "90 sec",  bestFor: "X/Twitter video posts" },
+  { sec: 120, credits: 20,  label: "2 min",   bestFor: "Product demos" },
+  { sec: 180, credits: 30,  label: "3 min",   bestFor: "Deep explainers" },
+  { sec: 300, credits: 50,  label: "5 min",   bestFor: "Tutorials, walkthroughs" },
+  { sec: 600, credits: 100, label: "10 min",  bestFor: "Long-form YouTube" },
 ];
 
-const PLAN_ICONS = { free: Sparkles, creator: Rocket, business: Star, agency: Building2 };
+const PLAN_ICONS = { free: Sparkles, starter: Zap, creator: Rocket, business: Star, agency: Building2 };
 const inr = (n) => n.toLocaleString("en-IN");
 
 export default function Pricing() {
@@ -66,7 +67,7 @@ export default function Pricing() {
         </div>
 
         {/* Plan tiles */}
-        <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="pricing-plans-grid">
+        <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4" data-testid="pricing-plans-grid">
           {plans.map((p) => {
             const Icon = PLAN_ICONS[p.id] || Sparkles;
             const isPopular = !!p.popular;

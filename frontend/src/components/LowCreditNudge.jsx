@@ -17,8 +17,8 @@ export default function LowCreditNudge() {
 
   if (!user) return null;
   if (dismissed) return null;
-  // Persistent warning below 200 credits (matches backend LOW_CREDIT_THRESHOLD)
-  if ((user.credits ?? 0) >= 200) return null;
+  // Persistent warning below 20 credits (matches backend LOW_CREDIT_THRESHOLD)
+  if ((user.credits ?? 0) >= 20) return null;
   if (user.plan && user.plan !== "free") return null;
 
   const dismiss = () => {
@@ -48,7 +48,7 @@ export default function LowCreditNudge() {
             You have <span className="text-brand-600">{user.credits ?? 0} credits</span> left.
           </div>
           <p className="mt-1 text-sm text-ink-500">
-            Invite a friend — both of you get 50 credits (1 × 30-sec video). Or top up any time.
+            Invite a friend — both of you get 5 credits (1 × 30-sec video). Or top up any time.
           </p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 shrink-0">

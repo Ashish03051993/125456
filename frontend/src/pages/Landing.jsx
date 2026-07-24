@@ -13,7 +13,7 @@ import DemoVideoSection from "@/components/DemoVideoSection";
 const FAQ_ITEMS = [
   {
     q: "How much does one video actually cost me?",
-    a: "Every plan is credit-based. Slideshow video costs about 100 credits per minute, so a 30-second video is 50 credits and a 5-minute video is 500 credits. The Creator plan (₹1,999/mo) includes 500 credits and Business (₹6,999/mo) includes 2,000 credits with premium AI video unlocked. Credits never expire.",
+    a: "Every plan is credit-based. Slideshow video costs about 10 credits per minute, so a 30-second video is 5 credits and a 5-minute video is 50 credits. The Creator plan (₹1,999/mo) includes 50 credits and Business (₹6,999/mo) includes 200 credits with premium AI video unlocked. Credits never expire.",
   },
   {
     q: "Do I need to record my own voice or upload footage?",
@@ -64,7 +64,7 @@ const FEATURES = [
   { icon: Sparkles,  title: "Guided step-by-step",   body: "Approve script, visuals and voice before your video is rendered — never a surprise output.", span: "md:col-span-2" },
   { icon: Palette,   title: "5 cinematic styles",    body: "Business, Documentary, Educational, Cinematic, Storytelling.", span: "md:col-span-1" },
   { icon: Film,      title: "Every platform, one render", body: "16:9 for YouTube. 9:16 for Instagram Reels, LinkedIn, TikTok, Facebook & Shorts. Every output included, no extra credits.", span: "md:col-span-1" },
-  { icon: CheckCircle2, title: "One free 30-sec video every month", body: "New users get 50 credits every month, forever. No credit card needed to start.", span: "md:col-span-2" },
+  { icon: CheckCircle2, title: "One free 30-sec video every month", body: "New users get 5 credits every month, forever. No credit card needed to start.", span: "md:col-span-2" },
 ];
 
 export default function Landing() {
@@ -225,7 +225,7 @@ export default function Landing() {
               Your first video is on us. Every single month.
             </h2>
             <p className="mt-3 text-white/80 max-w-2xl">
-              Free plan gives you 50 credits every month — enough for one polished 30-second video. Need more? Top up any time, credits never expire.
+              Free plan gives you 5 credits every month — enough for one polished 30-second video. Need more? Top up any time, credits never expire.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Button onClick={() => startFree("final_cta")} className="rounded-full bg-white text-ink-900 hover:bg-white/90 h-12 px-6 font-semibold" data-testid="final-signup-btn">

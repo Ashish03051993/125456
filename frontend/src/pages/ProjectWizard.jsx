@@ -22,14 +22,14 @@ const LANGS = ["English", "Hindi", "Spanish", "French", "German", "Portuguese", 
 
 // Fallback used if /api/durations is momentarily unreachable
 const FALLBACK_DURATIONS = [
-  { sec: 30,  credits: 50,   label: "30 sec" },
-  { sec: 45,  credits: 75,   label: "45 sec" },
-  { sec: 60,  credits: 100,  label: "60 sec" },
-  { sec: 90,  credits: 150,  label: "90 sec" },
-  { sec: 120, credits: 200,  label: "2 min" },
-  { sec: 180, credits: 300,  label: "3 min" },
-  { sec: 300, credits: 500,  label: "5 min" },
-  { sec: 600, credits: 1000, label: "10 min" },
+  { sec: 30,  credits: 5,   label: "30 sec" },
+  { sec: 45,  credits: 8,   label: "45 sec" },
+  { sec: 60,  credits: 10,  label: "60 sec" },
+  { sec: 90,  credits: 15,  label: "90 sec" },
+  { sec: 120, credits: 20,  label: "2 min" },
+  { sec: 180, credits: 30,  label: "3 min" },
+  { sec: 300, credits: 50,  label: "5 min" },
+  { sec: 600, credits: 100, label: "10 min" },
 ];
 
 // Local draft-save so users don't lose their in-progress wizard state on reload / accidental nav

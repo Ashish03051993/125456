@@ -554,7 +554,7 @@ async def _clear_login_failures(request: Request, ident: str):
 # --------------------------- Referrals ---------------------------
 # Both the referrer and the new signup get REFERRAL_BONUS credits. Codes are
 # generated lazily on first fetch/register so existing users are covered.
-REFERRAL_BONUS = 50  # Both inviter and invitee get this on successful signup — matches new "1x 30-sec video" value
+REFERRAL_BONUS = 5  # Both inviter and invitee get this on successful signup — matches new "1x 30-sec video" value
 REFERRAL_DAILY_CAP = 10  # Max bonuses a single referrer can earn in a rolling 24h — anti-farming
 _REFERRAL_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/1/O/I to reduce OCR/copy errors
 
@@ -894,19 +894,19 @@ async def list_projects(user=Depends(current_user)):
 
 
 # --------------------------- Duration Registry (single source of truth) ---------------------------
-# Credit costs match the "Profit-Locked" pricing model: 100 credits per minute
-# of slideshow video (i.e. ~1.67 credits/sec). Every duration tier is priced
-# to guarantee 70%+ gross margin on the underlying LLM + image + TTS calls.
+# Credit costs match the "Profit-Locked" pricing model: 10 credits per minute
+# of slideshow video (i.e. ~1 credit per 6 seconds). Same profit-per-rupee as
+# before, just prettier smaller numbers on the UI.
 DURATION_TIERS: list = [
     # (duration_sec, credit_cost, num_scenes, label)
-    (30,   50,  3,  "30 sec"),
-    (45,   75,  4,  "45 sec"),
-    (60,  100,  5,  "60 sec"),
-    (90,  150,  7,  "90 sec"),
-    (120, 200,  9,  "2 min"),
-    (180, 300, 12,  "3 min"),
-    (300, 500, 16,  "5 min"),
-    (600,1000, 22,  "10 min"),
+    (30,    5,  3,  "30 sec"),
+    (45,    8,  4,  "45 sec"),
+    (60,   10,  5,  "60 sec"),
+    (90,   15,  7,  "90 sec"),
+    (120,  20,  9,  "2 min"),
+    (180,  30, 12,  "3 min"),
+    (300,  50, 16,  "5 min"),
+    (600, 100, 22,  "10 min"),
 ]
 DURATION_BY_SEC = {t[0]: t for t in DURATION_TIERS}
 DEFAULT_DURATION_SEC = 30
@@ -931,8 +931,8 @@ def scenes_for_sec(sec: int) -> int:
 
 
 # --------------------------- Free-tier credit refill ---------------------------
-FREE_MONTHLY_CREDITS = 50   # Enough for exactly one 30-sec video (new pricing)
-LOW_CREDIT_THRESHOLD = 200  # Show a persistent "Low Credits" warning below this
+FREE_MONTHLY_CREDITS = 5    # 1 × 30-sec video every month (new pricing scale)
+LOW_CREDIT_THRESHOLD = 20   # Show a persistent "Low Credits" warning below this
 
 async def apply_free_refill(user: dict) -> dict:
     """If the user's `last_refill_at` is in a previous calendar month (or missing),
@@ -1329,12 +1329,13 @@ async def pricing_config():
         "referral_bonus": REFERRAL_BONUS,
         "currency": "INR",
         "plans": [
-            {"id": "free",     "name": "Free",     "price_inr": 0,     "credits": FREE_MONTHLY_CREDITS, "period": "month", "tagline": "1 × 30-second video every month"},
-            {"id": "creator",  "name": "Creator",  "price_inr": 1999,  "credits": 500,   "period": "month", "tagline": "50 posts or ~5 mins of slideshow"},
-            {"id": "business", "name": "Business", "price_inr": 6999,  "credits": 2000,  "period": "month", "tagline": "Unlocks premium AI video (Sora) + higher volume", "popular": True},
-            {"id": "agency",   "name": "Agency",   "price_inr": 24999, "credits": 8000,  "period": "month", "tagline": "Multi-workspace + high-volume + priority support"},
+            {"id": "free",     "name": "Free",     "price_inr": 0,     "credits": FREE_MONTHLY_CREDITS, "period": "month", "tagline": "1 × 30-sec video every month"},
+            {"id": "starter",  "name": "Starter",  "price_inr": 499,   "credits": 10,   "period": "month", "tagline": "2 × 30-sec videos or 1 × 60-sec video every month"},
+            {"id": "creator",  "name": "Creator",  "price_inr": 1999,  "credits": 50,   "period": "month", "tagline": "10 × 30-sec videos or ~5 mins of slideshow"},
+            {"id": "business", "name": "Business", "price_inr": 6999,  "credits": 200,  "period": "month", "tagline": "Unlocks premium AI video (Sora) + higher volume", "popular": True},
+            {"id": "agency",   "name": "Agency",   "price_inr": 24999, "credits": 800,  "period": "month", "tagline": "Multi-workspace + team seats + priority support"},
         ],
-        "topup": {"price_inr": 1999, "credits": 500, "label": "Credit Top-Up Pack"},
+        "topup": {"price_inr": 1999, "credits": 50, "label": "Credit Top-Up Pack"},
     }
 
 
