@@ -23,18 +23,18 @@ const PAYWALL_CONTENT = {
   paid_feature_required: {
     Icon: Lock,
     accent: "from-brand-500 to-indigo-600",
-    title: () => "Unlock Pro features",
-    kicker: "Pro plan required",
+    title: () => "Unlock this feature",
+    kicker: "Creator plan or above required",
     body: (d) => d.feature === "talking_head"
-      ? "Realistic on-screen speakers bring your videos to life — upload your own photo or generate a photorealistic portrait that lip-syncs to your narration. Available on Pro plan and above."
-      : "This capability is available on Pro plan and above.",
+      ? "Talking-head uses a specialised external AI service on top of your regular credits, so it's a paid-plan feature. Your existing credits still pay for the video generation itself — the plan upgrade only unlocks feature access. Available on Creator plan (₹1,999/mo) and above."
+      : "This capability requires a paid plan. Your credits stay on your account and cover the video generation itself — the plan upgrade unlocks feature access. Available on Creator plan (₹1,999/mo) and above.",
     bullets: [
       "Photorealistic talking-head characters",
       "Priority render queue",
       "HD downloads & brand watermark toggle",
       "1-hour support response SLA",
     ],
-    ctaLabel: "See Pro plans",
+    ctaLabel: "See paid plans",
     trackEvent: "paywall_paid_feature",
   },
 };

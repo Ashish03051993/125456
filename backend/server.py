@@ -45,7 +45,7 @@ EMERGENT_LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
 # Talking-head provider — "stub" (default, no external calls) or "fal_sonic" (needs FAL_KEY env)
 TALKING_HEAD_PROVIDER = os.environ.get("TALKING_HEAD_PROVIDER", "stub")
 # Paid-only feature — Free-plan users cannot enable talking_head
-PAID_PLANS = {"pro", "business", "enterprise"}
+PAID_PLANS = {"creator", "business", "agency", "pro", "enterprise"}  # legacy names kept for backwards-compat with any existing accounts
 
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
