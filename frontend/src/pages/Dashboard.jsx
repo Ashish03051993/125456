@@ -1,10 +1,10 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api } from "@/lib/api";
+import { api, resolveMediaUrl } from "@/lib/api";
 import { TopBar, Sidebar } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Video, Loader2, AlertCircle, CheckCircle2, Trash2, Pencil, Copy as CopyIcon, Check, X, Search, SlidersHorizontal, Sparkles } from "lucide-react";
+import { Plus, Video, Loader2, AlertCircle, CheckCircle2, Trash2, Pencil, Copy as CopyIcon, Check, X, Search, SlidersHorizontal, Sparkles, Download, ImageDown } from "lucide-react";
 import { toast } from "sonner";
 import LowCreditNudge from "@/components/LowCreditNudge";
 import { useAuth } from "@/lib/auth";
@@ -257,7 +257,7 @@ export default function Dashboard() {
                 <div key={p.id} className="rounded-2xl bg-white border border-ink-200 overflow-hidden hover:-translate-y-1 hover:shadow-lg transition-all" data-testid={`project-card-${p.id}`}>
                   <div className="aspect-video bg-ink-100 relative">
                     {p.scenes?.[0]?.image_url ? (
-                      <img src={`${process.env.REACT_APP_BACKEND_URL}${p.scenes[0].image_url}`} alt="cover" className="w-full h-full object-cover" />
+                      <img src={resolveMediaUrl(p.scenes[0].image_url)} alt="cover" className="w-full h-full object-cover" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-ink-400">
                         <Video className="w-8 h-8" />
@@ -322,6 +322,34 @@ export default function Dashboard() {
                     <div className="mt-4 flex items-center justify-between">
                       <Link to={`/project/${p.id}`} className="text-brand-600 font-semibold text-sm hover:underline" data-testid={`open-${p.id}`}>Open →</Link>
                       <div className="flex items-center gap-1">
+                        {p.status === "ready" && (() => {
+                          // Pick first available video url (16:9 preferred), thumbnail from scenes[0]
+                          const videoUrl = p.video_urls?.landscape || p.video_urls?.portrait || p.video_urls?.square || p.video_url;
+                          const thumbUrl = p.scenes?.[0]?.image_url;
+                          const safe = (p.title || p.topic || p.id).replace(/[^a-z0-9\-_]+/gi, "_").slice(0, 60);
+                          return (
+                            <>
+                              {videoUrl && (
+                                <a href={resolveMediaUrl(videoUrl)}
+                                   download={`${safe}.mp4`}
+                                   className="p-1.5 rounded-md text-ink-400 hover:text-brand-600 hover:bg-brand-50"
+                                   title="Download video (MP4)"
+                                   data-testid={`download-video-${p.id}`}>
+                                  <Download className="w-4 h-4" />
+                                </a>
+                              )}
+                              {thumbUrl && (
+                                <a href={resolveMediaUrl(thumbUrl)}
+                                   download={`${safe}_thumbnail.png`}
+                                   className="p-1.5 rounded-md text-ink-400 hover:text-brand-600 hover:bg-brand-50"
+                                   title="Download thumbnail (PNG)"
+                                   data-testid={`download-thumb-${p.id}`}>
+                                  <ImageDown className="w-4 h-4" />
+                                </a>
+                              )}
+                            </>
+                          );
+                        })()}
                         <button onClick={() => duplicate(p.id)} disabled={dupBusy[p.id]}
                           className="p-1.5 rounded-md text-ink-400 hover:text-brand-600 hover:bg-brand-50 disabled:opacity-50"
                           title="Duplicate as new draft"

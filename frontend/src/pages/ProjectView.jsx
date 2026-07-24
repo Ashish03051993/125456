@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { api } from "@/lib/api";
+import { api, resolveMediaUrl } from "@/lib/api";
 import { TopBar, Sidebar } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Loader2, Download, Youtube, Instagram, AlertCircle, ArrowLeft, PlayCircle, Monitor, Smartphone, Pencil, Copy as CopyIcon, RefreshCw, Check, X, Image as ImageIcon, Mic, Play, Pause, Volume2, Share2, Link as LinkIcon, Twitter, BarChart3, Eye, Globe } from "lucide-react";
@@ -230,7 +230,7 @@ export default function ProjectView() {
     </div>
   );
 
-  const videoSrc = active ? `${process.env.REACT_APP_BACKEND_URL}${active.url}` : null;
+  const videoSrc = active ? resolveMediaUrl(active.url) : null;
 
   return (
     <div className="min-h-screen bg-ink-50">

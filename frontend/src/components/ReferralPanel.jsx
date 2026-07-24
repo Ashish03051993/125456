@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Gift, Copy, Check, Users, Coins, Share2, Loader2 } from "lucide-react";
+import { Gift, Copy, Check, Users, Coins, Share2, Loader2, Twitter, Linkedin, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 
 export default function ReferralPanel() {
@@ -110,6 +110,40 @@ export default function ReferralPanel() {
             </Button>
           </div>
         </div>
+
+        {/* One-click social shares — pre-written copy tuned per platform */}
+        {data.share_url && (() => {
+          const url = encodeURIComponent(data.share_url);
+          const tweet = encodeURIComponent(
+            `I've been making videos with AI Video Studio — you get 3 bonus credits with my link:`
+          );
+          const linkedin = encodeURIComponent(
+            `I've been making videos with AI Video Studio — turn any topic into a polished 30s–10min video (16:9 for YouTube + 9:16 for LinkedIn/Reels) in minutes. Grab 3 bonus credits with my invite link:`
+          );
+          const whatsapp = encodeURIComponent(
+            `Hey! I've been using AI Video Studio to turn ideas into polished videos — you'll get 3 bonus credits if you sign up with my link 👉 ${data.share_url}`
+          );
+          const socials = [
+            { id: "twitter",  label: "X / Twitter", Icon: Twitter,       href: `https://twitter.com/intent/tweet?text=${tweet}&url=${url}`,  bg: "hover:bg-ink-900 hover:text-white hover:border-ink-900" },
+            { id: "linkedin", label: "LinkedIn",    Icon: Linkedin,      href: `https://www.linkedin.com/sharing/share-offsite/?url=${url}&summary=${linkedin}`, bg: "hover:bg-[#0A66C2] hover:text-white hover:border-[#0A66C2]" },
+            { id: "whatsapp", label: "WhatsApp",    Icon: MessageCircle, href: `https://wa.me/?text=${whatsapp}`,                            bg: "hover:bg-[#25D366] hover:text-white hover:border-[#25D366]" },
+          ];
+          return (
+            <div className="mt-4 pt-4 border-t border-brand-100/70">
+              <div className="text-[10px] uppercase tracking-widest text-ink-500 font-semibold mb-2">Or share directly to</div>
+              <div className="flex flex-wrap gap-2" data-testid="referral-social-share">
+                {socials.map((s) => (
+                  <a key={s.id} href={s.href} target="_blank" rel="noopener noreferrer"
+                     onClick={() => toast.success(`Opening ${s.label}…`)}
+                     className={`inline-flex items-center gap-1.5 rounded-full border border-ink-200 bg-white px-3 py-1.5 text-xs font-semibold text-ink-700 transition-colors ${s.bg}`}
+                     data-testid={`referral-social-${s.id}`}>
+                    <s.Icon className="w-3.5 h-3.5" /> {s.label}
+                  </a>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
