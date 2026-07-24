@@ -63,6 +63,7 @@ export default function ProjectWizard() {
   const draftIdRef = useRef(null);                           // holds a placeholder project id for pre-create character uploads
   const [busy, setBusy] = useState(false);
   const [enhanceBusy, setEnhanceBusy] = useState(false);
+  const [suggestions, setSuggestions] = useState([]); // alt rewrites shown as chips
 
   const isPaidUser = user && feature.paid_plans.includes(user.plan);
 
@@ -78,9 +79,10 @@ export default function ProjectWizard() {
       });
       if (data?.enhanced && data.enhanced !== original) {
         setTopic(data.enhanced);
+        setSuggestions(Array.isArray(data.alternatives) ? data.alternatives : []);
         toast.success("Topic enhanced", {
           description: "Tweak anything — or undo to restore your original.",
-          action: { label: "Undo", onClick: () => setTopic(original) },
+          action: { label: "Undo", onClick: () => { setTopic(original); setSuggestions([]); } },
         });
       } else {
         toast.info("Your topic already looks great.");
@@ -91,6 +93,12 @@ export default function ProjectWizard() {
     } finally {
       setEnhanceBusy(false);
     }
+  };
+
+  const applySuggestion = (text) => {
+    setTopic(text);
+    setSuggestions((prev) => prev.filter((s) => s !== text));
+    toast.success("Topic swapped");
   };
 
   // Open the global upgrade modal (same one the axios 402 interceptor uses)
@@ -267,6 +275,26 @@ export default function ProjectWizard() {
                 <div className="mt-1 text-[11px] text-ink-400">
                   Tip: 15+ words gives the AI enough context to write a rich script.
                 </div>
+                {suggestions.length > 0 && (
+                  <div className="mt-3 rounded-xl border border-brand-100 bg-brand-50/40 p-3" data-testid="topic-suggestions">
+                    <div className="text-[10px] uppercase tracking-widest text-brand-600 font-bold mb-2">
+                      Or try another angle
+                    </div>
+                    <div className="space-y-2">
+                      {suggestions.map((s, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => applySuggestion(s)}
+                          className="w-full text-left rounded-lg border border-ink-200 bg-white hover:border-brand-300 hover:shadow-sm transition-all p-2.5 text-xs text-ink-700 line-clamp-3"
+                          data-testid={`topic-suggestion-${i}`}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>

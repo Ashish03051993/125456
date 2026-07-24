@@ -5,6 +5,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import WelcomeBanner from "@/components/WelcomeBanner";
 import StarterTemplates from "@/components/StarterTemplates";
 import DraftResumeCard from "@/components/DraftResumeCard";
+import OnboardingChecklist from "@/components/OnboardingChecklist";
 
 // Format catalogue for the download dropdown — id maps to keys in `video_urls`.
 const DOWNLOAD_FORMATS = [
@@ -189,6 +190,7 @@ export default function Dashboard() {
           <DraftResumeCard />
 
           <WelcomeBanner hasProjects={projects.length > 0} />
+          <OnboardingChecklist projects={projects} />
 
           {loading ? (
             <div className="mt-16 flex justify-center text-ink-500"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>

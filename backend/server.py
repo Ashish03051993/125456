@@ -946,10 +946,10 @@ class EnhanceTopicIn(BaseModel):
 
 @api.post("/wizard/enhance-topic")
 async def enhance_topic(payload: EnhanceTopicIn, request: Request, user=Depends(current_user)):
-    """Polishes a raw user topic into a richer, more directed brief. Zero
-    credit cost — this is a UX helper, not a video generation. Rate-limited
-    per-IP to prevent abuse of the LLM. Returns {enhanced} or 400 on invalid
-    input. Never mutates project state."""
+    """Polishes a raw user topic into 3 richer, distinct rewrites. Zero credit
+    cost — this is a UX helper, not a video generation. Rate-limited per-IP.
+    Returns {enhanced, alternatives:[str, str]}. `enhanced` is the primary
+    pick (backwards-compatible with the earlier single-suggestion contract)."""
     raw = (payload.topic or "").strip()
     if len(raw) < 3:
         raise HTTPException(400, "Topic is too short to enhance.")
@@ -961,35 +961,64 @@ async def enhance_topic(payload: EnhanceTopicIn, request: Request, user=Depends(
     language = (payload.language or "English").strip() or "English"
     sys = (
         "You are a senior video script editor. A user has given you a rough topic "
-        "for a short-form video (30 seconds to 10 minutes). Rewrite their topic "
-        "into a single, richer prompt that will produce a much better video. "
-        "Rules:\n"
-        "- Keep it to 1–3 concise sentences (max 350 characters total).\n"
+        "for a short-form video (30 seconds to 10 minutes). Rewrite it into "
+        "THREE DIFFERENT rich prompts that would each produce a much better video, "
+        "each taking a distinct angle (e.g. explainer vs story vs contrarian). "
+        "Rules for every rewrite:\n"
+        "- 1–3 concise sentences, MAX 350 characters total.\n"
         "- Make the angle specific and hook-friendly — no vague topics.\n"
-        "- Mention the desired takeaway or emotional beat when appropriate.\n"
+        "- Mention the desired takeaway or emotional beat when it fits.\n"
         "- Preserve the user's original language and intent — do not invent facts.\n"
         f"- Style is {style}. Output language is {language}.\n"
-        "- Return ONLY the rewritten topic. No preamble, no quotes, no bullet lists."
+        'Return ONLY a valid JSON object with exactly this shape:\n'
+        '{"suggestions": ["...","...","..."]}\n'
+        "No preamble, no code fences, no extra keys."
     )
     try:
         chat = LlmChat(api_key=EMERGENT_LLM_KEY,
                        session_id=f"enhance-{user['user_id']}-{uuid.uuid4().hex[:6]}",
                        system_message=sys).with_model("openai", "gpt-5.4")
         resp = await chat.send_message(UserMessage(text=raw))
-    except Exception as e:
+    except Exception:
         logger.exception("enhance_topic_llm_failed user=%s", user.get("user_id"))
         raise HTTPException(502, "Couldn't reach the enhancer right now — try again in a moment.")
-    enhanced = (resp or "").strip().strip('"').strip("'").strip()
-    # Some models occasionally prefix with 'Enhanced topic:' etc. Strip common leaders.
-    for leader in ("enhanced topic:", "rewritten:", "here's a rewrite:", "topic:"):
-        if enhanced.lower().startswith(leader):
-            enhanced = enhanced[len(leader):].strip()
-    if not enhanced or len(enhanced) < 5:
+    text = (resp or "").strip()
+    # Strip common code-fence wrappers
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.lower().startswith("json"):
+            text = text[4:].strip()
+    suggestions = []
+    try:
+        parsed = json.loads(text)
+        raw_list = parsed.get("suggestions") or []
+        for s in raw_list:
+            if isinstance(s, str):
+                cleaned = s.strip().strip('"').strip("'").strip()
+                if cleaned:
+                    if len(cleaned) > 500:
+                        cleaned = cleaned[:500].rstrip() + "…"
+                    suggestions.append(cleaned)
+    except Exception:
+        # Fallback: model returned a plain string, use it as the single suggestion.
+        cleaned = text.strip('"').strip("'").strip()
+        if cleaned:
+            if len(cleaned) > 500:
+                cleaned = cleaned[:500].rstrip() + "…"
+            suggestions.append(cleaned)
+    # De-dupe while preserving order
+    seen, deduped = set(), []
+    for s in suggestions:
+        k = s.lower()
+        if k not in seen and len(s) >= 5:
+            seen.add(k)
+            deduped.append(s)
+    if not deduped:
         raise HTTPException(502, "Got an empty response from the enhancer — try again.")
-    # Hard cap in case the model ignored the character limit
-    if len(enhanced) > 500:
-        enhanced = enhanced[:500].rstrip() + "…"
-    return {"enhanced": enhanced}
+    return {
+        "enhanced": deduped[0],
+        "alternatives": deduped[1:3],  # up to 2 more
+    }
 
 
 
