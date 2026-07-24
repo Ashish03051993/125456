@@ -279,12 +279,16 @@ async def admin_repair_ffmpeg(user=Depends(require_admin)):
     """Admin-only self-heal: reinstall ffmpeg via apt-get. Solves the recurring
     'ffmpeg drops from container on restart' issue without needing a shell.
     Times out at 90s so it never hangs the API.
+
+    Uses asyncio.to_thread so the (potentially slow) apt-get doesn't block the
+    event loop — other API requests continue to be served during the repair.
     """
-    import shutil, subprocess
+    import shutil, subprocess, asyncio
     if shutil.which("ffmpeg"):
         return {"status": "already_installed", "path": shutil.which("ffmpeg")}
     try:
-        proc = subprocess.run(
+        proc = await asyncio.to_thread(
+            subprocess.run,
             ["apt-get", "install", "-y", "ffmpeg"],
             capture_output=True, text=True, timeout=90,
             env={**os.environ, "DEBIAN_FRONTEND": "noninteractive"},
