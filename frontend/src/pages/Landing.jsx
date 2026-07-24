@@ -1,11 +1,45 @@
 import { useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import usePageTitle from "@/lib/usePageTitle";
-import { Sparkles, Palette, CheckCircle2, ArrowRight, Wand2, Image as ImageIcon, Mic, Film } from "lucide-react";
+import { Sparkles, Palette, CheckCircle2, ArrowRight, Wand2, Image as ImageIcon, Mic, Film, HelpCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TopBar } from "@/components/Layout";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { track, captureAttribution } from "@/lib/analytics";
 import DemoVideoSection from "@/components/DemoVideoSection";
+
+// Landing page FAQ — pre-signup objections handled in one place.
+// Every answer is factual against the current build; keep this list honest.
+const FAQ_ITEMS = [
+  {
+    q: "How much does one video actually cost me?",
+    a: "Every plan is credit-based, and credits map 1:1 to seconds of video: a 30-second video is 3 credits, a 5-minute video is 25 credits. Your free plan tops up 3 credits every month (one free video, on us), and paid packs never expire.",
+  },
+  {
+    q: "Do I need to record my own voice or upload footage?",
+    a: "No — you just type a topic. Our pipeline writes the script, generates the visuals, picks a voice, and stitches the final video. You approve each step before it moves to the next, so you're always in control.",
+  },
+  {
+    q: "What formats do I get?",
+    a: "Every video is exported in 16:9 (YouTube), 9:16 (Reels, TikTok, Shorts), and 1:1 (Instagram feed). One prompt, three ready-to-post files — plus a downloadable thumbnail image for your post banner.",
+  },
+  {
+    q: "Can I edit the script or images before rendering?",
+    a: "Yes. The wizard pauses at three approval gates — Script, Images, Voice — so you can tweak wording, swap a scene image, or pick a different narrator before we render the final MP4. Regenerations don't cost extra credits.",
+  },
+  {
+    q: "Who owns the videos I create?",
+    a: "You do. Everything you generate is yours to post commercially, on any platform. We only display your work if you flip on a public share link (and you can revoke it any time from the project page).",
+  },
+  {
+    q: "How long does one video take?",
+    a: "A 30-second video typically completes in about 2–3 minutes end-to-end. Longer videos scale roughly linearly. We ping you on the dashboard the moment a render is ready.",
+  },
+  {
+    q: "Do you have an API or team plan?",
+    a: "Team workspaces, brand kits and API access are on the roadmap. Drop into the waitlist at the top and we'll email you the moment they're live.",
+  },
+];
 
 const DURATION_CHIPS = [
   { label: "30s",  credits: 3,  hint: "Reels · Shorts" },
@@ -153,6 +187,35 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* FAQ */}
+      <section className="max-w-4xl mx-auto px-4 sm:px-6 py-16 sm:py-24" id="faq" data-testid="landing-faq">
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
+          <div>
+            <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold flex items-center gap-1.5">
+              <HelpCircle className="w-3.5 h-3.5" /> Questions creators actually ask
+            </div>
+            <h2 className="mt-2 font-heading font-black text-3xl sm:text-5xl tracking-tighter text-ink-900">
+              You&apos;re curious. That&apos;s fair.
+            </h2>
+          </div>
+        </div>
+        <Accordion type="single" collapsible className="rounded-2xl border border-ink-200 bg-white divide-y divide-ink-100 overflow-hidden">
+          {FAQ_ITEMS.map((item, i) => (
+            <AccordionItem key={i} value={`faq-${i}`} className="px-5 border-0" data-testid={`faq-item-${i}`}>
+              <AccordionTrigger className="text-left font-semibold text-ink-900 hover:no-underline py-5">
+                {item.q}
+              </AccordionTrigger>
+              <AccordionContent className="text-ink-600 pb-5 pr-6 leading-relaxed">
+                {item.a}
+              </AccordionContent>
+            </AccordionItem>
+          ))}
+        </Accordion>
+        <p className="mt-6 text-center text-sm text-ink-500">
+          Still on the fence? <Link to="/signup" className="text-brand-600 font-semibold hover:underline" data-testid="faq-signup-link">Grab your free credits</Link> and see what shows up.
+        </p>
+      </section>
+
       {/* FINAL CTA */}
       <section className="max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-24">
         <div className="rounded-3xl bg-gradient-to-br from-ink-900 via-brand-700 to-violet-600 text-white p-8 sm:p-12 relative overflow-hidden" data-testid="final-cta">
@@ -183,6 +246,7 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 text-sm text-ink-500">
           <div>© {new Date().getFullYear()} AI Video Studio</div>
           <div className="flex items-center gap-x-5 gap-y-2 flex-wrap justify-end">
+            <a href="#faq" className="hover:text-brand-600" data-testid="footer-faq">FAQ</a>
             <Link to="/pricing" className="hover:text-brand-600" data-testid="footer-pricing">Pricing</Link>
             <Link to="/login" className="hover:text-brand-600" data-testid="footer-login">Log in</Link>
             <Link to="/signup" className="hover:text-brand-600" data-testid="footer-signup">Sign up</Link>
