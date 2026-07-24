@@ -167,17 +167,44 @@ export default function ProjectView() {
   };
 
   // --- Sora 2 animated-scene handlers ---
+  // duration: 4/8/12 → 5/10/15 credits.  charKeep = reuse the project's character face across all animated scenes.
+  const [animDuration, setAnimDuration] = useState(4);
+  const [charKeep, setCharKeep] = useState(false);
+  const animCost = (animDuration / 4) * 5;    // 4→5, 8→10, 12→15
+
   const animateScene = async (idx) => {
     try {
-      const { data } = await api.post(`/projects/${id}/scenes/${idx}/animate`);
+      const { data } = await api.post(`/projects/${id}/scenes/${idx}/animate`, null, {
+        params: { duration: animDuration, character_consistent: charKeep },
+      });
       toast.success(`Animating scene ${idx + 1} — ${data.credits_charged} credits`, {
-        description: "This takes 1–3 minutes. You can leave the page.",
+        description: `Sora 2 · ${data.duration}s · takes 1–3 min. You can leave the page.`,
       });
       const { data: fresh } = await api.get(`/projects/${id}`);
       setP(fresh);
     } catch (e) {
       const status = e?.response?.status;
       if (status !== 402) toast.error(e?.response?.data?.detail || "Couldn't start animation");
+    }
+  };
+
+  const animateAllScenes = async () => {
+    const pending = (p?.scenes || []).filter((s) => !s.animated_clip_url && !s.animating).length;
+    if (!pending) { toast.info("Every scene is already animated."); return; }
+    const total = pending * animCost;
+    if (!window.confirm(`Animate all ${pending} remaining scenes at ${animDuration}s each?\n\nTotal cost: ${total} credits.`)) return;
+    try {
+      const { data } = await api.post(`/projects/${id}/animate-all`, null, {
+        params: { duration: animDuration, character_consistent: charKeep },
+      });
+      toast.success(`Animating ${data.scenes_queued} scenes — ${data.credits_charged} credits`, {
+        description: "Sora clips arrive in ~1–3 min each. Feel free to leave the page.",
+      });
+      const { data: fresh } = await api.get(`/projects/${id}`);
+      setP(fresh);
+    } catch (e) {
+      const status = e?.response?.status;
+      if (status !== 402) toast.error(e?.response?.data?.detail || "Couldn't queue batch animation");
     }
   };
 
@@ -494,6 +521,50 @@ export default function ProjectView() {
                 </div>
               </div>
 
+              {/* Sora animation toolbar */}
+              <div className="rounded-2xl border border-purple-200 bg-gradient-to-br from-purple-50 via-white to-brand-50 p-4 sm:p-5 flex flex-wrap items-center gap-3 sm:gap-4"
+                   data-testid="sora-toolbar">
+                <div className="flex-1 min-w-[220px]">
+                  <div className="text-sm font-heading font-bold text-purple-900 flex items-center gap-2">
+                    <span>✨</span> Bring scenes to life with Sora 2
+                  </div>
+                  <div className="text-[12px] text-ink-500 mt-0.5">
+                    Turn any still into a cinematic animated clip. Skip scenes you want to keep as stills.
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-xs" data-testid="sora-duration-group">
+                  <span className="text-ink-500 font-medium">Length:</span>
+                  {[4, 8, 12].map((d) => (
+                    <button key={d}
+                      onClick={() => setAnimDuration(d)}
+                      disabled={imgAllBusy}
+                      className={`px-3 py-1.5 rounded-full font-mono font-semibold border transition ${
+                        animDuration === d
+                          ? "bg-purple-600 text-white border-purple-600"
+                          : "bg-white text-ink-700 border-ink-200 hover:border-purple-300"
+                      }`}
+                      data-testid={`sora-dur-${d}`}>
+                      {d}s · {(d / 4) * 5}cr
+                    </button>
+                  ))}
+                </div>
+                {p.character_image_url && (
+                  <label className="flex items-center gap-2 text-xs text-ink-700 cursor-pointer select-none"
+                         data-testid="sora-char-toggle">
+                    <input type="checkbox" checked={charKeep}
+                           onChange={(e) => setCharKeep(e.target.checked)}
+                           className="rounded border-ink-300" />
+                    <span>Keep character consistent</span>
+                  </label>
+                )}
+                <Button size="sm" onClick={animateAllScenes}
+                  disabled={imgAllBusy || (p.scenes || []).every((s) => s.animated_clip_url || s.animating)}
+                  className="rounded-full bg-gradient-to-r from-purple-600 to-brand-600 hover:from-purple-700 hover:to-brand-700 text-white shadow"
+                  data-testid="animate-all-btn">
+                  ✨ Animate all scenes · {((p.scenes || []).filter((s) => !s.animated_clip_url && !s.animating).length * animCost)}cr
+                </Button>
+              </div>
+
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {(p.scenes || []).map((sc) => (
                   <div key={sc.idx} className="bg-white border border-ink-200 rounded-2xl overflow-hidden" data-testid={`img-scene-${sc.idx}`}>
@@ -555,7 +626,7 @@ export default function ProjectView() {
                             disabled={imgBusy[sc.idx] || imgAllBusy || sc.animating}
                             className="rounded-full text-[11px] bg-gradient-to-r from-purple-600 to-brand-600 hover:from-purple-700 hover:to-brand-700 text-white"
                             data-testid={`animate-scene-${sc.idx}`}>
-                            ✨ Animate • 5 cr
+                            ✨ Animate • {animCost} cr
                           </Button>
                         )}
                       </div>

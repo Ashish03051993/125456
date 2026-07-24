@@ -1419,6 +1419,11 @@ async def public_video(slug: str, request: Request):
         )
     except Exception:
         logger.exception("share_view_log_failed slug=%s", slug)
+    scenes_out = [{"idx": s.get("idx"), "heading": s.get("heading"),
+                    "subtitle": s.get("subtitle"), "image_url": s.get("image_url"),
+                    "animated_clip_url": s.get("animated_clip_url")}
+                   for s in (p.get("scenes") or [])]
+    has_animated = any(s.get("animated_clip_url") for s in scenes_out)
     return {
         "slug": slug,
         "title": p.get("title") or p.get("topic"),
@@ -1429,9 +1434,8 @@ async def public_video(slug: str, request: Request):
         "video_url": p.get("video_url"),
         "video_urls": p.get("video_urls") or {},
         "thumbnail_url": p.get("thumbnail_url"),
-        "scenes": [{"idx": s.get("idx"), "heading": s.get("heading"),
-                    "subtitle": s.get("subtitle"), "image_url": s.get("image_url")}
-                   for s in (p.get("scenes") or [])],
+        "scenes": scenes_out,
+        "has_animated_scenes": has_animated,
         "creator_name": creator.get("name") or "An AI Video Studio creator",
         "creator_ref_code": creator.get("referral_code"),
         "view_count": (p.get("share_view_count") or 0) + 1,
@@ -1622,9 +1626,16 @@ async def regenerate_single_image(pid: str, idx: int, user=Depends(current_user)
 
 
 # --------------------------- Sora 2 "Animate scene" endpoint ---------------------------
-async def _run_animate_scene(project_id: str, scene_idx: int):
+async def _run_animate_scene(project_id: str, scene_idx: int, duration: int = 4,
+                             use_character: bool = False):
     """Background worker: turns a still image into a Sora-generated animated clip.
-    On failure, refunds the credit charge so the user is never overcharged."""
+    On failure, refunds the credit charge so the user is never overcharged.
+
+    If `use_character` and the project has `character_image_url`, the character
+    face is used as the first-frame reference instead of the scene image. This
+    is how we keep the same person/mascot recognizable across every animated
+    scene (poor-man's character-consistency without a full identity model).
+    """
     proj = await db.projects.find_one({"id": project_id}, {"_id": 0})
     if not proj:
         return
@@ -1632,15 +1643,27 @@ async def _run_animate_scene(project_id: str, scene_idx: int):
     if scene_idx < 0 or scene_idx >= len(scenes):
         return
     sc = scenes[scene_idx]
-    img_path = STORAGE_DIR / "images" / project_id / f"s{scene_idx}.png"
+    cost = _animate_cost_for(duration)
+    # Pick reference image: character (for consistency) or scene image
+    ref_path: Optional[Path] = None
+    if use_character and proj.get("character_image_url"):
+        # character_image_url is like "/api/media/characters/<pid>.png?v=..."
+        cand = STORAGE_DIR / "characters" / f"{project_id}.png"
+        if cand.exists():
+            ref_path = cand
+    if ref_path is None:
+        cand2 = STORAGE_DIR / "images" / project_id / f"s{scene_idx}.png"
+        if cand2.exists():
+            ref_path = cand2
     out_dir = STORAGE_DIR / "videos"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{project_id}_scene_{scene_idx}.mp4"
     try:
         await _generate_animated_scene(
             prompt=sc.get("image_prompt") or sc.get("heading") or "cinematic scene",
-            image_path=img_path,
+            image_path=ref_path,
             out_path=out_path,
+            duration=duration,
         )
         # Mark scene as animated
         import time as _t
@@ -1648,15 +1671,16 @@ async def _run_animate_scene(project_id: str, scene_idx: int):
         scenes[scene_idx] = {
             **scenes[scene_idx],
             "animated_clip_url": f"/api/media/videos/{project_id}_scene_{scene_idx}.mp4?v={int(_t.time())}",
+            "animated_duration": duration,
             "animating": False,
         }
         await db.projects.update_one({"id": project_id}, {"$set": {"scenes": scenes}})
-        logger.info("Sora animated scene ready: %s idx=%d", project_id, scene_idx)
+        logger.info("Sora animated scene ready: %s idx=%d duration=%ds", project_id, scene_idx, duration)
     except Exception as e:
         logger.exception("Sora animate failed for %s scene %d", project_id, scene_idx)
         # Refund the credit charge
         await db.users.update_one({"user_id": proj["user_id"]},
-                                  {"$inc": {"credits": ANIMATED_SCENE_CREDIT_COST}})
+                                  {"$inc": {"credits": cost}})
         # Clear the animating flag + surface error on the scene
         scenes_now = (await db.projects.find_one({"id": project_id}, {"_id": 0})).get("scenes") or []
         if scene_idx < len(scenes_now):
@@ -1666,10 +1690,17 @@ async def _run_animate_scene(project_id: str, scene_idx: int):
 
 
 @api.post("/projects/{pid}/scenes/{idx}/animate")
-async def animate_scene(pid: str, idx: int, bg: BackgroundTasks, user=Depends(current_user)):
+async def animate_scene(pid: str, idx: int, bg: BackgroundTasks,
+                        duration: int = 4,
+                        character_consistent: bool = False,
+                        user=Depends(current_user)):
     """Charge credits and queue a Sora 2 job that turns the approved scene image
-    into a 4-second animated clip. Once done, the final video uses the animated
-    clip instead of a Ken-Burns pan for that scene."""
+    into an animated clip (4/8/12 seconds). Once done, the final video uses the
+    animated clip instead of a Ken-Burns pan for that scene.
+
+    `character_consistent=true` uses the project's character image as the Sora
+    reference so the same person appears across every animated scene.
+    """
     p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
     if not p: raise HTTPException(404, "Not found")
     if p["status"] != "awaiting_image_approval":
@@ -1680,13 +1711,14 @@ async def animate_scene(pid: str, idx: int, bg: BackgroundTasks, user=Depends(cu
     sc = scenes[idx]
     if sc.get("animating"):
         raise HTTPException(409, "Scene is already being animated")
+    cost = _animate_cost_for(duration)
     # Credit check + atomic deduction
     u = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
-    if (u.get("credits", 0) or 0) < ANIMATED_SCENE_CREDIT_COST:
-        raise HTTPException(402, f"Not enough credits. Animating a scene costs {ANIMATED_SCENE_CREDIT_COST} credits.")
+    if (u.get("credits", 0) or 0) < cost:
+        raise HTTPException(402, f"Not enough credits. Animating a {duration}-second scene costs {cost} credits.")
     r = await db.users.update_one(
-        {"user_id": user["user_id"], "credits": {"$gte": ANIMATED_SCENE_CREDIT_COST}},
-        {"$inc": {"credits": -ANIMATED_SCENE_CREDIT_COST}},
+        {"user_id": user["user_id"], "credits": {"$gte": cost}},
+        {"$inc": {"credits": -cost}},
     )
     if r.modified_count == 0:
         raise HTTPException(402, "Credit deduction failed (race condition).")
@@ -1694,8 +1726,47 @@ async def animate_scene(pid: str, idx: int, bg: BackgroundTasks, user=Depends(cu
     scenes[idx] = {**scenes[idx], "animating": True, "animate_error": None,
                    "animated_clip_url": None}
     await db.projects.update_one({"id": pid}, {"$set": {"scenes": scenes}})
-    bg.add_task(_run_animate_scene, pid, idx)
-    return {"ok": True, "credits_charged": ANIMATED_SCENE_CREDIT_COST}
+    bg.add_task(_run_animate_scene, pid, idx, duration, character_consistent)
+    return {"ok": True, "credits_charged": cost, "duration": duration}
+
+
+@api.post("/projects/{pid}/animate-all")
+async def animate_all_scenes(pid: str, bg: BackgroundTasks,
+                             duration: int = 4,
+                             character_consistent: bool = False,
+                             user=Depends(current_user)):
+    """Animate every not-yet-animated scene in one shot. Charges the total
+    credit cost up-front (atomic), then queues each Sora job in parallel."""
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    if p["status"] != "awaiting_image_approval":
+        raise HTTPException(400, f"Scenes only animatable while awaiting image approval (got '{p['status']}').")
+    scenes = p.get("scenes") or []
+    per_cost = _animate_cost_for(duration)
+    # Target scenes: not already animated, not currently animating
+    targets = [i for i, s in enumerate(scenes)
+               if not s.get("animated_clip_url") and not s.get("animating")]
+    if not targets:
+        raise HTTPException(400, "Every scene is already animated (or animating).")
+    total_cost = per_cost * len(targets)
+    u = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
+    if (u.get("credits", 0) or 0) < total_cost:
+        raise HTTPException(402, f"Not enough credits. Animating {len(targets)} scenes at {duration}s each costs {total_cost} credits.")
+    r = await db.users.update_one(
+        {"user_id": user["user_id"], "credits": {"$gte": total_cost}},
+        {"$inc": {"credits": -total_cost}},
+    )
+    if r.modified_count == 0:
+        raise HTTPException(402, "Credit deduction failed (race condition).")
+    # Mark all targets as animating
+    for i in targets:
+        scenes[i] = {**scenes[i], "animating": True, "animate_error": None,
+                     "animated_clip_url": None}
+    await db.projects.update_one({"id": pid}, {"$set": {"scenes": scenes}})
+    for i in targets:
+        bg.add_task(_run_animate_scene, pid, i, duration, character_consistent)
+    return {"ok": True, "credits_charged": total_cost, "scenes_queued": len(targets),
+            "duration": duration}
 
 
 @api.delete("/projects/{pid}/scenes/{idx}/animate")
@@ -1708,7 +1779,8 @@ async def remove_scene_animation(pid: str, idx: int, user=Depends(current_user))
     scenes = p.get("scenes") or []
     if idx < 0 or idx >= len(scenes):
         raise HTTPException(400, "Invalid scene index")
-    scenes[idx] = {**scenes[idx], "animated_clip_url": None, "animate_error": None}
+    scenes[idx] = {**scenes[idx], "animated_clip_url": None, "animate_error": None,
+                   "animated_duration": None}
     await db.projects.update_one({"id": pid}, {"$set": {"scenes": scenes}})
     return await db.projects.find_one({"id": pid}, {"_id": 0})
 
@@ -2689,8 +2761,16 @@ async def _generate_image(prompt: str, out_path: Path):
 # Universal LLM Key (no separate OpenAI wallet). Sora 2 supports 4s / 8s / 12s
 # clips at 720p/1024p. We use the approved scene image as the first frame so the
 # animation stays visually consistent with the storyboard the user already OK'd.
-ANIMATED_SCENE_DURATION = 4      # seconds — cheapest Sora tier
-ANIMATED_SCENE_CREDIT_COST = 5   # user-facing app credits per animated scene
+ANIMATED_SCENE_DURATION = 4      # seconds — default (cheapest Sora tier)
+ANIMATED_SCENE_CREDIT_COST = 5   # user-facing app credits per 4-second scene
+SORA_ALLOWED_DURATIONS = (4, 8, 12)
+
+
+def _animate_cost_for(duration: int) -> int:
+    """Linear pricing: 4s=5, 8s=10, 12s=15 credits."""
+    if duration not in SORA_ALLOWED_DURATIONS:
+        raise HTTPException(400, f"Invalid duration {duration}. Must be one of {SORA_ALLOWED_DURATIONS}.")
+    return (duration // 4) * ANIMATED_SCENE_CREDIT_COST
 
 
 async def _generate_animated_scene(prompt: str, image_path: Path, out_path: Path,
@@ -2703,9 +2783,9 @@ async def _generate_animated_scene(prompt: str, image_path: Path, out_path: Path
             model="sora-2",
             size="1280x720",
             duration=duration,
-            image_path=str(image_path) if image_path.exists() else None,
+            image_path=str(image_path) if image_path and image_path.exists() else None,
             mime_type="image/png",
-            max_wait_time=300,
+            max_wait_time=600,
         )
         if not video_bytes:
             raise RuntimeError("Sora 2 returned no video bytes")

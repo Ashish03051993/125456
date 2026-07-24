@@ -100,6 +100,12 @@ export default function PublicVideo() {
           <span>{data.duration_sec}s</span>
           <span className="w-1 h-1 rounded-full bg-ink-600" />
           <span>{data.language}</span>
+          {data.has_animated_scenes && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gradient-to-r from-purple-600 to-brand-600 text-white normal-case tracking-normal font-semibold text-[10px] shadow-lg shadow-purple-900/40"
+                  data-testid="sora-animated-badge">
+              ✨ AI-Animated · Sora 2
+            </span>
+          )}
           <span className="ml-auto inline-flex items-center gap-1.5 text-ink-500">
             <Eye className="w-3.5 h-3.5" /> <span className="normal-case tracking-normal" data-testid="view-count">{data.view_count.toLocaleString()} views</span>
           </span>
