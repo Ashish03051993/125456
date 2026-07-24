@@ -8,6 +8,7 @@ import Dashboard from "@/pages/Dashboard";
 import ProjectWizard from "@/pages/ProjectWizard";
 import ProjectView from "@/pages/ProjectView";
 import Settings from "@/pages/Settings";
+import BuyCredits from "@/pages/BuyCredits";
 import AdminPanel from "@/pages/AdminPanel";
 import AuthCallback from "@/pages/AuthCallback";
 import Login from "@/pages/Login";
@@ -46,6 +47,7 @@ function AppRouter() {
       <Route path="/new" element={<ProtectedRoute><ProjectWizard /></ProtectedRoute>} />
       <Route path="/project/:id" element={<ProtectedRoute><ProjectView /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+      <Route path="/credits" element={<ProtectedRoute><BuyCredits /></ProtectedRoute>} />
       <Route path="/admin" element={<ProtectedRoute adminOnly><AdminPanel /></ProtectedRoute>} />
       <Route path="*" element={<NotFound />} />
     </Routes>

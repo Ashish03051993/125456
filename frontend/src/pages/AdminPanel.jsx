@@ -62,6 +62,8 @@ export default function AdminPanel() {
   const [waitlist, setWaitlist] = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [cohorts, setCohorts] = useState(null);
+  const [cohortDrill, setCohortDrill] = useState(null);
+  const [cohortDrillBusy, setCohortDrillBusy] = useState(false);
   const [experiments, setExperiments] = useState(null);
   const [attribution, setAttribution] = useState(null);
   const [sanity, setSanity] = useState(null);
@@ -633,7 +635,21 @@ export default function AdminPanel() {
                       </thead>
                       <tbody data-testid="cohorts-table-body">
                         {cohorts.weeks.map((w) => (
-                          <tr key={w.week_start} className="border-b border-ink-100 last:border-b-0" data-testid={`cohort-row-${w.week_start}`}>
+                          <tr key={w.week_start}
+                              className={`border-b border-ink-100 last:border-b-0 ${w.signups > 0 ? "cursor-pointer hover:bg-brand-50/50" : ""}`}
+                              onClick={async () => {
+                                if (!w.signups) return;
+                                setCohortDrill({ week_start: w.week_start });
+                                setCohortDrillBusy(true);
+                                try {
+                                  const { data } = await api.get(`/admin/analytics/cohorts/${w.week_start}/users`);
+                                  setCohortDrill(data);
+                                } catch {
+                                  toast.error("Couldn't load cohort users");
+                                  setCohortDrill(null);
+                                } finally { setCohortDrillBusy(false); }
+                              }}
+                              data-testid={`cohort-row-${w.week_start}`}>
                             <td className="px-4 py-3 font-mono text-xs">{w.week_start}</td>
                             <td className="px-4 py-3 text-right font-mono">{w.signups}</td>
                             <td className="px-4 py-3 text-right font-mono">{w.activated}</td>
@@ -1027,6 +1043,76 @@ export default function AdminPanel() {
                       </table>
                     </div>
                   </div>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
+
+          {/* Cohort drilldown — list of users signed up in the clicked week */}
+          <Dialog open={!!cohortDrill} onOpenChange={(o) => { if (!o) setCohortDrill(null); }}>
+            <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto" data-testid="cohort-drilldown-dialog">
+              <DialogHeader>
+                <DialogTitle>
+                  Cohort · Week of {cohortDrill?.week_start}
+                </DialogTitle>
+                <DialogDescription>
+                  {cohortDrillBusy
+                    ? "Loading…"
+                    : cohortDrill?.count != null
+                    ? `${cohortDrill.count} users signed up between ${cohortDrill.week_start} and ${cohortDrill.week_end}.`
+                    : ""}
+                </DialogDescription>
+              </DialogHeader>
+              {cohortDrillBusy && (
+                <div className="py-12 text-center text-ink-500">Loading users…</div>
+              )}
+              {cohortDrill?.users && !cohortDrillBusy && (
+                <div className="mt-2 overflow-x-auto">
+                  <table className="w-full text-xs min-w-[600px]" data-testid="cohort-drilldown-table">
+                    <thead className="text-left uppercase tracking-widest text-ink-500 border-b border-ink-200">
+                      <tr>
+                        <th className="px-3 py-2">User</th>
+                        <th className="px-3 py-2">Plan</th>
+                        <th className="px-3 py-2 text-right">Credits</th>
+                        <th className="px-3 py-2 text-center">Activated</th>
+                        <th className="px-3 py-2 text-center">Shared</th>
+                        <th className="px-3 py-2 text-center">Referred</th>
+                        <th className="px-3 py-2 text-right">Signed up</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cohortDrill.users.map((u) => (
+                        <tr key={u.user_id} className="border-b border-ink-100 last:border-b-0"
+                            data-testid={`cohort-user-${u.user_id}`}>
+                          <td className="px-3 py-2">
+                            <div className="font-semibold text-ink-900 truncate max-w-[220px]">{u.name || "—"}</div>
+                            <div className="text-ink-500 font-mono text-[10px] truncate max-w-[220px]">{u.email || u.user_id}</div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className={`inline-flex text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${u.plan === "free" ? "bg-ink-100 text-ink-700" : "bg-brand-100 text-brand-700"}`}>
+                              {u.plan}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono">{u.credits}</td>
+                          <td className="px-3 py-2 text-center">
+                            {u.activated ? <span className="text-emerald-600">✓</span> : <span className="text-ink-300">—</span>}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            {u.shared ? <span className="text-emerald-600">✓</span> : <span className="text-ink-300">—</span>}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            {u.was_referred ? <span className="text-brand-600">✓</span> : <span className="text-ink-300">—</span>}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-[10px]">
+                            {new Date(u.created_at).toISOString().slice(0, 16).replace("T", " ")}
+                          </td>
+                        </tr>
+                      ))}
+                      {cohortDrill.users.length === 0 && (
+                        <tr><td colSpan={7} className="px-3 py-10 text-center text-ink-400">No users in this window.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </DialogContent>

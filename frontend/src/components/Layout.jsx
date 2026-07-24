@@ -23,7 +23,7 @@ export function TopBar() {
         <div className="flex items-center gap-2 sm:gap-3">
           {user ? (
             <>
-              <Link to="/pricing" className="hidden sm:flex items-center gap-1.5 rounded-full bg-brand-50 border border-brand-200 text-brand-700 px-3 py-1.5 hover:bg-brand-100 transition-colors" data-testid="nav-credits-badge" title="Your credit balance — click to top up">
+              <Link to="/credits" className="hidden sm:flex items-center gap-1.5 rounded-full bg-brand-50 border border-brand-200 text-brand-700 px-3 py-1.5 hover:bg-brand-100 transition-colors" data-testid="nav-credits-badge" title="Your credit balance — click to top up">
                 <Coins className="w-3.5 h-3.5" />
                 <span className="text-xs font-bold">{user.credits ?? 0}</span>
                 <span className="text-[10px] uppercase tracking-widest font-semibold opacity-80">credits</span>

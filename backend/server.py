@@ -2402,6 +2402,65 @@ async def admin_cohorts(_admin=Depends(require_admin), weeks: int = 8):
     }
 
 
+@api.get("/admin/analytics/cohorts/{week_start}/users")
+async def admin_cohort_users(week_start: str, _admin=Depends(require_admin), limit: int = 100):
+    """Returns the users signed up during the ISO week beginning `week_start`
+    (YYYY-MM-DD, Monday-anchored). Includes their activation + share status."""
+    try:
+        start = datetime.fromisoformat(week_start).replace(tzinfo=timezone.utc)
+    except Exception:
+        raise HTTPException(400, "week_start must be YYYY-MM-DD.")
+    end = start + timedelta(days=7)
+    limit = max(1, min(int(limit or 100), 500))
+
+    # Iterate users and filter by parseable created_at
+    users_cur = db.users.find({}, {"_id": 0, "user_id": 1, "name": 1, "email": 1,
+                                    "created_at": 1, "plan": 1, "credits": 1, "referred_by": 1})
+    matching = []
+    async for u in users_cur:
+        ca = u.get("created_at")
+        if isinstance(ca, str):
+            try:
+                dt = datetime.fromisoformat(ca.replace("Z", "+00:00"))
+            except Exception:
+                continue
+        elif isinstance(ca, datetime):
+            dt = ca if ca.tzinfo else ca.replace(tzinfo=timezone.utc)
+        else:
+            continue
+        if start <= dt < end:
+            matching.append((u, dt))
+
+    matching.sort(key=lambda x: x[1])  # ascending
+    matching = matching[:limit]
+    uids = [u["user_id"] for u, _ in matching]
+
+    # Which of them have projects / shared videos
+    activated = set(await db.projects.distinct("user_id", {"user_id": {"$in": uids}})) if uids else set()
+    shared = set(await db.projects.distinct("user_id",
+        {"user_id": {"$in": uids}, "share_enabled": True})) if uids else set()
+
+    return {
+        "week_start": week_start,
+        "week_end": end.date().isoformat(),
+        "count": len(matching),
+        "users": [{
+            "user_id": u["user_id"],
+            "name": u.get("name") or "",
+            "email": u.get("email") or "",
+            "plan": u.get("plan") or "free",
+            "credits": int(u.get("credits") or 0),
+            "created_at": dt.isoformat(),
+            "activated": u["user_id"] in activated,
+            "shared": u["user_id"] in shared,
+            "was_referred": bool(u.get("referred_by")),
+        } for u, dt in matching],
+    }
+
+
+
+
+
 
 
 # --------------------------- Media static ---------------------------
@@ -3183,7 +3242,9 @@ async def root():
 app.include_router(api)
 # Phase 1 stub: architecture only, no live payments. See /app/backend/billing.py
 from billing import router as billing_router  # noqa: E402
+from razorpay_router import router as razorpay_router  # noqa: E402
 app.include_router(billing_router)
+app.include_router(razorpay_router)
 
 # CORS — parse env allowlist safely.
 # Browsers reject `allow_credentials=True` combined with wildcard `*`, so when the
