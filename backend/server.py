@@ -3246,55 +3246,58 @@ async def startup():
         {"$set": {"source": "direct"}},
     )
 
-    # Boot self-heal: if ffmpeg dropped from the container, quietly reinstall it
-    # in the background so /api/health flips to green without admin intervention.
-    # Non-blocking — startup completes immediately even if apt-get is slow.
-    import shutil as _shutil
-    if not _shutil.which("ffmpeg"):
-        async def _boot_repair_ffmpeg():
-            import asyncio, subprocess
-            logger.warning("Boot self-heal: ffmpeg missing — running apt-get install…")
+    # Boot self-heal: if ffmpeg / Noto fonts drop from the container, quietly
+    # reinstall in the background so /api/health flips to green without admin
+    # intervention. Non-blocking — startup completes immediately even if slow.
+    #
+    # Retry-with-backoff handles the recurring dpkg-lock race where another
+    # apt-get (from Kubernetes bootstrap or a sibling pod init) holds the lock
+    # for a few seconds after container start.
+    async def _apt_install_with_retry(label: str, pkgs: list, timeout_s: int, verify) -> bool:
+        """Runs `apt-get install -y <pkgs>` up to 5 times, backing off on dpkg lock
+        contention (rc=100 with 'lock' in stderr). Returns True on success."""
+        import asyncio, subprocess
+        delays = [5, 10, 20, 40, 80]  # ~155s total max wait
+        for attempt, delay in enumerate([0] + delays):
+            if delay:
+                logger.warning(f"Boot self-heal ({label}): dpkg locked — retry #{attempt} in {delay}s")
+                await asyncio.sleep(delay)
             try:
                 proc = await asyncio.to_thread(
                     subprocess.run,
-                    ["apt-get", "install", "-y", "ffmpeg"],
-                    capture_output=True, text=True, timeout=180,
+                    ["apt-get", "install", "-y", "--no-install-recommends", *pkgs],
+                    capture_output=True, text=True, timeout=timeout_s,
                     env={**os.environ, "DEBIAN_FRONTEND": "noninteractive"},
                 )
-                if _shutil.which("ffmpeg") and proc.returncode == 0:
-                    logger.info(f"Boot self-heal: ffmpeg reinstalled → {_shutil.which('ffmpeg')}")
-                else:
-                    logger.error(f"Boot self-heal failed rc={proc.returncode} stderr={proc.stderr[-300:]}")
+                if verify() and proc.returncode == 0:
+                    logger.info(f"Boot self-heal ({label}): installed successfully")
+                    return True
+                # rc=100 + "lock" in stderr → dpkg contention, retry
+                if proc.returncode == 100 and "lock" in (proc.stderr or "").lower():
+                    continue
+                logger.error(f"Boot self-heal ({label}) failed rc={proc.returncode} stderr={proc.stderr[-300:]}")
+                return False
             except Exception as e:
-                logger.exception(f"Boot self-heal crashed: {e}")
-        # Fire-and-forget; keeps startup fast
-        import asyncio as _asyncio
-        _asyncio.create_task(_boot_repair_ffmpeg())
+                logger.exception(f"Boot self-heal ({label}) crashed on attempt {attempt}: {e}")
+                return False
+        logger.error(f"Boot self-heal ({label}): gave up after {len(delays)} retries — dpkg lock never released")
+        return False
 
-    # Boot self-heal: if Noto fonts dropped from the container, reinstall them
-    # so multilingual captions don't render as tofu boxes. Same recurring
-    # pattern as ffmpeg — safe to keep behind a fingerprint check.
+    import shutil as _shutil
+    import asyncio as _asyncio
+    if not _shutil.which("ffmpeg"):
+        logger.warning("Boot self-heal: ffmpeg missing — scheduling install…")
+        _asyncio.create_task(_apt_install_with_retry(
+            "ffmpeg", ["ffmpeg"], 180, lambda: bool(_shutil.which("ffmpeg"))
+        ))
+
     _devanagari = "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf"
     if not os.path.isfile(_devanagari):
-        async def _boot_repair_fonts():
-            import asyncio, subprocess
-            logger.warning("Boot self-heal: Noto fonts missing — installing fonts-noto…")
-            try:
-                proc = await asyncio.to_thread(
-                    subprocess.run,
-                    ["apt-get", "install", "-y", "--no-install-recommends",
-                     "fonts-noto", "fonts-noto-cjk"],
-                    capture_output=True, text=True, timeout=240,
-                    env={**os.environ, "DEBIAN_FRONTEND": "noninteractive"},
-                )
-                if os.path.isfile(_devanagari) and proc.returncode == 0:
-                    logger.info("Boot self-heal: Noto fonts installed successfully")
-                else:
-                    logger.error(f"Boot self-heal (fonts) failed rc={proc.returncode} stderr={proc.stderr[-300:]}")
-            except Exception as e:
-                logger.exception(f"Boot self-heal (fonts) crashed: {e}")
-        import asyncio as _asyncio
-        _asyncio.create_task(_boot_repair_fonts())
+        logger.warning("Boot self-heal: Noto fonts missing — scheduling install…")
+        _asyncio.create_task(_apt_install_with_retry(
+            "fonts", ["fonts-noto", "fonts-noto-cjk"], 240,
+            lambda: os.path.isfile(_devanagari)
+        ))
 
     # Kick off the daily digest scheduler (08:00 IST)
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
