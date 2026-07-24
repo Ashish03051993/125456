@@ -4,6 +4,7 @@ import { api, resolveMediaUrl } from "@/lib/api";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import WelcomeBanner from "@/components/WelcomeBanner";
 import StarterTemplates from "@/components/StarterTemplates";
+import DraftResumeCard from "@/components/DraftResumeCard";
 
 // Format catalogue for the download dropdown — id maps to keys in `video_urls`.
 const DOWNLOAD_FORMATS = [
@@ -184,6 +185,8 @@ export default function Dashboard() {
           </div>
 
           <LowCreditNudge />
+
+          <DraftResumeCard />
 
           <WelcomeBanner hasProjects={projects.length > 0} />
 
