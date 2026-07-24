@@ -953,8 +953,8 @@ async def enhance_topic(payload: EnhanceTopicIn, request: Request, user=Depends(
     raw = (payload.topic or "").strip()
     if len(raw) < 3:
         raise HTTPException(400, "Topic is too short to enhance.")
-    if len(raw) > 500:
-        raise HTTPException(400, "Topic is too long — keep it under 500 characters before enhancing.")
+    if len(raw) > 2000:
+        raise HTTPException(400, "Topic is too long — keep it under 2000 characters before enhancing.")
     _rate_limit_check(request, "enhance_topic", limit=20, window_seconds=600)
 
     style = (payload.style or "Educational").strip() or "Educational"

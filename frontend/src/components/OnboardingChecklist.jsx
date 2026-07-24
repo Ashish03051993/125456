@@ -96,7 +96,7 @@ export default function OnboardingChecklist({ projects }) {
               <Circle className="w-5 h-5 text-ink-300 shrink-0 mt-0.5" />
             )}
             <div className="min-w-0 flex-1">
-              <div className={`text-sm font-semibold ${s.done ? "text-emerald-800 line-through decoration-emerald-300 decoration-2" : "text-ink-900"}`}>
+              <div className={`text-sm font-semibold ${s.done ? "text-emerald-700" : "text-ink-900"}`}>
                 {i + 1}. {s.title}
               </div>
               <div className={`text-xs ${s.done ? "text-emerald-700/70" : "text-ink-500"}`}>{s.desc}</div>
