@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import usePageTitle from "@/lib/usePageTitle";
 import { Video, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -47,6 +48,7 @@ export function LegalShell({ title, updated, children }) {
 }
 
 export function Terms() {
+  usePageTitle("Terms of Service");
   return (
     <LegalShell title="Terms of Service" updated="July 23, 2026">
       <h2>1. Who we are</h2>
@@ -106,6 +108,7 @@ export function Terms() {
 }
 
 export function Privacy() {
+  usePageTitle("Privacy Policy");
   return (
     <LegalShell title="Privacy Policy" updated="July 23, 2026">
       <h2>1. Data we collect</h2>

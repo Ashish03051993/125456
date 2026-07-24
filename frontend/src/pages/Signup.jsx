@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import usePageTitle from "@/lib/usePageTitle";
 import { Video, Sparkles, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +20,7 @@ function formatApiError(detail) {
 }
 
 export default function Signup() {
+  usePageTitle("Sign up free");
   const { user, loading, setUser } = useAuth();
   const navigate = useNavigate();
   const [name, setName] = useState("");

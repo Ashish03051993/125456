@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import usePageTitle from "@/lib/usePageTitle";
 import { Check, Sparkles, Zap, Rocket, Building2, Calculator } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TopBar } from "@/components/Layout";
@@ -112,6 +113,7 @@ const AGENCY = {
 };
 
 export default function Pricing() {
+  usePageTitle("Pricing");
   const navigate = useNavigate();
   const [pickedSec, setPickedSec] = useState(30);
   useEffect(() => { track("page_view", { page: "pricing" }); }, []);

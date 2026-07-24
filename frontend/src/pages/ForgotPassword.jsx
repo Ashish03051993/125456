@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import usePageTitle from "@/lib/usePageTitle";
 import { Video, Loader2, ArrowLeft, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +18,7 @@ function formatApiError(detail) {
 }
 
 export default function ForgotPassword() {
+  usePageTitle("Reset your password");
   const [identifier, setIdentifier] = useState("");
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);

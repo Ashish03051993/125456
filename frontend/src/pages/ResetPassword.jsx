@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import usePageTitle from "@/lib/usePageTitle";
 import { Video, Loader2, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,7 @@ function formatApiError(detail) {
 }
 
 export default function ResetPassword() {
+  usePageTitle("Set a new password");
   const [params] = useSearchParams();
   const token = params.get("token") || "";
   const { setUser } = useAuth();

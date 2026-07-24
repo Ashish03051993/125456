@@ -1,9 +1,11 @@
 import { Link } from "react-router-dom";
+import usePageTitle from "@/lib/usePageTitle";
 import { Video, Home, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 
 export default function NotFound() {
+  usePageTitle("404 — Page not found");
   const { user } = useAuth();
   return (
     <div className="min-h-screen bg-ink-50 flex flex-col items-center justify-center px-4" data-testid="not-found-page">

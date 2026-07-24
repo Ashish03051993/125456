@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import usePageTitle from "@/lib/usePageTitle";
 import { Sparkles, Palette, CheckCircle2, ArrowRight, Wand2, Image as ImageIcon, Mic, Film } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TopBar } from "@/components/Layout";
@@ -33,6 +34,7 @@ const FEATURES = [
 ];
 
 export default function Landing() {
+  usePageTitle(null); // Landing keeps the default full title
   const fired = useRef(false);
   const navigate = useNavigate();
 
