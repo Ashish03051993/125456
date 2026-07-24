@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api, resolveMediaUrl } from "@/lib/api";
+import { downloadFile } from "@/lib/downloadFile";
+import ApprovalStepIndicator from "@/components/ApprovalStepIndicator";
 import { TopBar, Sidebar } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Loader2, Download, Youtube, Instagram, AlertCircle, ArrowLeft, PlayCircle, Monitor, Smartphone, Pencil, Copy as CopyIcon, RefreshCw, Check, X, Image as ImageIcon, Mic, Play, Pause, Volume2, Share2, Link as LinkIcon, Twitter, BarChart3, Eye, Globe } from "lucide-react";
 import { toast } from "sonner";
 
-const STAGES = ["writing script","generating images","generating voiceover","composing video","done"];
+const STAGES = ["writing script","generating images","generating voiceover","composing video","generating thumbnail","done"];
 
 const FORMAT_ICON = { landscape: Monitor, vertical: Smartphone };
 
@@ -264,11 +266,15 @@ export default function ProjectView() {
             </div>
             {p.status === "ready" && active && (
               <div className="flex items-center gap-2 flex-wrap">
-                <a href={videoSrc} download={`${p.id}_${active.id}.mp4`}>
-                  <Button className="rounded-full bg-brand-600 hover:bg-brand-700 text-white" data-testid="download-btn">
-                    <Download className="w-4 h-4 mr-2" /> Download {active.aspect}
-                  </Button>
-                </a>
+                {(() => {
+                  const safeTitle = (p.title || p.topic || p.id).replace(/[^a-z0-9\-_]+/gi, "_").slice(0, 60);
+                  return (
+                    <Button onClick={() => downloadFile(videoSrc, `${safeTitle}_${active.id}.mp4`)}
+                            className="rounded-full bg-brand-600 hover:bg-brand-700 text-white" data-testid="download-btn">
+                      <Download className="w-4 h-4 mr-2" /> Download {active.aspect}
+                    </Button>
+                  );
+                })()}
                 <Button variant="outline" className="rounded-full" onClick={openShare} data-testid="share-btn">
                   <Share2 className="w-4 h-4 mr-2" /> Share
                 </Button>
@@ -305,45 +311,49 @@ export default function ProjectView() {
           {/* Script Approval Gate — user reviews & approves the script before visuals are generated */}
           {p.status === "awaiting_script_approval" && (
             <div className="mt-6 space-y-4" data-testid="script-approval-panel">
-              <div className="bg-brand-600 text-white rounded-2xl p-5 flex items-center justify-between flex-wrap gap-3">
-                <div>
-                  <div className="text-xs uppercase tracking-widest font-bold opacity-80">Step 1 of 3 · Your approval needed</div>
-                  <div className="mt-1 font-heading font-extrabold text-2xl tracking-tighter">Review your script</div>
-                  <p className="text-sm opacity-90 mt-1 max-w-lg">Edit the narration, tweak subtitles, or regenerate. Nothing else runs until you approve.</p>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Button variant="outline" onClick={regenerateScript} disabled={scriptBusy}
-                    className="rounded-full bg-transparent border-white/50 text-white hover:bg-white/10"
-                    data-testid="script-regen-btn">
-                    <RefreshCw className="w-4 h-4 mr-2" /> Regenerate
-                  </Button>
-                  {editingScript ? (
-                    <>
-                      <Button variant="outline" onClick={() => { setEditingScript(false); setDraftScenes(p.scenes || []); setDraftTitle(p.title || ""); }} disabled={scriptBusy}
+              <div className="rounded-2xl overflow-hidden shadow-lg shadow-brand-900/20">
+                <div className="bg-gradient-to-br from-brand-600 via-brand-700 to-indigo-700 text-white p-5 sm:p-6">
+                  <ApprovalStepIndicator status={p.status} />
+                  <div className="mt-4 flex items-start justify-between flex-wrap gap-4">
+                    <div>
+                      <div className="font-heading font-black text-2xl sm:text-3xl tracking-tighter">Review your script</div>
+                      <p className="text-sm text-white/85 mt-1 max-w-lg">Edit the narration, tweak subtitles, or regenerate. Nothing else runs until you approve.</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Button variant="outline" onClick={regenerateScript} disabled={scriptBusy}
                         className="rounded-full bg-transparent border-white/50 text-white hover:bg-white/10"
-                        data-testid="script-cancel-btn">
-                        <X className="w-4 h-4 mr-2" /> Cancel
+                        data-testid="script-regen-btn">
+                        <RefreshCw className="w-4 h-4 mr-2" /> Regenerate
                       </Button>
-                      <Button onClick={saveScriptEdits} disabled={scriptBusy}
-                        className="rounded-full bg-white text-brand-700 hover:bg-white/90"
-                        data-testid="script-save-btn">
-                        <Check className="w-4 h-4 mr-2" /> Save edits
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button variant="outline" onClick={() => setEditingScript(true)}
-                        className="rounded-full bg-transparent border-white/50 text-white hover:bg-white/10"
-                        data-testid="script-edit-btn">
-                        <Pencil className="w-4 h-4 mr-2" /> Edit
-                      </Button>
-                      <Button onClick={approveScript} disabled={scriptBusy}
-                        className="rounded-full bg-white text-brand-700 hover:bg-white/90 font-semibold"
-                        data-testid="script-approve-btn">
-                        <Check className="w-4 h-4 mr-2" /> Approve & generate visuals
-                      </Button>
-                    </>
-                  )}
+                      {editingScript ? (
+                        <>
+                          <Button variant="outline" onClick={() => { setEditingScript(false); setDraftScenes(p.scenes || []); setDraftTitle(p.title || ""); }} disabled={scriptBusy}
+                            className="rounded-full bg-transparent border-white/50 text-white hover:bg-white/10"
+                            data-testid="script-cancel-btn">
+                            <X className="w-4 h-4 mr-2" /> Cancel
+                          </Button>
+                          <Button onClick={saveScriptEdits} disabled={scriptBusy}
+                            className="rounded-full bg-white text-brand-700 hover:bg-white/90"
+                            data-testid="script-save-btn">
+                            <Check className="w-4 h-4 mr-2" /> Save edits
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button variant="outline" onClick={() => setEditingScript(true)}
+                            className="rounded-full bg-transparent border-white/50 text-white hover:bg-white/10"
+                            data-testid="script-edit-btn">
+                            <Pencil className="w-4 h-4 mr-2" /> Edit
+                          </Button>
+                          <Button onClick={approveScript} disabled={scriptBusy}
+                            className="rounded-full bg-white text-brand-700 hover:bg-white/90 font-bold shadow"
+                            data-testid="script-approve-btn">
+                            <Check className="w-4 h-4 mr-2" /> Approve & generate visuals
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -437,23 +447,27 @@ export default function ProjectView() {
           {/* Image Approval Gate — Step 2 of 3 */}
           {p.status === "awaiting_image_approval" && (
             <div className="mt-6 space-y-4" data-testid="image-approval-panel">
-              <div className="bg-brand-600 text-white rounded-2xl p-5 flex items-center justify-between flex-wrap gap-3">
-                <div>
-                  <div className="text-xs uppercase tracking-widest font-bold opacity-80">Step 2 of 3 · Your approval needed</div>
-                  <div className="mt-1 font-heading font-extrabold text-2xl tracking-tighter">Review your visuals</div>
-                  <p className="text-sm opacity-90 mt-1 max-w-lg">Regenerate any scene you don't love. When you're happy, approve to unlock the voiceover.</p>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Button variant="outline" onClick={regenerateAllImages} disabled={imgAllBusy}
-                    className="rounded-full bg-transparent border-white/50 text-white hover:bg-white/10"
-                    data-testid="images-regen-all-btn">
-                    <RefreshCw className="w-4 h-4 mr-2" /> Regenerate all
-                  </Button>
-                  <Button onClick={approveImages} disabled={imgAllBusy}
-                    className="rounded-full bg-white text-brand-700 hover:bg-white/90 font-semibold"
-                    data-testid="images-approve-btn">
-                    <Check className="w-4 h-4 mr-2" /> Approve & generate voice
-                  </Button>
+              <div className="rounded-2xl overflow-hidden shadow-lg shadow-brand-900/20">
+                <div className="bg-gradient-to-br from-brand-600 via-brand-700 to-indigo-700 text-white p-5 sm:p-6">
+                  <ApprovalStepIndicator status={p.status} />
+                  <div className="mt-4 flex items-start justify-between flex-wrap gap-4">
+                    <div>
+                      <div className="font-heading font-black text-2xl sm:text-3xl tracking-tighter">Review your visuals</div>
+                      <p className="text-sm text-white/85 mt-1 max-w-lg">Regenerate any scene you don't love. When you're happy, approve to unlock the voiceover.</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Button variant="outline" onClick={regenerateAllImages} disabled={imgAllBusy}
+                        className="rounded-full bg-transparent border-white/50 text-white hover:bg-white/10"
+                        data-testid="images-regen-all-btn">
+                        <RefreshCw className="w-4 h-4 mr-2" /> Regenerate all
+                      </Button>
+                      <Button onClick={approveImages} disabled={imgAllBusy}
+                        className="rounded-full bg-white text-brand-700 hover:bg-white/90 font-bold shadow"
+                        data-testid="images-approve-btn">
+                        <Check className="w-4 h-4 mr-2" /> Approve & generate voice
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -495,18 +509,22 @@ export default function ProjectView() {
           {/* Voice Approval Gate — Step 3 of 3 */}
           {p.status === "awaiting_voice_approval" && (
             <div className="mt-6 space-y-4" data-testid="voice-approval-panel">
-              <div className="bg-brand-600 text-white rounded-2xl p-5 flex items-center justify-between flex-wrap gap-3">
-                <div>
-                  <div className="text-xs uppercase tracking-widest font-bold opacity-80">Step 3 of 3 · Your approval needed</div>
-                  <div className="mt-1 font-heading font-extrabold text-2xl tracking-tighter">Preview your voiceover</div>
-                  <p className="text-sm opacity-90 mt-1 max-w-lg">Listen back, switch voice, or regenerate. When it sounds right, we'll compose the final video.</p>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Button onClick={approveVoice} disabled={voiceBusy}
-                    className="rounded-full bg-white text-brand-700 hover:bg-white/90 font-semibold"
-                    data-testid="voice-approve-btn">
-                    <Check className="w-4 h-4 mr-2" /> Approve & compose video
-                  </Button>
+              <div className="rounded-2xl overflow-hidden shadow-lg shadow-brand-900/20">
+                <div className="bg-gradient-to-br from-brand-600 via-brand-700 to-indigo-700 text-white p-5 sm:p-6">
+                  <ApprovalStepIndicator status={p.status} />
+                  <div className="mt-4 flex items-start justify-between flex-wrap gap-4">
+                    <div>
+                      <div className="font-heading font-black text-2xl sm:text-3xl tracking-tighter">Preview your voiceover</div>
+                      <p className="text-sm text-white/85 mt-1 max-w-lg">Listen back, switch voice, or regenerate. When it sounds right, we'll compose the final video.</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Button onClick={approveVoice} disabled={voiceBusy}
+                        className="rounded-full bg-white text-brand-700 hover:bg-white/90 font-bold shadow"
+                        data-testid="voice-approve-btn">
+                        <Check className="w-4 h-4 mr-2" /> Approve & compose video
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -600,6 +618,7 @@ export default function ProjectView() {
                 active.aspect === "9:16" ? "max-w-[400px] aspect-[9/16]" : "aspect-video"
               }`}>
                 <video src={videoSrc} controls key={active.id}
+                       poster={p.thumbnail_url ? resolveMediaUrl(p.thumbnail_url) : undefined}
                        onError={() => setVideoMissing(true)}
                        className="w-full h-full object-contain" data-testid="video-player" />
               </div>

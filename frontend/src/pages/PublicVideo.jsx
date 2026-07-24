@@ -123,7 +123,7 @@ export default function PublicVideo() {
         {/* Player */}
         <div className="mt-8 relative rounded-2xl overflow-hidden bg-black ring-1 ring-white/10 shadow-2xl shadow-black/50 aspect-video">
           {videoSrc ? (
-            <video src={videoSrc} controls className="w-full h-full object-contain" data-testid="public-video-player" />
+            <video src={videoSrc} poster={data.thumbnail_url ? `${API}${data.thumbnail_url}` : undefined} controls className="w-full h-full object-contain" data-testid="public-video-player" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-ink-500">
               <PlayCircle className="w-14 h-14" />

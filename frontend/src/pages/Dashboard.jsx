@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, resolveMediaUrl } from "@/lib/api";
+import { downloadFile } from "@/lib/downloadFile";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import WelcomeBanner from "@/components/WelcomeBanner";
 import StarterTemplates from "@/components/StarterTemplates";
@@ -278,8 +279,8 @@ export default function Dashboard() {
                   {filtered.map((p) => (
                 <div key={p.id} className="rounded-2xl bg-white border border-ink-200 overflow-hidden hover:-translate-y-1 hover:shadow-lg transition-all" data-testid={`project-card-${p.id}`}>
                   <div className="aspect-video bg-ink-100 relative">
-                    {p.scenes?.[0]?.image_url ? (
-                      <img src={resolveMediaUrl(p.scenes[0].image_url)} alt="cover" className="w-full h-full object-cover" />
+                    {(p.thumbnail_url || p.scenes?.[0]?.image_url) ? (
+                      <img src={resolveMediaUrl(p.thumbnail_url || p.scenes[0].image_url)} alt="cover" className="w-full h-full object-cover" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-ink-400">
                         <Video className="w-8 h-8" />
@@ -361,18 +362,18 @@ export default function Dashboard() {
                           if (available.length === 0 && p.video_url) {
                             available.push({ id: "video", label: "Video", aspect: "", url: p.video_url });
                           }
-                          const thumbUrl = p.scenes?.[0]?.image_url;
+                          const thumbUrl = p.thumbnail_url || p.scenes?.[0]?.image_url;
                           const safe = (p.title || p.topic || p.id).replace(/[^a-z0-9\-_]+/gi, "_").slice(0, 60);
                           return (
                             <>
                               {available.length === 1 && (
-                                <a href={resolveMediaUrl(available[0].url)}
-                                   download={`${safe}.mp4`}
+                                <button type="button"
+                                   onClick={() => downloadFile(resolveMediaUrl(available[0].url), `${safe}.mp4`)}
                                    className="p-1.5 rounded-md text-ink-400 hover:text-brand-600 hover:bg-brand-50"
                                    title={`Download video${available[0].aspect ? ` (${available[0].aspect})` : ""}`}
                                    data-testid={`download-video-${p.id}`}>
                                   <Download className="w-4 h-4" />
-                                </a>
+                                </button>
                               )}
                               {available.length > 1 && (
                                 <DropdownMenu>
@@ -389,26 +390,24 @@ export default function Dashboard() {
                                     </DropdownMenuLabel>
                                     <DropdownMenuSeparator />
                                     {available.map((fmt) => (
-                                      <DropdownMenuItem asChild key={fmt.id}>
-                                        <a href={resolveMediaUrl(fmt.url)}
-                                           download={`${safe}_${fmt.id}.mp4`}
-                                           className="cursor-pointer"
-                                           data-testid={`download-video-${p.id}-${fmt.id}`}>
-                                          <Download className="w-3.5 h-3.5 mr-2" /> {fmt.label}
-                                        </a>
+                                      <DropdownMenuItem key={fmt.id}
+                                          onClick={() => downloadFile(resolveMediaUrl(fmt.url), `${safe}_${fmt.id}.mp4`)}
+                                          className="cursor-pointer"
+                                          data-testid={`download-video-${p.id}-${fmt.id}`}>
+                                        <Download className="w-3.5 h-3.5 mr-2" /> {fmt.label}
                                       </DropdownMenuItem>
                                     ))}
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               )}
                               {thumbUrl && (
-                                <a href={resolveMediaUrl(thumbUrl)}
-                                   download={`${safe}_thumbnail.png`}
+                                <button type="button"
+                                   onClick={() => downloadFile(resolveMediaUrl(thumbUrl), `${safe}_thumbnail.jpg`)}
                                    className="p-1.5 rounded-md text-ink-400 hover:text-brand-600 hover:bg-brand-50"
                                    title="Download thumbnail (PNG)"
                                    data-testid={`download-thumb-${p.id}`}>
                                   <ImageDown className="w-4 h-4" />
-                                </a>
+                                </button>
                               )}
                             </>
                           );
@@ -459,6 +458,7 @@ export default function Dashboard() {
                 <div className="bg-black">
                   {src ? (
                     <video src={src} controls autoPlay className="w-full max-h-[65vh] bg-black"
+                           poster={previewProject.thumbnail_url ? resolveMediaUrl(previewProject.thumbnail_url) : undefined}
                            data-testid="preview-video" />
                   ) : (
                     <div className="text-white/70 text-sm py-16 text-center">Video source not available.</div>
@@ -472,12 +472,12 @@ export default function Dashboard() {
                     Open full project →
                   </Link>
                   {src && (
-                    <a href={src}
-                       download={`${(previewProject.title || previewProject.topic || previewProject.id).replace(/[^a-z0-9\-_]+/gi,"_").slice(0,60)}.mp4`}
+                    <button type="button"
+                       onClick={() => downloadFile(src, `${(previewProject.title || previewProject.topic || previewProject.id).replace(/[^a-z0-9\-_]+/gi,"_").slice(0,60)}.mp4`)}
                        className="inline-flex items-center gap-1.5 rounded-full bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold px-4 py-2"
                        data-testid="preview-download-btn">
                       <Download className="w-4 h-4" /> Download
-                    </a>
+                    </button>
                   )}
                 </div>
               </>

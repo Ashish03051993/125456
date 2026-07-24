@@ -305,6 +305,33 @@ async def admin_repair_ffmpeg(user=Depends(require_admin)):
     return {"status": "installed", "path": installed, "stdout_tail": proc.stdout[-200:]}
 
 
+@api.post("/admin/repair/fonts")
+async def admin_repair_fonts(user=Depends(require_admin)):
+    """Admin-only self-heal: reinstall Noto fonts so multilingual captions
+    render properly. Solves the recurring 'captions show as boxes' issue."""
+    import os, subprocess, asyncio
+    devanagari = "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf"
+    if os.path.isfile(devanagari):
+        return {"status": "already_installed"}
+    try:
+        proc = await asyncio.to_thread(
+            subprocess.run,
+            ["apt-get", "install", "-y", "--no-install-recommends",
+             "fonts-noto", "fonts-noto-cjk"],
+            capture_output=True, text=True, timeout=180,
+            env={**os.environ, "DEBIAN_FRONTEND": "noninteractive"},
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(504, "apt-get timed out after 180s")
+    except Exception as e:
+        raise HTTPException(500, f"Repair failed: {e}")
+    if proc.returncode != 0 or not os.path.isfile(devanagari):
+        logger.error(f"font repair failed rc={proc.returncode} stderr={proc.stderr[-400:]}")
+        raise HTTPException(500, f"apt-get failed: {proc.stderr[-200:] or 'unknown error'}")
+    logger.info(f"Noto fonts reinstalled by admin {user.get('email')}")
+    return {"status": "installed"}
+
+
 # --------------------------- Auth routes ---------------------------
 class SessionIn(BaseModel):
     session_id: str
@@ -1374,6 +1401,7 @@ async def public_video(slug: str, request: Request):
         "style": p.get("style"),
         "video_url": p.get("video_url"),
         "video_urls": p.get("video_urls") or {},
+        "thumbnail_url": p.get("thumbnail_url"),
         "scenes": [{"idx": s.get("idx"), "heading": s.get("heading"),
                     "subtitle": s.get("subtitle"), "image_url": s.get("image_url")}
                    for s in (p.get("scenes") or [])],
@@ -2781,13 +2809,48 @@ async def run_after_voice_approval(project_id: str):
         primary = default_format()
         per = total_dur / max(len(scenes), 1)
         final_scenes = [{**sc, "duration": per} for sc in scenes]
-        await upd(
-            stage="done", progress=100, status="ready",
-            scenes=final_scenes,
-            video_url=video_urls[primary],
-            video_urls=video_urls,
-        )
-        logger.info("Project %s ready", project_id)
+
+        # Extract a poster thumbnail from the composed video at ~1s in.
+        # Never fatal — if this fails, the project still ships (frontend
+        # falls back to scene[0]'s image).
+        await upd(stage="generating thumbnail", progress=95)
+        thumbnail_url = None
+        try:
+            primary_video_url = video_urls[primary]
+            primary_video_path = STORAGE_DIR / primary_video_url.replace("/api/media/", "").lstrip("/")
+            if primary_video_path.exists():
+                thumb_dir = STORAGE_DIR / "thumbnails"
+                thumb_dir.mkdir(parents=True, exist_ok=True)
+                thumb_path = thumb_dir / f"{project_id}.jpg"
+                # Grab a frame at t=1s (or middle if video is short). Scale to
+                # 1280x720 max keeping aspect, quality 3 (excellent JPEG).
+                seek_t = 1.0 if total_dur > 2.0 else max(0.1, total_dur / 2)
+                cmd = [
+                    "ffmpeg", "-y", "-ss", f"{seek_t:.2f}", "-i", str(primary_video_path),
+                    "-frames:v", "1",
+                    "-vf", "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease",
+                    "-q:v", "3", str(thumb_path),
+                ]
+                proc = await asyncio.to_thread(
+                    subprocess.run, cmd, capture_output=True, text=True, timeout=30,
+                )
+                if proc.returncode == 0 and thumb_path.exists() and thumb_path.stat().st_size > 0:
+                    thumbnail_url = f"/api/media/thumbnails/{project_id}.jpg"
+                else:
+                    logger.warning("Thumbnail ffmpeg rc=%s stderr=%s", proc.returncode, proc.stderr[-200:])
+        except Exception:
+            logger.exception("Thumbnail extraction failed for %s (non-fatal)", project_id)
+
+        finish_fields = {
+            "stage": "done", "progress": 100, "status": "ready",
+            "scenes": final_scenes,
+            "video_url": video_urls[primary],
+            "video_urls": video_urls,
+        }
+        if thumbnail_url:
+            finish_fields["thumbnail_url"] = thumbnail_url
+        await upd(**finish_fields)
+        logger.info("Project %s ready (thumbnail=%s)", project_id, bool(thumbnail_url))
     except Exception as e:
         logger.exception("Compose stage failed for %s", project_id)
         await db.projects.update_one({"id": project_id},
@@ -3180,6 +3243,31 @@ async def startup():
         # Fire-and-forget; keeps startup fast
         import asyncio as _asyncio
         _asyncio.create_task(_boot_repair_ffmpeg())
+
+    # Boot self-heal: if Noto fonts dropped from the container, reinstall them
+    # so multilingual captions don't render as tofu boxes. Same recurring
+    # pattern as ffmpeg — safe to keep behind a fingerprint check.
+    _devanagari = "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf"
+    if not os.path.isfile(_devanagari):
+        async def _boot_repair_fonts():
+            import asyncio, subprocess
+            logger.warning("Boot self-heal: Noto fonts missing — installing fonts-noto…")
+            try:
+                proc = await asyncio.to_thread(
+                    subprocess.run,
+                    ["apt-get", "install", "-y", "--no-install-recommends",
+                     "fonts-noto", "fonts-noto-cjk"],
+                    capture_output=True, text=True, timeout=240,
+                    env={**os.environ, "DEBIAN_FRONTEND": "noninteractive"},
+                )
+                if os.path.isfile(_devanagari) and proc.returncode == 0:
+                    logger.info("Boot self-heal: Noto fonts installed successfully")
+                else:
+                    logger.error(f"Boot self-heal (fonts) failed rc={proc.returncode} stderr={proc.stderr[-300:]}")
+            except Exception as e:
+                logger.exception(f"Boot self-heal (fonts) crashed: {e}")
+        import asyncio as _asyncio
+        _asyncio.create_task(_boot_repair_fonts())
 
     # Kick off the daily digest scheduler (08:00 IST)
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
