@@ -1,6 +1,14 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, resolveMediaUrl } from "@/lib/api";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+
+// Format catalogue for the download dropdown — id maps to keys in `video_urls`.
+const DOWNLOAD_FORMATS = [
+  { id: "landscape", label: "YouTube (16:9)", aspect: "16:9" },
+  { id: "portrait",  label: "Reels · TikTok · Shorts (9:16)", aspect: "9:16" },
+  { id: "square",    label: "Instagram feed (1:1)", aspect: "1:1" },
+];
 import { TopBar, Sidebar } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -323,20 +331,53 @@ export default function Dashboard() {
                       <Link to={`/project/${p.id}`} className="text-brand-600 font-semibold text-sm hover:underline" data-testid={`open-${p.id}`}>Open →</Link>
                       <div className="flex items-center gap-1">
                         {p.status === "ready" && (() => {
-                          // Pick first available video url (16:9 preferred), thumbnail from scenes[0]
-                          const videoUrl = p.video_urls?.landscape || p.video_urls?.portrait || p.video_urls?.square || p.video_url;
+                          // Assemble the set of available formats. New projects populate `video_urls`
+                          // (one URL per aspect). Legacy projects only have a single `video_url`.
+                          const available = DOWNLOAD_FORMATS
+                            .filter((f) => p.video_urls?.[f.id])
+                            .map((f) => ({ ...f, url: p.video_urls[f.id] }));
+                          if (available.length === 0 && p.video_url) {
+                            available.push({ id: "video", label: "Video", aspect: "", url: p.video_url });
+                          }
                           const thumbUrl = p.scenes?.[0]?.image_url;
                           const safe = (p.title || p.topic || p.id).replace(/[^a-z0-9\-_]+/gi, "_").slice(0, 60);
                           return (
                             <>
-                              {videoUrl && (
-                                <a href={resolveMediaUrl(videoUrl)}
+                              {available.length === 1 && (
+                                <a href={resolveMediaUrl(available[0].url)}
                                    download={`${safe}.mp4`}
                                    className="p-1.5 rounded-md text-ink-400 hover:text-brand-600 hover:bg-brand-50"
-                                   title="Download video (MP4)"
+                                   title={`Download video${available[0].aspect ? ` (${available[0].aspect})` : ""}`}
                                    data-testid={`download-video-${p.id}`}>
                                   <Download className="w-4 h-4" />
                                 </a>
+                              )}
+                              {available.length > 1 && (
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <button className="p-1.5 rounded-md text-ink-400 hover:text-brand-600 hover:bg-brand-50"
+                                            title="Download video"
+                                            data-testid={`download-video-${p.id}`}>
+                                      <Download className="w-4 h-4" />
+                                    </button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-56">
+                                    <DropdownMenuLabel className="text-[10px] uppercase tracking-widest text-ink-500">
+                                      Download format
+                                    </DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    {available.map((fmt) => (
+                                      <DropdownMenuItem asChild key={fmt.id}>
+                                        <a href={resolveMediaUrl(fmt.url)}
+                                           download={`${safe}_${fmt.id}.mp4`}
+                                           className="cursor-pointer"
+                                           data-testid={`download-video-${p.id}-${fmt.id}`}>
+                                          <Download className="w-3.5 h-3.5 mr-2" /> {fmt.label}
+                                        </a>
+                                      </DropdownMenuItem>
+                                    ))}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               )}
                               {thumbUrl && (
                                 <a href={resolveMediaUrl(thumbUrl)}
