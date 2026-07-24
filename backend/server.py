@@ -819,6 +819,46 @@ async def auth_reset_password(payload: ResetPasswordIn, request: Request, respon
     return {"user": user_public, "message": "Password reset successful."}
 
 
+class ChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@api.post("/auth/change-password")
+async def auth_change_password(payload: ChangePasswordIn, request: Request, response: Response,
+                                user=Depends(current_user)):
+    """Logged-in password change. Requires current password (or bypasses it for Google-only
+    accounts that never set one), enforces the same 8-char minimum as signup, invalidates
+    all existing sessions except the one issued right after (security), and returns the
+    refreshed user."""
+    _rate_limit_check(request, "auth_change_pw", limit=8, window_seconds=600)
+    if len(payload.new_password) < 8:
+        raise HTTPException(400, "New password must be at least 8 characters")
+    full = await db.users.find_one({"user_id": user["user_id"]})
+    if not full:
+        raise HTTPException(404, "User not found")
+    # If a password_hash exists, the user MUST provide the current password.
+    # Google-only accounts (no hash) can attach a password without an existing one.
+    if full.get("password_hash"):
+        if not payload.current_password:
+            raise HTTPException(400, "Current password required")
+        if not _verify_password(payload.current_password, full["password_hash"]):
+            raise HTTPException(400, "Current password is incorrect")
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {"password_hash": _hash_password(payload.new_password)},
+         "$addToSet": {"auth_methods": "password"}},
+    )
+    # Nuke every existing session so any previously-stolen cookie can't be replayed
+    await db.user_sessions.delete_many({"user_id": user["user_id"]})
+    # Issue a fresh session for the current browser so the user stays logged in
+    await _issue_session(user["user_id"], response)
+    logger.info(f"Password changed for user {user.get('email')}")
+    user_public = await db.users.find_one({"user_id": user["user_id"]},
+                                          {"_id": 0, "password_hash": 0})
+    return {"user": user_public, "message": "Password updated. All other devices signed out."}
+
+
 # --------------------------- Project CRUD ---------------------------
 @api.get("/projects")
 async def list_projects(user=Depends(current_user)):

@@ -4,8 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Coins, User as UserIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 import ReferralPanel from "@/components/ReferralPanel";
+import ChangePasswordCard from "@/components/ChangePasswordCard";
+import usePageTitle from "@/lib/usePageTitle";
 
 export default function Settings() {
+  usePageTitle("Settings");
   const { user, logout } = useAuth();
   return (
     <div className="min-h-screen bg-ink-50">
@@ -43,6 +46,7 @@ export default function Settings() {
               <Link to="/pricing"><Button className="mt-6 rounded-full bg-brand-600 hover:bg-brand-700 text-white" data-testid="upgrade-btn">Upgrade plan</Button></Link>
             </div>
 
+            <ChangePasswordCard />
             <ReferralPanel />
           </div>
         </main>
