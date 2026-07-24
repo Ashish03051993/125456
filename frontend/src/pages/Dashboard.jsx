@@ -12,7 +12,8 @@ const DOWNLOAD_FORMATS = [
 import { TopBar, Sidebar } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Video, Loader2, AlertCircle, CheckCircle2, Trash2, Pencil, Copy as CopyIcon, Check, X, Search, SlidersHorizontal, Sparkles, Download, ImageDown } from "lucide-react";
+import { Plus, Video, Loader2, AlertCircle, CheckCircle2, Trash2, Pencil, Copy as CopyIcon, Check, X, Search, SlidersHorizontal, Sparkles, Download, ImageDown, PlayCircle } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import LowCreditNudge from "@/components/LowCreditNudge";
 import { useAuth } from "@/lib/auth";
@@ -45,6 +46,7 @@ export default function Dashboard() {
   const prevStatusRef = useRef(new Map()); // { projectId → previous status } for transition detection
   const navigate = useNavigate();
   const { user, setUser } = useAuth();
+  const [previewProject, setPreviewProject] = useState(null);   // opens the quick-preview modal
 
   // Celebrate a monthly free-credit refill exactly once (backend sets a transient
   // refill_delta on the /auth/me response the first time the new month is seen).
@@ -330,6 +332,14 @@ export default function Dashboard() {
                     <div className="mt-4 flex items-center justify-between">
                       <Link to={`/project/${p.id}`} className="text-brand-600 font-semibold text-sm hover:underline" data-testid={`open-${p.id}`}>Open →</Link>
                       <div className="flex items-center gap-1">
+                        {p.status === "ready" && (
+                          <button onClick={() => setPreviewProject(p)}
+                                  className="p-1.5 rounded-md text-ink-400 hover:text-brand-600 hover:bg-brand-50"
+                                  title="Quick preview"
+                                  data-testid={`preview-${p.id}`}>
+                            <PlayCircle className="w-4 h-4" />
+                          </button>
+                        )}
                         {p.status === "ready" && (() => {
                           // Assemble the set of available formats. New projects populate `video_urls`
                           // (one URL per aspect). Legacy projects only have a single `video_url`.
@@ -414,6 +424,55 @@ export default function Dashboard() {
           )}
         </main>
       </div>
+
+      {/* Quick preview modal — plays the video without navigating away from Dashboard */}
+      <Dialog open={!!previewProject} onOpenChange={(open) => !open && setPreviewProject(null)}>
+        <DialogContent className="max-w-3xl p-0 overflow-hidden" data-testid="preview-modal">
+          {previewProject && (() => {
+            const videoUrl = previewProject.video_urls?.landscape
+              || previewProject.video_urls?.portrait
+              || previewProject.video_urls?.square
+              || previewProject.video_url;
+            const src = videoUrl ? resolveMediaUrl(videoUrl) : null;
+            return (
+              <>
+                <DialogHeader className="p-6 pb-3">
+                  <DialogTitle className="font-heading text-2xl font-black tracking-tight truncate">
+                    {previewProject.title || previewProject.topic}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {previewProject.style} · {previewProject.duration_min} min · {previewProject.voice}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="bg-black">
+                  {src ? (
+                    <video src={src} controls autoPlay className="w-full max-h-[65vh] bg-black"
+                           data-testid="preview-video" />
+                  ) : (
+                    <div className="text-white/70 text-sm py-16 text-center">Video source not available.</div>
+                  )}
+                </div>
+                <div className="flex items-center justify-between gap-3 p-4 border-t border-ink-100">
+                  <Link to={`/project/${previewProject.id}`}
+                        onClick={() => setPreviewProject(null)}
+                        className="text-sm font-semibold text-brand-600 hover:underline"
+                        data-testid="preview-open-full">
+                    Open full project →
+                  </Link>
+                  {src && (
+                    <a href={src}
+                       download={`${(previewProject.title || previewProject.topic || previewProject.id).replace(/[^a-z0-9\-_]+/gi,"_").slice(0,60)}.mp4`}
+                       className="inline-flex items-center gap-1.5 rounded-full bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold px-4 py-2"
+                       data-testid="preview-download-btn">
+                      <Download className="w-4 h-4" /> Download
+                    </a>
+                  )}
+                </div>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
