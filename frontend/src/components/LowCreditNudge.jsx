@@ -17,8 +17,8 @@ export default function LowCreditNudge() {
 
   if (!user) return null;
   if (dismissed) return null;
-  // Show only when user is genuinely low: below the cheapest video cost AND on free plan
-  if ((user.credits ?? 0) >= 3) return null;
+  // Persistent warning below 200 credits (matches backend LOW_CREDIT_THRESHOLD)
+  if ((user.credits ?? 0) >= 200) return null;
   if (user.plan && user.plan !== "free") return null;
 
   const dismiss = () => {
@@ -45,17 +45,24 @@ export default function LowCreditNudge() {
             Running low on credits
           </div>
           <div className="mt-1 font-heading text-lg sm:text-xl font-black tracking-tight text-ink-900">
-            Invite a friend, both of you get <span className="text-brand-600">3 credits</span>.
+            You have <span className="text-brand-600">{user.credits ?? 0} credits</span> left.
           </div>
           <p className="mt-1 text-sm text-ink-500">
-            One referral = one free 30-second video for you. No wait, no card required.
+            Invite a friend — both of you get 50 credits (1 × 30-sec video). Or top up any time.
           </p>
         </div>
-        <Link to="/settings"
-              className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold px-5 py-2.5 shadow-sm transition-colors"
-              data-testid="low-credit-nudge-cta">
-          Get my invite link <ArrowRight className="w-4 h-4" />
-        </Link>
+        <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+          <Link to="/credits"
+                className="inline-flex items-center gap-1.5 rounded-full bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold px-5 py-2.5 shadow-sm transition-colors"
+                data-testid="low-credit-nudge-cta">
+            Top up <ArrowRight className="w-4 h-4" />
+          </Link>
+          <Link to="/settings"
+                className="inline-flex items-center gap-1.5 rounded-full border border-ink-300 text-ink-700 hover:bg-ink-50 text-sm font-semibold px-4 py-2.5 transition-colors"
+                data-testid="low-credit-nudge-invite">
+            Or invite a friend
+          </Link>
+        </div>
       </div>
     </div>
   );

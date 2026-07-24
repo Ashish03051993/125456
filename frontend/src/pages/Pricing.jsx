@@ -1,397 +1,192 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import usePageTitle from "@/lib/usePageTitle";
-import { Check, Sparkles, Zap, Rocket, Building2, Calculator } from "lucide-react";
+import { Check, Sparkles, Zap, Rocket, Building2, Calculator, ShieldCheck, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TopBar } from "@/components/Layout";
 import { track } from "@/lib/analytics";
+import { api } from "@/lib/api";
 
-const PLANS = [
-  {
-    id: "free",
-    icon: Sparkles,
-    name: "Free",
-    price: "$0",
-    tagline: "One 30-second video every month, forever",
-    credits: "3 credits / month",
-    creditsNum: 3,
-    refill: "= 1 × 30-second video every month",
-    cta: "Get started free",
-    features: [
-      "1 × 30-second video every month",
-      "Guided script → visuals → voice",
-      "16:9 + 9:16 formats included",
-      "Standard queue",
-      "MP4 download",
-    ],
-    highlight: false,
-    color: "border-ink-200",
-  },
-  {
-    id: "starter",
-    icon: Zap,
-    name: "Starter Pack",
-    price: "$10",
-    tagline: "One-time top-up. Credits never expire.",
-    credits: "60 credits",
-    creditsNum: 60,
-    cta: "Buy 60 credits",
-    features: [
-      "Everything in Free",
-      "Any duration 30 sec → 10 min",
-      "Priority queue",
-      "Email support",
-      "Credits never expire",
-    ],
-    highlight: false,
-    color: "border-ink-200",
-  },
-  {
-    id: "creator",
-    icon: Rocket,
-    name: "Creator Pack",
-    price: "$25",
-    tagline: "Most popular · +10% bonus credits",
-    credits: "175 credits",
-    creditsNum: 175,
-    cta: "Buy 175 credits",
-    features: [
-      "Everything in Starter",
-      "10% bonus credits",
-      "HD downloads",
-      "Brand watermark toggle",
-      "Priority support",
-    ],
-    highlight: true,
-    color: "border-brand-600 ring-2 ring-brand-600/20",
-  },
-  {
-    id: "pro",
-    icon: Building2,
-    name: "Pro Pack",
-    price: "$50",
-    tagline: "Best value · +20% bonus credits",
-    credits: "400 credits",
-    creditsNum: 400,
-    cta: "Buy 400 credits",
-    features: [
-      "Everything in Creator",
-      "20% bonus credits",
-      "Faster generation",
-      "1-hour support SLA",
-      "Volume-discount pricing",
-    ],
-    highlight: false,
-    color: "border-ink-200",
-  },
+// Pricing tiles + duration calculator. All numbers are pulled from
+// /api/pricing/config so backend + frontend can never drift.
+const FALLBACK_PLANS = [
+  { id: "free",     name: "Free",     price_inr: 0,     credits: 50,    tagline: "1 × 30-second video every month" },
+  { id: "creator",  name: "Creator",  price_inr: 1999,  credits: 500,   tagline: "50 posts or ~5 mins of slideshow" },
+  { id: "business", name: "Business", price_inr: 6999,  credits: 2000,  tagline: "Unlocks premium AI video + higher volume", popular: true },
+  { id: "agency",   name: "Agency",   price_inr: 24999, credits: 8000,  tagline: "Multi-workspace + priority support" },
+];
+const FALLBACK_DURATIONS = [
+  { sec: 30,  credits: 50,   label: "30 sec",  bestFor: "Instagram Stories, TikTok teasers" },
+  { sec: 45,  credits: 75,   label: "45 sec",  bestFor: "LinkedIn feed videos" },
+  { sec: 60,  credits: 100,  label: "60 sec",  bestFor: "Instagram Reels, YouTube Shorts" },
+  { sec: 90,  credits: 150,  label: "90 sec",  bestFor: "X/Twitter video posts" },
+  { sec: 120, credits: 200,  label: "2 min",   bestFor: "Product demos" },
+  { sec: 180, credits: 300,  label: "3 min",   bestFor: "Deep explainers" },
+  { sec: 300, credits: 500,  label: "5 min",   bestFor: "Tutorials, walkthroughs" },
+  { sec: 600, credits: 1000, label: "10 min",  bestFor: "Long-form YouTube" },
 ];
 
-// Single source of truth for duration → credit mapping (matches backend DURATION_TIERS)
-const DURATIONS = [
-  { sec: 30,  label: "30 sec",  credits: 3,  bestFor: "Instagram Stories, TikTok teasers", usd: "$0.60" },
-  { sec: 45,  label: "45 sec",  credits: 4,  bestFor: "LinkedIn feed videos",              usd: "$0.80" },
-  { sec: 60,  label: "60 sec",  credits: 5,  bestFor: "Instagram Reels, YouTube Shorts",   usd: "$1.00" },
-  { sec: 90,  label: "90 sec",  credits: 7,  bestFor: "X/Twitter video posts",             usd: "$1.40" },
-  { sec: 120, label: "2 min",   credits: 10, bestFor: "Product demos",                     usd: "$2.00" },
-  { sec: 180, label: "3 min",   credits: 15, bestFor: "Deep explainers",                   usd: "$3.00" },
-  { sec: 300, label: "5 min",   credits: 25, bestFor: "Tutorials, walkthroughs",           usd: "$5.00" },
-  { sec: 600, label: "10 min",  credits: 50, bestFor: "Long-form YouTube",                 usd: "$10.00" },
-];
-
-const AGENCY = {
-  name: "Agency Pack",
-  price: "$200",
-  credits: "2000 credits + team seats",
-  bonus: "+25% bonus credits",
-  features: [
-    "Team collaboration",
-    "White-label export",
-    "API access",
-    "Dedicated Slack channel",
-    "Custom onboarding",
-  ],
-};
+const PLAN_ICONS = { free: Sparkles, creator: Rocket, business: Star, agency: Building2 };
+const inr = (n) => n.toLocaleString("en-IN");
 
 export default function Pricing() {
   usePageTitle("Pricing");
   const navigate = useNavigate();
+  const [plans, setPlans] = useState(FALLBACK_PLANS);
+  const [durations, setDurations] = useState(FALLBACK_DURATIONS);
+  const [topup, setTopup] = useState({ price_inr: 1999, credits: 500, label: "Credit Top-Up Pack" });
   const [pickedSec, setPickedSec] = useState(30);
-  useEffect(() => { track("page_view", { page: "pricing" }); }, []);
 
-  const pickedDuration = DURATIONS.find((d) => d.sec === pickedSec) || DURATIONS[0];
+  useEffect(() => {
+    track("page_view", { page: "pricing" });
+    api.get("/pricing/config").then(({ data }) => {
+      if (Array.isArray(data.plans) && data.plans.length) setPlans(data.plans);
+      if (Array.isArray(data.durations) && data.durations.length) setDurations(data.durations);
+      if (data.topup) setTopup(data.topup);
+    }).catch(() => {/* fall back to defaults */});
+  }, []);
 
-  const onPlan = (plan) => {
-    track("pricing_click", { plan });
-    // All CTAs currently route to signup — checkout hooks come with Stripe later
-    navigate("/signup");
-  };
+  const picked = durations.find((d) => d.sec === pickedSec) || durations[0];
 
   return (
-    <div className="min-h-screen bg-white text-ink-900">
+    <div className="min-h-screen bg-white">
       <TopBar />
-
-      {/* HERO */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-14 sm:pt-20 pb-6">
-        <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">Pricing</div>
-        <h1 className="mt-2 font-heading font-black text-4xl sm:text-6xl tracking-tighter max-w-4xl">
-          Credits, not subscriptions.
-        </h1>
-        <p className="mt-4 text-ink-500 text-base sm:text-lg max-w-2xl">
-          Start free with one 30-second video every month. Top up when you need more — credits never expire and you only pay for what you actually generate.
-        </p>
-      </section>
-
-      {/* PLAN GRID */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
-          {PLANS.map((p) => (
-            <div key={p.id}
-              className={`relative rounded-3xl bg-white border ${p.color} p-6 flex flex-col`}
-              data-testid={`plan-${p.id}`}>
-              {p.highlight && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-brand-600 text-white text-[10px] uppercase tracking-widest font-bold px-3 py-1">
-                  Most popular
-                </div>
-              )}
-              <div className="w-10 h-10 rounded-xl bg-brand-50 text-brand-700 flex items-center justify-center">
-                <p.icon className="w-5 h-5" />
-              </div>
-              <div className="mt-4 font-heading font-bold text-lg">{p.name}</div>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className="font-heading font-black text-4xl tracking-tighter">{p.price}</span>
-                {p.id === "free" && <span className="text-xs text-ink-500">/ month</span>}
-                {p.id !== "free" && <span className="text-xs text-ink-500">one-time</span>}
-              </div>
-              <div className="mt-1 text-xs text-ink-500">{p.tagline}</div>
-              <div className="mt-4 rounded-xl bg-brand-50 border border-brand-100 px-3 py-2">
-                <div className="text-xs uppercase tracking-widest text-brand-700 font-semibold">{p.credits}</div>
-                {p.id === "free" ? (
-                  <div className="text-xs text-ink-500 mt-0.5">{p.refill}</div>
-                ) : (
-                  <a href="#calculator"
-                     onClick={() => track("pricing_scroll_calc", { plan: p.id })}
-                     className="text-xs text-brand-600 hover:text-brand-700 font-semibold mt-0.5 inline-block"
-                     data-testid={`plan-calc-link-${p.id}`}>
-                    See exactly what you get ↓
-                  </a>
-                )}
-              </div>
-              <ul className="mt-5 space-y-2 text-sm text-ink-700 flex-1">
-                {p.features.map((f) => (
-                  <li key={f} className="flex items-start gap-2">
-                    <Check className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" /> {f}
-                  </li>
-                ))}
-              </ul>
-              <Button
-                onClick={() => onPlan(p.id)}
-                className={`mt-6 w-full rounded-full h-11 font-semibold ${p.highlight ? "bg-brand-600 hover:bg-brand-700 text-white" : "bg-ink-900 hover:bg-ink-800 text-white"}`}
-                data-testid={`plan-cta-${p.id}`}>
-                {p.cta}
-              </Button>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* AGENCY BANNER */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
-        <div className="rounded-3xl bg-gradient-to-br from-ink-900 via-brand-700 to-violet-600 text-white p-8 sm:p-10" data-testid="agency-banner">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="max-w-xl">
-              <div className="text-xs uppercase tracking-widest opacity-80 font-semibold">{AGENCY.name}</div>
-              <div className="mt-1 font-heading font-black text-3xl sm:text-4xl tracking-tighter">
-                {AGENCY.price} <span className="text-lg opacity-80">one-time</span>
-              </div>
-              <div className="mt-1 text-white/80 text-sm">{AGENCY.credits} · {AGENCY.bonus}</div>
-              <ul className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                {AGENCY.features.map((f) => (
-                  <li key={f} className="flex items-center gap-2">
-                    <Check className="w-4 h-4 shrink-0" /> {f}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <Button onClick={() => onPlan("agency")}
-              className="rounded-full bg-white text-ink-900 hover:bg-white/90 h-11 px-6 font-semibold"
-              data-testid="plan-cta-agency">
-              Talk to sales
-            </Button>
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-14">
+        {/* Header */}
+        <div className="text-center max-w-2xl mx-auto">
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 text-brand-700 border border-brand-200 px-3 py-1 text-[11px] font-bold uppercase tracking-widest">
+            <ShieldCheck className="w-3.5 h-3.5" /> Early-Access Pricing
           </div>
-        </div>
-      </section>
-
-      {/* INTERACTIVE CREDIT CALCULATOR */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-12" id="calculator">
-        <div className="flex items-center gap-2 text-brand-600">
-          <Calculator className="w-4 h-4" />
-          <div className="text-xs uppercase tracking-widest font-semibold">Credit calculator</div>
-        </div>
-        <h2 className="mt-2 font-heading font-extrabold text-2xl sm:text-3xl tracking-tighter">
-          Pick a duration — see exactly what each pack gets you.
-        </h2>
-        <p className="mt-2 text-ink-500 text-sm max-w-2xl">
-          No math required. Tap a duration below and every plan card updates with the exact number of videos you can generate.
-        </p>
-
-        {/* Duration chip picker */}
-        <div className="mt-6 flex flex-wrap gap-2" data-testid="calc-duration-picker">
-          {DURATIONS.map((d) => {
-            const active = pickedSec === d.sec;
-            return (
-              <button key={d.sec}
-                type="button"
-                onClick={() => { setPickedSec(d.sec); track("calc_duration_pick", { sec: d.sec }); }}
-                data-testid={`calc-duration-${d.sec}`}
-                className={[
-                  "rounded-xl border px-4 py-2.5 text-left transition-all",
-                  active
-                    ? "bg-brand-600 border-brand-600 text-white shadow-lg shadow-brand-600/20"
-                    : "bg-white border-ink-200 hover:border-brand-600 hover:shadow-sm text-ink-900",
-                ].join(" ")}>
-                <div className={`font-heading font-bold text-sm leading-none ${active ? "text-white" : "text-ink-900"}`}>{d.label}</div>
-                <div className={`mt-1 text-[10px] uppercase tracking-widest font-semibold ${active ? "text-white/70" : "text-ink-400"}`}>
-                  {d.credits} credits
-                </div>
-              </button>
-            );
-          })}
+          <h1 className="mt-4 font-heading text-4xl sm:text-5xl lg:text-6xl font-black tracking-tighter text-ink-900">
+            Pay only for what you generate.
+          </h1>
+          <p className="mt-4 text-base sm:text-lg text-ink-500">
+            One credit-based economy for every video. Your credits never expire, and you always know exactly what a video will cost before you hit generate.
+          </p>
         </div>
 
-        {/* Selected duration summary */}
-        <div className="mt-5 rounded-2xl bg-brand-50 border border-brand-100 p-4 flex flex-wrap items-center gap-3 text-sm" data-testid="calc-selected-summary">
-          <div className="font-semibold text-brand-900">Selected:</div>
-          <div className="font-heading font-bold text-ink-900">{pickedDuration.label}</div>
-          <span className="text-ink-400">·</span>
-          <div className="font-mono font-bold text-brand-700">{pickedDuration.credits} credits / video</div>
-          <span className="text-ink-400">·</span>
-          <div className="text-ink-500">Best for: {pickedDuration.bestFor}</div>
-        </div>
-
-        {/* Pack payoff cards */}
-        <div className="mt-6 grid md:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="calc-pack-payoff">
-          {PLANS.map((p) => {
-            const videos = Math.floor(p.creditsNum / pickedDuration.credits);
-            const remainder = p.creditsNum % pickedDuration.credits;
+        {/* Plan tiles */}
+        <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="pricing-plans-grid">
+          {plans.map((p) => {
+            const Icon = PLAN_ICONS[p.id] || Sparkles;
+            const isPopular = !!p.popular;
             return (
               <div key={p.id}
-                className={`rounded-2xl border p-5 ${p.highlight ? "border-brand-600 bg-brand-50/40" : "border-ink-200 bg-white"}`}
-                data-testid={`calc-payoff-${p.id}`}>
-                <div className="flex items-center gap-2">
-                  <p.icon className="w-4 h-4 text-brand-600" />
-                  <div className="text-xs uppercase tracking-widest text-brand-700 font-semibold">{p.name}</div>
+                   className={`relative rounded-2xl border p-6 bg-white flex flex-col ${isPopular ? "border-brand-600 ring-2 ring-brand-600/20 shadow-lg shadow-brand-600/10" : "border-ink-200"}`}
+                   data-testid={`plan-${p.id}`}>
+                {isPopular && (
+                  <div className="absolute -top-3 left-6 inline-flex items-center gap-1 rounded-full bg-brand-600 text-white text-[10px] font-bold px-3 py-1 uppercase tracking-widest">
+                    Most popular
+                  </div>
+                )}
+                <Icon className="w-6 h-6 text-brand-600" />
+                <div className="mt-4 font-heading font-black text-xl text-ink-900">{p.name}</div>
+                <div className="mt-2 flex items-end gap-1">
+                  {p.price_inr === 0 ? (
+                    <span className="font-heading text-4xl font-black tracking-tighter">Free</span>
+                  ) : (
+                    <>
+                      <span className="text-lg font-bold text-ink-500">₹</span>
+                      <span className="font-heading text-4xl font-black tracking-tighter">{inr(p.price_inr)}</span>
+                      <span className="text-sm text-ink-500 mb-1">/mo</span>
+                    </>
+                  )}
                 </div>
-                <div className="mt-3 flex items-baseline gap-2">
-                  <span className="font-heading font-black text-4xl tracking-tighter text-ink-900" data-testid={`calc-count-${p.id}`}>{videos}</span>
-                  <span className="text-sm text-ink-500">{videos === 1 ? "video" : "videos"}</span>
+                <div className="mt-1 text-sm font-semibold text-brand-700">
+                  {inr(p.credits)} credits{p.price_inr === 0 ? " / month" : " included"}
                 </div>
-                <div className="mt-1 text-xs text-ink-500">
-                  at {pickedDuration.label} each
-                  {remainder > 0 && <> · <span className="text-ink-400">({remainder} credits left over)</span></>}
-                </div>
-                <div className="mt-3 pt-3 border-t border-ink-100 text-xs text-ink-500">
-                  <span className="font-semibold text-ink-700">{p.credits}</span> · <span className="font-mono">{p.price}</span>
-                </div>
+                <p className="mt-2 text-xs text-ink-500 leading-relaxed">{p.tagline}</p>
+                <ul className="mt-4 space-y-1.5 text-xs text-ink-600 flex-1">
+                  <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-500 mt-0.5" /> Guided script → visuals → voice</li>
+                  <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-500 mt-0.5" /> All aspect ratios (16:9, 9:16, 1:1)</li>
+                  <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-500 mt-0.5" /> MP4 + thumbnail downloads</li>
+                  {p.id !== "free" && <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-500 mt-0.5" /> Priority queue</li>}
+                  {p.id === "business" && <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-500 mt-0.5" /> Premium AI video (Sora) unlock</li>}
+                  {p.id === "agency" && <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-500 mt-0.5" /> Multi-workspace + team seats</li>}
+                  {p.id === "agency" && <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-emerald-500 mt-0.5" /> Dedicated support channel</li>}
+                </ul>
+                <Button
+                  onClick={() => { track("pricing_cta", { plan: p.id }); navigate(p.price_inr === 0 ? "/signup" : "/credits"); }}
+                  className={`mt-5 rounded-full ${isPopular ? "bg-brand-600 hover:bg-brand-700 text-white" : "bg-ink-900 hover:bg-ink-800 text-white"}`}
+                  data-testid={`plan-${p.id}-cta`}
+                >
+                  {p.price_inr === 0 ? "Get started free" : "Choose " + p.name}
+                </Button>
               </div>
             );
           })}
         </div>
-      </section>
 
-      {/* FULL MATRIX — every pack × every duration */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
-        <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">Full transparency</div>
-        <h2 className="mt-2 font-heading font-extrabold text-2xl sm:text-3xl tracking-tighter">
-          Every pack × every duration
-        </h2>
-        <p className="mt-2 text-ink-500 text-sm max-w-2xl">
-          The complete lookup — number of videos you can generate from each pack at every supported duration. Credit cost + approx. USD cost per video shown for clarity.
-        </p>
-        <div className="mt-6 rounded-2xl border border-ink-200 overflow-x-auto" data-testid="duration-cost-table">
-          <table className="w-full text-sm">
-            <thead className="bg-ink-50 text-ink-500 uppercase tracking-widest text-xs">
-              <tr>
-                <th className="text-left px-4 py-3 font-semibold sticky left-0 bg-ink-50">Duration</th>
-                <th className="text-right px-4 py-3 font-semibold">Credits</th>
-                <th className="text-right px-4 py-3 font-semibold">Cost / video</th>
-                {PLANS.map((p) => (
-                  <th key={p.id} className="text-right px-4 py-3 font-semibold whitespace-nowrap">
-                    {p.name}
-                    <div className="text-[10px] text-ink-400 font-normal normal-case tracking-normal mt-0.5">{p.credits}</div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {DURATIONS.map((d) => (
-                <tr key={d.sec} className="border-t border-ink-100 hover:bg-brand-50/30 transition-colors" data-testid={`dur-row-${d.label.replace(" ","-")}`}>
-                  <td className="px-4 py-3 font-semibold sticky left-0 bg-white">
-                    {d.label}
-                    <div className="text-[11px] text-ink-400 font-normal mt-0.5">{d.bestFor}</div>
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono text-brand-700 font-bold">{d.credits}</td>
-                  <td className="px-4 py-3 text-right text-ink-500 font-mono">{d.usd}</td>
-                  {PLANS.map((p) => {
-                    const videos = Math.floor(p.creditsNum / d.credits);
-                    return (
-                      <td key={p.id} className="px-4 py-3 text-right font-mono"
-                          data-testid={`matrix-${p.id}-${d.sec}`}>
-                        {p.id === "free" && d.sec !== 30 ? (
-                          <span className="text-ink-300">—</span>
-                        ) : (
-                          <>
-                            <span className={`font-bold ${videos > 0 ? "text-ink-900" : "text-ink-400"}`}>{videos}</span>
-                            <span className="text-ink-400 text-[11px] ml-1">×</span>
-                          </>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="mt-4 text-xs text-ink-500">
-          All prices in USD. Every generation includes both 16:9 (YouTube/Web) and 9:16 (LinkedIn/Reels) exports at no extra credits. Free plan is limited to 30-sec videos only — upgrade to any pack for full duration access.
-        </p>
-      </section>
-
-      {/* FAQ */}
-      <section className="max-w-4xl mx-auto px-4 sm:px-6 py-16 sm:py-20">
-        <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">FAQ</div>
-        <h2 className="mt-2 font-heading font-extrabold text-2xl sm:text-3xl tracking-tighter">Frequently asked</h2>
-        <div className="mt-8 space-y-4">
-          {[
-            {q: "Do free credits really refill every month?",
-             a: "Yes. On the first day of each calendar month, every free account is topped up to at least 3 credits — enough for exactly one 30-second video. No card required, ever."},
-            {q: "Do purchased credits expire?",
-             a: "No. Any credits you buy stay in your account until you use them. If you pause for a few months, they wait patiently."},
-            {q: "Can I edit the script or regenerate images?",
-             a: "Absolutely. Each project moves through 3 approval steps: script, visuals, voice. You can edit or regenerate at any step before the final video is rendered."},
-            {q: "What formats do I get?",
-             a: "Every render produces both 16:9 (1920×1080, for YouTube and web) and 9:16 (1080×1920, for LinkedIn, Instagram Reels, YouTube Shorts and TikTok). No extra credits."},
-            {q: "How do I pay?",
-             a: "Credit packs are one-time purchases via secure checkout. Refunds available within 14 days if you haven't used the credits."},
-          ].map((f) => (
-            <div key={f.q} className="rounded-2xl border border-ink-200 bg-white p-5" data-testid="faq-item">
-              <div className="font-heading font-bold">{f.q}</div>
-              <div className="mt-1 text-sm text-ink-500">{f.a}</div>
+        {/* Top-up + Sora tooltip */}
+        <div className="mt-6 rounded-2xl border border-ink-200 bg-ink-50/40 p-5 flex flex-wrap items-center justify-between gap-4" data-testid="topup-strip">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-brand-600 font-bold">Top-up any time</div>
+            <div className="mt-1 text-lg font-semibold text-ink-900">
+              {topup.label} — <span className="font-mono">{inr(topup.credits)}</span> credits for <span className="font-mono">₹{inr(topup.price_inr)}</span>
             </div>
-          ))}
+            <div className="text-xs text-ink-500 mt-1">Credits never expire · works with every plan · buy as many packs as you need.</div>
+          </div>
+          <Link to="/credits">
+            <Button className="rounded-full bg-brand-600 hover:bg-brand-700 text-white">Buy credits</Button>
+          </Link>
         </div>
-      </section>
 
-      {/* FOOTER */}
-      <footer className="border-t border-ink-100 py-8">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 text-sm text-ink-500">
-          <div>© {new Date().getFullYear()} AI Video Studio</div>
-          <div className="flex items-center gap-5">
-            <Link to="/" className="hover:text-brand-600">Home</Link>
-            <a href="mailto:hello@videostudio.ai" className="hover:text-brand-600">Contact</a>
+        {/* Duration calculator */}
+        <div className="mt-12">
+          <div className="flex items-center gap-2">
+            <Calculator className="w-4 h-4 text-brand-600" />
+            <div className="text-[11px] uppercase tracking-widest text-brand-600 font-bold">Credit Calculator</div>
+          </div>
+          <h2 className="mt-1 font-heading text-2xl font-black tracking-tighter">See what any video costs</h2>
+          <p className="mt-1 text-sm text-ink-500 max-w-2xl">Pick a duration below to see the credit cost. Slideshow video is priced at ~100 credits/minute.</p>
+
+          <div className="mt-4 flex flex-wrap gap-2" data-testid="duration-picker">
+            {durations.map((d) => (
+              <button key={d.sec}
+                      onClick={() => setPickedSec(d.sec)}
+                      className={`rounded-full px-4 py-2 text-sm font-semibold border transition-all
+                                  ${pickedSec === d.sec ? "bg-brand-600 border-brand-600 text-white" : "bg-white border-ink-200 text-ink-700 hover:border-brand-300"}`}
+                      data-testid={`duration-${d.sec}`}>
+                {d.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-5 rounded-2xl border border-ink-200 bg-white p-6 flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-ink-500 font-bold">You picked</div>
+              <div className="mt-1 font-heading text-3xl font-black tracking-tighter text-ink-900">{picked.label}</div>
+              <div className="text-xs text-ink-500 mt-1">Best for {picked.bestFor}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[10px] uppercase tracking-widest text-ink-500 font-bold">Cost</div>
+              <div className="mt-1 font-heading text-3xl font-black tracking-tighter text-brand-700" data-testid="picked-credit-cost">
+                {inr(picked.credits)} credits
+              </div>
+              <div className="text-xs text-ink-500 mt-1">≈ ₹{inr(Math.round(picked.credits * 4))} on the Creator plan</div>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-4 flex items-start gap-3" data-testid="sora-tooltip">
+            <Sparkles className="w-4 h-4 text-amber-700 mt-0.5" />
+            <div className="text-xs text-amber-800">
+              <span className="font-bold">Premium AI Video (Sora)</span> is a high-compute feature and consumes <span className="font-bold">200 credits per second</span> of footage. Unlocked on the Business plan and above.
+            </div>
           </div>
         </div>
-      </footer>
+
+        {/* Waitlist CTA at the bottom — primary conversion for early access */}
+        <div className="mt-14 rounded-2xl bg-gradient-to-br from-brand-600 to-indigo-700 text-white p-8 sm:p-10 text-center">
+          <div className="text-[11px] uppercase tracking-widest text-white/80 font-bold">Early access</div>
+          <h2 className="mt-2 font-heading text-3xl sm:text-4xl font-black tracking-tighter">Get in early — save 40% for life.</h2>
+          <p className="mt-2 text-white/85 max-w-lg mx-auto">Join the waitlist to lock in early-access pricing and be first to try the new premium AI video generation.</p>
+          <Link to="/signup" data-testid="pricing-waitlist-cta">
+            <Button className="mt-5 rounded-full bg-white text-brand-700 hover:bg-white/90 font-bold px-6 h-11">
+              Join waitlist <Zap className="w-4 h-4 ml-1.5" />
+            </Button>
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }
