@@ -27,6 +27,17 @@ Dashboard, credit system, projects, download, admin panel, pricing.
 - Blue & white professional theme (Canva/InVideo inspired)
 
 
+
+## Phase 17 (2026-02) — Sora 2 Animated Scenes (LIVE)
+- ✅ **Real Sora 2 lip-sync + animation** integrated via `emergentintegrations.llm.openai.OpenAIVideoGeneration` and the Emergent Universal LLM Key (zero third-party wallet). Per-scene action `POST /api/projects/{pid}/scenes/{idx}/animate` charges 5 app credits, queues an async Sora job (`sora-2`, 1280×720, 4-sec default, image-to-video using the approved scene image as first frame), and stores the resulting MP4 at `/api/media/videos/{pid}_scene_{idx}.mp4`. Automatic credit refund on failure. Delete endpoint reverts a scene back to the still image.
+- ✅ **FFmpeg compose auto-detects animated scenes** — when `animated_clip_url` is set on a scene, the final render loops that Sora clip to fill the scene's audio slice (with subtitle overlay) instead of the Ken-Burns pan on a still image.
+- ✅ **Frontend "✨ Animate • 5 cr" button** on every scene card during image-approval step. Live spinner + polling (auto-refresh every 3 s while any scene is `animating`), inline `<video autoPlay muted loop>` preview once ready, "Revert to still" fallback, and clear error surfacing via `animate_error` field on the scene.
+- ✅ **CORS locked to explicit preview allowlist** — replaced wildcard `CORS_ORIGINS=*` with the two preview hosts (`preview.emergentagent.com` + `preview.static.emergentagent.com`) so `allow_credentials=True` and cross-origin cookie auth (Google sign-in from the static CDN) actually works.
+- ✅ **Boot self-heal hardened** — FFmpeg + Noto-font installers now retry on dpkg-lock contention with exponential backoff (5s → 80s, 5 attempts). Prevents the recurring "FFmpeg not installed" failure when a sibling apt-get holds the container lock at boot.
+- ✅ **Signup floor raised** — new Free-tier accounts now start with **5 credits** (was 3) via `FREE_MONTHLY_CREDITS` constant, so a user can immediately create their first 30-second video without hitting the paywall. Backfill migration ran (existing free users with <5 credits topped up to 5).
+- ✅ **index.html cleanup** — removed stray duplicated PostHog snippet leaking as raw text after `</html>`.
+
+
 ## Phase 16 (2026-02) — Profit-Locked Pricing Model
 - ✅ **Consumption-Based Credit Economy** — reworked backend `DURATION_TIERS` to the new "100 credits per minute of slideshow" rate, guaranteeing ≥70% gross margin on every action. 30-sec = 50 credits (was 3), 60-sec = 100 (was 5), 5-min = 500 (was 25), 10-min = 1000 (was 50). `REFERRAL_BONUS` raised 3→50 to preserve value. `FREE_MONTHLY_CREDITS` raised 3→50. New `LOW_CREDIT_THRESHOLD = 200` for the persistent warning banner.
 - ✅ **New Plan Tiers** — Creator ₹1,999 (500 credits) · Business ₹6,999 (2,000 credits + Sora unlock) · Agency ₹24,999 (8,000 credits). Top-up: 500 credits for ₹1,999. Exposed via new `GET /api/pricing/config` so backend/frontend never drift.
