@@ -3121,7 +3121,17 @@ async def startup():
         await db.user_sessions.create_index("session_token", unique=True)
         await db.login_attempts.create_index("key", unique=True)
         await db.password_reset_tokens.create_index("token", unique=True)
-        await db.projects.create_index("share_slug", unique=True, sparse=True)
+        # Partial-filter index instead of sparse — sparse only excludes
+        # docs missing the field, whereas partialFilter excludes docs where
+        # share_slug is null / not a string. This prevents E11000 conflicts
+        # on new project inserts (which don't have share_slug yet).
+        try:
+            await db.projects.create_index("share_slug", unique=True,
+                partialFilterExpression={"share_slug": {"$type": "string"}},
+                name="share_slug_1")
+        except Exception:
+            # Index may already exist under an older definition; ignore.
+            pass
         await db.share_events.create_index([("slug", 1), ("at_day", 1)])
         await db.share_events.create_index("at")
         # NOTE: TTL on ISO-string dates doesn't work — we manually prune expired tokens in scheduler
