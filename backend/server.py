@@ -528,6 +528,7 @@ async def _clear_login_failures(request: Request, ident: str):
 # Both the referrer and the new signup get REFERRAL_BONUS credits. Codes are
 # generated lazily on first fetch/register so existing users are covered.
 REFERRAL_BONUS = 3
+REFERRAL_DAILY_CAP = 10  # Max bonuses a single referrer can earn in a rolling 24h — anti-farming
 _REFERRAL_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/1/O/I to reduce OCR/copy errors
 
 async def _generate_unique_referral_code() -> str:
@@ -548,18 +549,37 @@ async def _ensure_referral_code(user_id: str) -> str:
     return code
 
 async def _apply_referral_bonus(new_user_id: str, referral_code: str) -> Optional[str]:
-    """If code is valid and doesn't self-refer, credit both parties. Returns referrer_user_id or None."""
+    """If code is valid and doesn't self-refer, credit both parties. Returns referrer_user_id or None.
+
+    Includes a rolling 24h cap on the referrer's earned-count (`REFERRAL_DAILY_CAP`)
+    so credit farming via mass fake-signups can't drain the platform. The referee
+    always still gets their +3 welcome bonus — only the referrer's bonus is throttled.
+    """
     code = (referral_code or "").strip().upper()
     if not code:
         return None
     referrer = await db.users.find_one({"referral_code": code}, {"_id": 0, "user_id": 1})
     if not referrer or referrer["user_id"] == new_user_id:
         return None
-    now_iso = datetime.now(timezone.utc).isoformat()
-    await db.users.update_one(
-        {"user_id": referrer["user_id"]},
-        {"$inc": {"credits": REFERRAL_BONUS, "referral_credits_earned": REFERRAL_BONUS}},
-    )
+    now = datetime.now(timezone.utc)
+    since = (now - timedelta(hours=24)).isoformat()
+    # Count how many bonuses this referrer has earned in the last 24h
+    recent_referrals = await db.users.count_documents({
+        "referred_by": referrer["user_id"],
+        "referred_at": {"$gte": since},
+    })
+    referrer_gets_bonus = recent_referrals < REFERRAL_DAILY_CAP
+    now_iso = now.isoformat()
+    if referrer_gets_bonus:
+        await db.users.update_one(
+            {"user_id": referrer["user_id"]},
+            {"$inc": {"credits": REFERRAL_BONUS, "referral_credits_earned": REFERRAL_BONUS}},
+        )
+    else:
+        logger.info(
+            f"Referral cap hit: referrer={referrer['user_id']} at {recent_referrals}/{REFERRAL_DAILY_CAP} in 24h — referee credited, referrer skipped."
+        )
+    # New user always gets their welcome bonus + gets tagged with referred_by (so admin analytics still show the invite path)
     await db.users.update_one(
         {"user_id": new_user_id},
         {"$inc": {"credits": REFERRAL_BONUS},
