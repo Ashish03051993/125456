@@ -1,7 +1,8 @@
 import { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { Sparkles, X, ArrowRight, CheckCircle2, Circle, Trophy } from "lucide-react";
+import { Sparkles, X, ArrowRight, CheckCircle2, Circle, Trophy, Share2, Loader2, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "@/lib/api";
 
 const DISMISS_KEY = "avs_onboarding_dismissed_v1";
 const CELEBRATED_KEY = "avs_onboarding_celebrated_v1";
@@ -22,12 +23,36 @@ export default function OnboardingChecklist({ projects }) {
     const created = list.length > 0;
     const rendered = list.some((p) => p.status === "ready");
     const shared = list.some((p) => p.share_enabled === true);
+    const firstReady = list.find((p) => p.status === "ready");
     return [
       { id: "create",  title: "Create your first video", desc: "Type a topic and kick off the wizard.", done: created,  cta: { to: "/new", label: "Start creating" } },
       { id: "render",  title: "Watch it come to life",     desc: "Approve the script, images and voice.", done: rendered, cta: created ? null : { to: "/new", label: "Start creating" } },
-      { id: "share",   title: "Share with the world",     desc: "Open a project → Share → copy your public link.", done: shared,  cta: null },
+      { id: "share",   title: "Share with the world",     desc: "One click — we'll create a public link you can send to anyone.", done: shared,  firstReadyId: firstReady?.id || null },
     ];
   }, [projects]);
+
+  const [sharing, setSharing] = useState(false);
+
+  const shareFirstReady = async (pid) => {
+    if (!pid) return;
+    setSharing(true);
+    try {
+      const { data } = await api.post(`/projects/${pid}/share`);
+      const url = `${window.location.origin}/v/${data.share_slug}`;
+      toast.success("Public link ready!", {
+        description: url,
+        duration: 8000,
+        action: {
+          label: "Copy link",
+          onClick: () => {
+            try { navigator.clipboard.writeText(url); toast.success("Copied to clipboard"); } catch {}
+          },
+        },
+      });
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Couldn't create share link — try again.");
+    } finally { setSharing(false); }
+  };
 
   const doneCount = steps.filter((s) => s.done).length;
   const allDone = doneCount === steps.length;
@@ -107,6 +132,16 @@ export default function OnboardingChecklist({ projects }) {
                     data-testid={`onboarding-step-${s.id}-cta`}>
                 {s.cta.label} <ArrowRight className="w-3 h-3" />
               </Link>
+            )}
+            {!s.done && s.id === "share" && s.firstReadyId && (
+              <button
+                onClick={() => shareFirstReady(s.firstReadyId)}
+                disabled={sharing}
+                className="inline-flex items-center gap-1 rounded-full bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-xs font-semibold px-3 py-1.5 transition-colors shrink-0"
+                data-testid="onboarding-step-share-quickbtn"
+              >
+                {sharing ? <><Loader2 className="w-3 h-3 animate-spin" /> Publishing…</> : <><Share2 className="w-3 h-3" /> Publish share link</>}
+              </button>
             )}
           </li>
         ))}
