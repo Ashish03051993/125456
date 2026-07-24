@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, resolveMediaUrl } from "@/lib/api";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import WelcomeBanner from "@/components/WelcomeBanner";
 
 // Format catalogue for the download dropdown — id maps to keys in `video_urls`.
 const DOWNLOAD_FORMATS = [
@@ -182,6 +183,8 @@ export default function Dashboard() {
           </div>
 
           <LowCreditNudge />
+
+          <WelcomeBanner hasProjects={projects.length > 0} />
 
           {loading ? (
             <div className="mt-16 flex justify-center text-ink-500"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>

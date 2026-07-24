@@ -27,6 +27,9 @@ Dashboard, credit system, projects, download, admin panel, pricing.
 - Blue & white professional theme (Canva/InVideo inspired)
 
 
+## Phase 14 (2026-02) — Welcome Banner (verified)
+- ✅ **Welcome Banner mounted + verified** — `<WelcomeBanner hasProjects={projects.length > 0} />` now renders on the Dashboard between `<LowCreditNudge />` and the projects list. Auto-hides once the user has any projects OR dismissed the banner (persisted in `localStorage['avs_welcome_dismissed_v1']`). Three-step guide (Topic → Approve → Download), CTA button routes to `/new` and dismisses. Test-ids `welcome-banner`, `welcome-cta-btn`, `welcome-step-1/2/3`, `welcome-dismiss`. Fixed missing JSX mount from previous session (import was present but component was never rendered). E2E verified via screenshot with a freshly-registered account.
+
 ## Phase 13 (2026-02) — Launch Compliance + Wizard Draft-Save + Prod Hardening + Referrals
 - ✅ **Cookie Consent Banner mounted** — `<CookieConsent />` mounted globally in `App.js` (right below `<UpgradeModal />`). Appears 700ms after first paint (avoids CLS), stores choice in `localStorage['avs_cookie_consent_v1']` with `{necessary, analytics, at, v}`, broadcasts `cookie-consent:updated` event so downstream analytics layers can respect user choice. Verified: shows on first visit → hides on Accept/Only-Necessary → stays hidden across reload.
 - ✅ **robots.txt + sitemap.xml verified** — both serve correctly under `/robots.txt` and `/sitemap.xml`; robots.txt allows public routes (`/`, `/pricing`, `/terms`, `/privacy`, `/v/`) and disallows auth/dashboard surfaces; sitemap lists 6 public URLs.
