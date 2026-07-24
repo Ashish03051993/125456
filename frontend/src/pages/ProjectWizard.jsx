@@ -62,8 +62,36 @@ export default function ProjectWizard() {
   const fileInputRef = useRef(null);
   const draftIdRef = useRef(null);                           // holds a placeholder project id for pre-create character uploads
   const [busy, setBusy] = useState(false);
+  const [enhanceBusy, setEnhanceBusy] = useState(false);
 
   const isPaidUser = user && feature.paid_plans.includes(user.plan);
+
+  // Rewrite the raw topic into a richer prompt via GPT. Free of credits.
+  // Keeps a snapshot so we can offer "undo" via a toast action.
+  const enhanceTopic = async () => {
+    const original = topic.trim();
+    if (original.length < 3) return;
+    setEnhanceBusy(true);
+    try {
+      const { data } = await api.post("/wizard/enhance-topic", {
+        topic: original, style, language,
+      });
+      if (data?.enhanced && data.enhanced !== original) {
+        setTopic(data.enhanced);
+        toast.success("Topic enhanced", {
+          description: "Tweak anything — or undo to restore your original.",
+          action: { label: "Undo", onClick: () => setTopic(original) },
+        });
+      } else {
+        toast.info("Your topic already looks great.");
+      }
+    } catch (e) {
+      const msg = e?.response?.data?.detail || "Couldn't enhance right now — try again in a moment.";
+      toast.error(msg);
+    } finally {
+      setEnhanceBusy(false);
+    }
+  };
 
   // Open the global upgrade modal (same one the axios 402 interceptor uses)
   const openPaywall = () => {
@@ -216,11 +244,29 @@ export default function ProjectWizard() {
 
             <div className="mt-8 bg-white border border-ink-200 rounded-2xl p-6 space-y-6">
               <div>
-                <Label className="text-sm font-semibold" htmlFor="topic">Topic or prompt</Label>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <Label className="text-sm font-semibold" htmlFor="topic">Topic or prompt</Label>
+                  <button
+                    type="button"
+                    onClick={enhanceTopic}
+                    disabled={enhanceBusy || topic.trim().length < 3}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 hover:bg-brand-100 disabled:opacity-50 disabled:cursor-not-allowed text-brand-700 text-xs font-semibold px-3 py-1 transition-colors"
+                    data-testid="enhance-topic-btn"
+                  >
+                    {enhanceBusy ? (
+                      <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Enhancing…</>
+                    ) : (
+                      <><Wand2 className="w-3.5 h-3.5" /> Enhance with AI</>
+                    )}
+                  </button>
+                </div>
                 <Textarea id="topic" data-testid="topic-input" rows={3} value={topic}
                   onChange={(e) => setTopic(e.target.value)}
                   placeholder="e.g. How coffee is grown in Ethiopia — for high school students"
-                  className="mt-2" />
+                  className="" />
+                <div className="mt-1 text-[11px] text-ink-400">
+                  Tip: 15+ words gives the AI enough context to write a rich script.
+                </div>
               </div>
 
               <div>
