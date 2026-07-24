@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration 29 full regression (backend + frontend) for the defensive HealthTile / FFmpeg self-heal / Referral Admin Rollup batch. Backend: created /app/backend/tests/test_iter29_health_and_admin_rollup.py — 10/10 pytest cases pass (health shape mongodb+ffmpeg+llm_key all 'ok'; POST /api/admin/repair/ffmpeg → 200 already_installed for admin, 403 for regular user, 401 for anon; /api/admin/stats has full referral block with users_with_code=20, total_referred=5, referred_24h=5, conversion_pct=25, top_referrers=[{Admin, XQEBLM, 5}]; referrals/me share_url now contains 'preview.emergentagent.com', NOT the internal 'cluster' hostname; /api/projects returns 200 for authed user). Also re-ran iter28 suite (10/10 pass — no regressions). Frontend (admin session on /admin, Overview tab): (a) HealthTile renders with data-testid=admin-health-tile, shows 'All systems operational' (data-testid=admin-health-status), latency '85ms' (data-testid=admin-health-latency), all three dep dots (mongodb/ffmpeg/llm_key each showing OK), 'Last checked 5:30:23 AM · polls every 15s' timestamp, and the Repair button (data-testid=admin-health-repair-ffmpeg) is correctly HIDDEN because ffmpeg is present — as spec'd. (b) Referral Program section (data-testid=referral-rollup) renders with all three sub-cards (referral-total-referred '5 of 20 users with a code', referral-24h '5 new referred signups since yesterday', referral-top 'Admin · XQEBLM · 5 invited') plus the conversion label (data-testid=referral-conversion-pct = '25% signup→referred rate'). Leaderboard (data-testid=referral-leaderboard) is NOT shown because there's only 1 top_referrer (admin), which matches spec ('≥2 entries'). (c) Brand: browser title = 'AI Video Studio — Turn any topic into a polished video', wordmark rendered as 'AI VideoStudio' on landing/signup/dashboard/admin, zero Kadenza refs anywhere. (d) LowCreditNudge (data-testid=low-credit-nudge) correctly HIDDEN for admin (10021 credits, plan=business); also hidden for a fresh signup with 3 credits (component gates on credits<3 — boundary case correctly excludes 3). (e) /signup?ref=XQEBLM shows the green referral banner 'You're invited! You'll get 3 bonus credits when you sign up (XQEBLM).' (f) Cookie consent (data-testid=cookie-consent) appears on first visit, hides on 'Accept all', persists across reload. (g) Dashboard poll interval = 4s + prevStatusRef diffing + refill_delta effect all present in the source, confirmed structurally. Fresh signup via UI succeeded, landed on /dashboard, credit badge showed '3 CREDITS'. All targeted iter29 features are in place — no bugs found.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter29_health_and_admin_rollup.py",
+    "/app/backend/tests/test_iter28_referrals_and_kadenza.py",
+    "/app/test_reports/pytest/iter29_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now ~2980 lines (was 2881 in iter28). The Repair endpoint, boot self-heal, and Referral rollup are all cleanly scoped, but the file is getting dense — recommend splitting into feature modules (admin.py, referrals.py, health.py, auth.py) before it crosses ~3.5k lines.",
+    "/api/admin/repair/ffmpeg runs subprocess.run synchronously inside an async endpoint (blocks the event loop for up to 90s). Non-issue in practice (admin-only, called once), but the boot self-heal correctly uses asyncio.to_thread — the repair endpoint should do the same for consistency.",
+    "Boot self-heal creates the asyncio task inside @app.on_event('startup') using a fresh _asyncio import alias — works, but on_event is deprecated in favour of the lifespan context manager (FastAPI ≥0.93). Not urgent, just tech-debt.",
+    "HealthTile polls every 15s — reasonable, but there's no visibility-based pause (polls run even when the tab is background). Add document.visibilityState check to be nice to bandwidth/CPU.",
+    "LowCreditNudge condition is `credits < 3` — matches spec but means a user with exactly 3 credits (fresh signup) sees no nudge even though they can only make one video and then be blocked. Consider `credits <= 3` OR gate on 'credits < min_video_cost' if variable cost tiers exist. Cosmetic call.",
+    "Referral rollup 'top_referrers' aggregation runs an N+1 (aggregate + find_one per referrer). Fine at N=5, but a $lookup to users would be tidier if this grows."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter29_health_and_admin_rollup.py (new — 10 pytest cases)"
+  ],
+  "success_rate": {"backend": "100% (10/10 iter29 + 10/10 iter28 regression)", "frontend": "100% — all targeted testids present, all behaviours correct"},
+  "test_credentials": "admin@videostudio.ai / Admin@2026 (verified — 10021 credits after this run's fresh signup bumped ledgers).",
+  "seed_data_creation": "Created 3 disposable users via /auth/register during pytest run (iter29_* and regular_user_*) and 1 via Playwright signup (iter29_ui_<ts>@example.com). No cleanup needed — these do not affect future runs beyond nudging counters.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iter29 verified: Admin HealthTile (15s poll, repair button gated on ffmpeg failure), POST /api/admin/repair/ffmpeg auth + idempotency, boot self-heal (structurally verified — do NOT uninstall ffmpeg in tests), /api/admin/stats.referral rollup shape + rendering, share_url fix via X-Forwarded-Host, LowCreditNudge gating, cookie consent persistence, brand=AI VideoStudio (no Kadenza refs). Admin's referral code is still XQEBLM. Current top_referrers list has 1 entry (admin) — leaderboard renders only when ≥2, so if you want to test the leaderboard, register a second user, then have them refer someone else. Test runner cmd: `python -m pytest /app/backend/tests/test_iter29_health_and_admin_rollup.py -v`.",
+  "rca of the issue": "No bugs found. All 12 test-request items (backend + frontend) pass. Iteration 28 regression suite also still 10/10."
+}
