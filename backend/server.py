@@ -2822,6 +2822,32 @@ async def startup():
         {"$or": [{"source": None}, {"source": {"$exists": False}}]},
         {"$set": {"source": "direct"}},
     )
+
+    # Boot self-heal: if ffmpeg dropped from the container, quietly reinstall it
+    # in the background so /api/health flips to green without admin intervention.
+    # Non-blocking — startup completes immediately even if apt-get is slow.
+    import shutil as _shutil
+    if not _shutil.which("ffmpeg"):
+        async def _boot_repair_ffmpeg():
+            import asyncio, subprocess
+            logger.warning("Boot self-heal: ffmpeg missing — running apt-get install…")
+            try:
+                proc = await asyncio.to_thread(
+                    subprocess.run,
+                    ["apt-get", "install", "-y", "ffmpeg"],
+                    capture_output=True, text=True, timeout=180,
+                    env={**os.environ, "DEBIAN_FRONTEND": "noninteractive"},
+                )
+                if _shutil.which("ffmpeg") and proc.returncode == 0:
+                    logger.info(f"Boot self-heal: ffmpeg reinstalled → {_shutil.which('ffmpeg')}")
+                else:
+                    logger.error(f"Boot self-heal failed rc={proc.returncode} stderr={proc.stderr[-300:]}")
+            except Exception as e:
+                logger.exception(f"Boot self-heal crashed: {e}")
+        # Fire-and-forget; keeps startup fast
+        import asyncio as _asyncio
+        _asyncio.create_task(_boot_repair_ffmpeg())
+
     # Kick off the daily digest scheduler (08:00 IST)
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.cron import CronTrigger
