@@ -2,8 +2,100 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Gift, Copy, Check, Users, Coins, Share2, Loader2, Twitter, Linkedin, MessageCircle } from "lucide-react";
+import { Gift, Copy, Check, Users, Coins, Share2, Loader2, Twitter, Linkedin, MessageCircle, Trophy } from "lucide-react";
 import { toast } from "sonner";
+
+// Milestone tiers — purely UX gamification on top of the existing per-invite
+// credit reward. Reaching a tier unlocks a badge; every invite still pays
+// out +bonus credits via the backend regardless of tier.
+const TIERS = [
+  { at: 1,  name: "First Invite",  medal: "🎉", color: "text-ink-600" },
+  { at: 3,  name: "Ambassador",    medal: "🥉", color: "text-amber-700" },
+  { at: 10, name: "Advocate",      medal: "🥈", color: "text-slate-500" },
+  { at: 25, name: "Champion",      medal: "🥇", color: "text-yellow-600" },
+];
+
+function ReferralMilestones({ invitedCount, bonus }) {
+  const max = TIERS[TIERS.length - 1].at;
+  const clamped = Math.min(invitedCount, max);
+  const pct = Math.round((clamped / max) * 100);
+  const nextTier = TIERS.find((t) => t.at > invitedCount);
+  const earnedTiers = TIERS.filter((t) => invitedCount >= t.at);
+  const topTier = earnedTiers[earnedTiers.length - 1];
+
+  return (
+    <div className="mt-5 pt-4 border-t border-brand-100/70" data-testid="referral-milestones">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Trophy className="w-4 h-4 text-brand-600" />
+          <span className="text-[10px] uppercase tracking-widest text-ink-500 font-semibold">
+            Milestones
+          </span>
+          {topTier && (
+            <span
+              className={`ml-1 inline-flex items-center gap-1 rounded-full bg-white border border-ink-200 px-2 py-0.5 text-[11px] font-semibold ${topTier.color}`}
+              data-testid="referral-current-tier"
+            >
+              <span>{topTier.medal}</span> {topTier.name}
+            </span>
+          )}
+        </div>
+        <div className="text-xs text-ink-500">
+          {nextTier ? (
+            <>
+              <span className="font-semibold text-ink-700">
+                {nextTier.at - invitedCount}
+              </span>{" "}
+              more to unlock{" "}
+              <span className="font-semibold">
+                {nextTier.medal} {nextTier.name}
+              </span>{" "}
+              <span className="text-ink-400">
+                (+{(nextTier.at - invitedCount) * bonus} credits along the way)
+              </span>
+            </>
+          ) : (
+            <span className="font-semibold text-brand-600">
+              Legend unlocked — top-tier referrer 
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3 relative h-2 rounded-full bg-white border border-ink-100 overflow-hidden">
+        <div
+          className="absolute inset-y-0 left-0 bg-gradient-to-r from-brand-500 to-brand-700 transition-all duration-500"
+          style={{ width: `${pct}%` }}
+          data-testid="referral-progress-bar"
+        />
+      </div>
+
+      <div className="mt-2 flex items-center justify-between">
+        {TIERS.map((t) => {
+          const done = invitedCount >= t.at;
+          return (
+            <div
+              key={t.at}
+              className={`flex flex-col items-center text-center ${done ? "opacity-100" : "opacity-45"}`}
+              data-testid={`referral-tier-${t.at}`}
+            >
+              <div
+                className={`w-6 h-6 rounded-full flex items-center justify-center text-xs border ${
+                  done ? "bg-brand-600 border-brand-600 text-white" : "bg-white border-ink-200 text-ink-400"
+                }`}
+              >
+                {done ? <Check className="w-3.5 h-3.5" /> : t.at}
+              </div>
+              <div className="text-[10px] font-semibold text-ink-600 mt-1">
+                {t.medal} {t.name}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export default function ReferralPanel() {
   const [data, setData] = useState(null);
@@ -110,6 +202,8 @@ export default function ReferralPanel() {
             </Button>
           </div>
         </div>
+
+        <ReferralMilestones invitedCount={data.invited_count} bonus={data.bonus_per_referral} />
 
         {/* One-click social shares — pre-written copy tuned per platform */}
         {data.share_url && (() => {
