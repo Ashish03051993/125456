@@ -171,19 +171,24 @@ class TestReferralSignupFlow:
         u2 = me2.json().get("user", me2.json())
         assert u2.get("credits") == 6, f"Expected 6 credits, got {u2.get('credits')}"
 
-        # admin referral stats should bump by +1 / +3
+        # admin referral stats should bump by +1 (invited_count always) and by +3
+        # (credits_earned) unless the daily anti-farming cap (REFERRAL_DAILY_CAP=10)
+        # has been hit by prior test runs on the same day.
         r2 = admin_session.get(f"{API}/referrals/me")
         after = r2.json()
         assert after["invited_count"] == prev_invited + 1, \
             f"invited_count did not increment: before={prev_invited} after={after['invited_count']}"
-        assert after["credits_earned"] == prev_earned + 3, \
-            f"credits_earned did not increment: before={prev_earned} after={after['credits_earned']}"
+        # Under cap → credits_earned bumps by 3. At cap → credits_earned unchanged (referee still credited).
+        assert after["credits_earned"] in (prev_earned + 3, prev_earned), \
+            f"credits_earned unexpected: before={prev_earned} after={after['credits_earned']}"
+        earned_bumped = after["credits_earned"] == prev_earned + 3
 
-        # admin credits should also bump by +3
+        # admin credits should bump by +3 only if the cap wasn't hit
         me_r2 = admin_session.get(f"{API}/auth/me")
         admin_user_after = me_r2.json().get("user", me_r2.json())
-        assert int(admin_user_after.get("credits", 0)) == prev_admin_credits + 3, \
-            f"admin credits did not increment: before={prev_admin_credits} after={admin_user_after.get('credits')}"
+        expected_admin_after = prev_admin_credits + (3 if earned_bumped else 0)
+        assert int(admin_user_after.get("credits", 0)) == expected_admin_after, \
+            f"admin credits mismatch: before={prev_admin_credits} after={admin_user_after.get('credits')} expected={expected_admin_after}"
 
     def test_new_user_gets_own_referral_code(self):
         s = requests.Session()
