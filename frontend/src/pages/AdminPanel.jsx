@@ -226,6 +226,65 @@ export default function AdminPanel() {
                 </div>
               </div>
 
+              {/* Referral program rollup */}
+              {stats.referral && (
+                <div className="bg-white border border-ink-200 rounded-2xl p-6" data-testid="referral-rollup">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div>
+                      <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">Referral program</div>
+                      <div className="font-heading font-bold text-xl mt-1">Invite-loop health</div>
+                    </div>
+                    <div className="text-xs text-ink-500 font-mono" data-testid="referral-conversion-pct">
+                      {stats.referral.conversion_pct}% signup→referred rate
+                    </div>
+                  </div>
+                  <div className="mt-5 grid sm:grid-cols-3 gap-3">
+                    <div className="rounded-xl border border-ink-200 p-4" data-testid="referral-total-referred">
+                      <div className="text-xs uppercase tracking-widest text-ink-500 font-semibold">Referred signups</div>
+                      <div className="mt-2 font-heading text-3xl font-extrabold tracking-tighter">{stats.referral.total_referred}</div>
+                      <div className="text-xs text-ink-500 mt-1">of {stats.referral.users_with_code} users with a code</div>
+                    </div>
+                    <div className="rounded-xl border border-ink-200 p-4" data-testid="referral-24h">
+                      <div className="text-xs uppercase tracking-widest text-ink-500 font-semibold">Referred · 24h</div>
+                      <div className="mt-2 font-heading text-3xl font-extrabold tracking-tighter text-brand-700">{stats.referral.referred_24h}</div>
+                      <div className="text-xs text-ink-500 mt-1">new referred signups since yesterday</div>
+                    </div>
+                    <div className="rounded-xl border border-ink-200 p-4" data-testid="referral-top">
+                      <div className="text-xs uppercase tracking-widest text-ink-500 font-semibold">Top inviter</div>
+                      {stats.referral.top_referrers?.[0] ? (
+                        <>
+                          <div className="mt-2 font-heading text-lg font-extrabold truncate" title={stats.referral.top_referrers[0].name}>
+                            {stats.referral.top_referrers[0].name}
+                          </div>
+                          <div className="text-xs text-ink-500 mt-1">
+                            <span className="font-mono">{stats.referral.top_referrers[0].code}</span> · {stats.referral.top_referrers[0].invited_count} invited
+                          </div>
+                        </>
+                      ) : (
+                        <div className="mt-2 text-sm text-ink-400">No referrals yet</div>
+                      )}
+                    </div>
+                  </div>
+                  {stats.referral.top_referrers && stats.referral.top_referrers.length > 1 && (
+                    <div className="mt-4 pt-4 border-t border-ink-100">
+                      <div className="text-[10px] uppercase tracking-widest text-ink-500 font-semibold mb-2">Leaderboard</div>
+                      <div className="space-y-1.5" data-testid="referral-leaderboard">
+                        {stats.referral.top_referrers.map((r, i) => (
+                          <div key={r.user_id} className="flex items-center justify-between text-sm gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="w-5 h-5 rounded-full bg-brand-50 border border-brand-100 flex items-center justify-center text-[10px] font-bold text-brand-700 shrink-0">{i + 1}</span>
+                              <span className="truncate font-medium text-ink-800">{r.name}</span>
+                              <span className="font-mono text-[10px] text-ink-400 shrink-0">{r.code}</span>
+                            </div>
+                            <span className="font-mono text-xs font-bold text-brand-700 shrink-0">{r.invited_count}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Analytics Sanity Panel */}
               {sanity && (
                 <div className="bg-white border border-ink-200 rounded-2xl p-6" data-testid="sanity-panel">

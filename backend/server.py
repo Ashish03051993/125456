@@ -2125,6 +2125,31 @@ async def admin_stats(_admin=Depends(require_admin)):
     waitlist_clicks = await db.analytics_events.count_documents({"event": "waitlist_button_click"})
     plans_cur = db.waitlist.aggregate([{"$group": {"_id": "$plan_interest", "n": {"$sum": 1}}}])
     plans = {d["_id"] or "unspecified": d["n"] async for d in plans_cur}
+    # Referral rollups — how effective is the invite loop?
+    users_with_code = await db.users.count_documents({"referral_code": {"$exists": True, "$ne": None}})
+    total_referred = await db.users.count_documents({"referred_by": {"$exists": True, "$ne": None}})
+    # Top referrers (users with the most successful invites) — capped list, no PII surfaced beyond name/email prefix
+    top_referrers_cur = db.users.aggregate([
+        {"$match": {"referred_by": {"$exists": True, "$ne": None}}},
+        {"$group": {"_id": "$referred_by", "n": {"$sum": 1}}},
+        {"$sort": {"n": -1}},
+        {"$limit": 5},
+    ])
+    top_referrers = []
+    async for row in top_referrers_cur:
+        ref_user = await db.users.find_one({"user_id": row["_id"]}, {"_id": 0, "name": 1, "email": 1, "referral_code": 1})
+        top_referrers.append({
+            "user_id": row["_id"],
+            "name": (ref_user or {}).get("name") or "Anon",
+            "code": (ref_user or {}).get("referral_code") or "—",
+            "invited_count": row["n"],
+        })
+    # Referred-signups in the last 24h — freshness signal
+    referred_24h = await db.users.count_documents({
+        "referred_by": {"$exists": True, "$ne": None},
+        "created_at": {"$gte": since_24h},
+    })
+    referral_conversion = round((total_referred / users_with_code) * 100, 1) if users_with_code else 0.0
     return {
         "total_users": total_users,
         "total_projects": total_projects,
@@ -2137,6 +2162,13 @@ async def admin_stats(_admin=Depends(require_admin)):
         "book_demo_clicks": book_demo_clicks,
         "waitlist_clicks": waitlist_clicks,
         "waitlist_by_plan": plans,
+        "referral": {
+            "users_with_code": users_with_code,
+            "total_referred": total_referred,
+            "referred_24h": referred_24h,
+            "conversion_pct": referral_conversion,
+            "top_referrers": top_referrers,
+        },
     }
 
 
