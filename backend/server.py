@@ -1251,9 +1251,11 @@ async def public_video(slug: str, request: Request):
         raise HTTPException(404, "This video is no longer available.")
     if p.get("status") != "ready":
         raise HTTPException(404, "This video is no longer available.")
-    # Look up creator display name (may be null if user was deleted)
+    # Look up creator display name (may be null if user was deleted). Also
+    # surface their referral code so every shared video becomes a self-serve
+    # referral link — the /v/:slug frontend appends `?ref=<code>` to signup CTAs.
     creator = await db.users.find_one(
-        {"user_id": p["user_id"]}, {"_id": 0, "name": 1, "picture": 1},
+        {"user_id": p["user_id"]}, {"_id": 0, "name": 1, "picture": 1, "referral_code": 1},
     ) or {}
     # Log the view (fire-and-forget). We store referrer + coarse user-agent
     # bucket, never the IP or fingerprint — this is aggregate analytics for
@@ -1291,6 +1293,7 @@ async def public_video(slug: str, request: Request):
                     "subtitle": s.get("subtitle"), "image_url": s.get("image_url")}
                    for s in (p.get("scenes") or [])],
         "creator_name": creator.get("name") or "An AI Video Studio creator",
+        "creator_ref_code": creator.get("referral_code"),
         "view_count": (p.get("share_view_count") or 0) + 1,
     }
 

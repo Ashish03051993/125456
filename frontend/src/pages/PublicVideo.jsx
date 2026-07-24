@@ -1,14 +1,16 @@
 import { useEffect, useState, useMemo } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useSearchParams } from "react-router-dom";
 import axios from "axios";
-import { Video, Sparkles, Loader2, Eye, Play, PlayCircle } from "lucide-react";
+import { Video, Sparkles, Loader2, Eye, Play, PlayCircle, Gift } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { track } from "@/lib/analytics";
 
 const API = process.env.REACT_APP_BACKEND_URL;
+const PENDING_REF_KEY = "avs_pending_referral";
 
 export default function PublicVideo() {
   const { slug } = useParams();
+  const [search] = useSearchParams();
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
 
@@ -24,6 +26,22 @@ export default function PublicVideo() {
     })();
     return () => { alive = false; };
   }, [slug]);
+
+  // Pick the effective referral code: URL `?ref=` beats the creator's own
+  // fallback code. Whichever wins, we persist it so it survives navigation
+  // through login → signup pages (the signup page reads it for the bonus).
+  const refCode = useMemo(() => {
+    const urlRef = (search.get("ref") || "").trim().toUpperCase();
+    const fallback = (data?.creator_ref_code || "").trim().toUpperCase();
+    return urlRef || fallback || null;
+  }, [search, data]);
+
+  useEffect(() => {
+    if (!refCode) return;
+    try { localStorage.setItem(PENDING_REF_KEY, refCode); } catch {}
+  }, [refCode]);
+
+  const signupHref = refCode ? `/signup?ref=${encodeURIComponent(refCode)}` : "/signup";
 
   const videoSrc = useMemo(() => {
     if (!data?.video_url) return null;
@@ -66,7 +84,7 @@ export default function PublicVideo() {
             </div>
             <div className="font-heading font-extrabold text-lg tracking-tight">AI Video<span className="text-brand-500">Studio</span></div>
           </Link>
-          <Link to="/signup" data-testid="topbar-signup">
+          <Link to={signupHref} data-testid="topbar-signup">
             <Button className="rounded-full bg-brand-600 hover:bg-brand-700 text-white px-4 sm:px-5 h-9 text-sm font-semibold">
               <Sparkles className="w-3.5 h-3.5 mr-1.5" /> Make yours free
             </Button>
@@ -114,18 +132,26 @@ export default function PublicVideo() {
         </div>
 
         {/* Made-with-AI-Video-Studio CTA ribbon */}
-        <div className="mt-10 rounded-2xl bg-gradient-to-r from-brand-600 to-indigo-600 p-6 sm:p-8 shadow-lg shadow-brand-900/30">
+        <div className="mt-10 rounded-2xl bg-gradient-to-r from-brand-600 to-indigo-600 p-6 sm:p-8 shadow-lg shadow-brand-900/30" data-testid="hero-cta-ribbon">
+          {refCode && (
+            <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur px-3 py-1 text-[11px] font-bold text-white uppercase tracking-widest border border-white/20"
+                 data-testid="invite-chip">
+              <Gift className="w-3.5 h-3.5" /> You&apos;ve been invited by {data.creator_name} — claim 3 free credits
+            </div>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="min-w-0">
               <div className="text-xs uppercase tracking-widest text-white/70 font-bold">Made with</div>
               <div className="mt-1 font-heading text-2xl sm:text-3xl font-black tracking-tighter">AI Video Studio</div>
               <p className="text-white/80 text-sm mt-2 max-w-lg">
-                Turn any topic into a polished video — approve the script, the visuals and the voice, then download in seconds. Your first 30-second video is on us, every month.
+                {refCode
+                  ? "Turn any topic into a polished video — script, visuals, voice — all approved by you. Sign up with this invite and start with 3 bonus credits on the house."
+                  : "Turn any topic into a polished video — approve the script, the visuals and the voice, then download in seconds. Your first 30-second video is on us, every month."}
               </p>
             </div>
-            <Link to="/signup" data-testid="hero-cta-signup">
+            <Link to={signupHref} data-testid="hero-cta-signup">
               <Button className="rounded-full bg-white text-brand-700 hover:bg-white/90 h-12 px-6 font-bold shadow-lg">
-                <Sparkles className="w-4 h-4 mr-2" /> Create yours free
+                <Sparkles className="w-4 h-4 mr-2" /> {refCode ? "Claim my 3 credits" : "Create yours free"}
               </Button>
             </Link>
           </div>
