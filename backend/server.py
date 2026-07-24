@@ -273,6 +273,34 @@ async def require_admin(user=Depends(current_user)):
     return user
 
 
+# --------------------------- Admin ops: self-heal dependencies ---------------------------
+@api.post("/admin/repair/ffmpeg")
+async def admin_repair_ffmpeg(user=Depends(require_admin)):
+    """Admin-only self-heal: reinstall ffmpeg via apt-get. Solves the recurring
+    'ffmpeg drops from container on restart' issue without needing a shell.
+    Times out at 90s so it never hangs the API.
+    """
+    import shutil, subprocess
+    if shutil.which("ffmpeg"):
+        return {"status": "already_installed", "path": shutil.which("ffmpeg")}
+    try:
+        proc = subprocess.run(
+            ["apt-get", "install", "-y", "ffmpeg"],
+            capture_output=True, text=True, timeout=90,
+            env={**os.environ, "DEBIAN_FRONTEND": "noninteractive"},
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(504, "apt-get timed out after 90s")
+    except Exception as e:
+        raise HTTPException(500, f"Repair failed: {e}")
+    installed = shutil.which("ffmpeg")
+    if proc.returncode != 0 or not installed:
+        logger.error(f"ffmpeg repair failed rc={proc.returncode} stderr={proc.stderr[-400:]}")
+        raise HTTPException(500, f"apt-get failed: {proc.stderr[-200:] or 'unknown error'}")
+    logger.info(f"ffmpeg reinstalled by admin {user.get('email')} — path={installed}")
+    return {"status": "installed", "path": installed, "stdout_tail": proc.stdout[-200:]}
+
+
 # --------------------------- Auth routes ---------------------------
 class SessionIn(BaseModel):
     session_id: str

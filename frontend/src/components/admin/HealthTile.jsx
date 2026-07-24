@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Activity, CheckCircle2, XCircle, AlertTriangle, Loader2 } from "lucide-react";
+import { Activity, CheckCircle2, XCircle, AlertTriangle, Loader2, Wrench } from "lucide-react";
+import { api } from "@/lib/api";
+import { toast } from "sonner";
 
 // Live system health tile — polls /api/health every 15s and shows overall status
 // + individual dependency checks + response time. Uses raw fetch (not the axios
@@ -19,6 +21,7 @@ function Dot({ status }) {
 
 export default function HealthTile() {
   const [state, setState] = useState({ loading: true });
+  const [repairing, setRepairing] = useState(false);
   const timerRef = useRef(null);
 
   const poll = async () => {
@@ -53,6 +56,21 @@ export default function HealthTile() {
     timerRef.current = setInterval(poll, POLL_MS);
     return () => clearInterval(timerRef.current);
   }, []);
+
+  const repairFfmpeg = async () => {
+    setRepairing(true);
+    try {
+      const { data } = await api.post("/admin/repair/ffmpeg");
+      toast.success("ffmpeg repaired", { description: `Status: ${data.status} · path: ${data.path}` });
+      poll(); // refresh the tile immediately
+    } catch (e) {
+      toast.error("Repair failed", { description: e?.response?.data?.detail || e.message });
+    } finally {
+      setRepairing(false);
+    }
+  };
+
+  const ffmpegBroken = !state.loading && state.checks?.ffmpeg && state.checks.ffmpeg !== "ok";
 
   const badgeStyles =
     state.status === "ok"
@@ -117,8 +135,20 @@ export default function HealthTile() {
       )}
 
       {state.at && (
-        <div className="mt-3 text-[10px] text-ink-400 font-mono">
-          Last checked {state.at.toLocaleTimeString()} · polls every {POLL_MS / 1000}s
+        <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-[10px] text-ink-400 font-mono">
+            Last checked {state.at.toLocaleTimeString()} · polls every {POLL_MS / 1000}s
+          </div>
+          {ffmpegBroken && (
+            <button
+              onClick={repairFfmpeg}
+              disabled={repairing}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold rounded-full border border-brand-600 text-brand-700 bg-white hover:bg-brand-50 px-3 py-1.5 disabled:opacity-50"
+              data-testid="admin-health-repair-ffmpeg">
+              {repairing ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Repairing…</>
+                         : <><Wrench className="w-3.5 h-3.5" /> Repair ffmpeg</>}
+            </button>
+          )}
         </div>
       )}
     </div>
