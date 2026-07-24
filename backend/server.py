@@ -24,7 +24,7 @@ import bcrypt
 import httpx
 from dotenv import load_dotenv
 from emergentintegrations.llm.chat import LlmChat, UserMessage
-from emergentintegrations.llm.openai import OpenAITextToSpeech
+from emergentintegrations.llm.openai import OpenAITextToSpeech, OpenAIVideoGeneration
 from fastapi import (APIRouter, BackgroundTasks, Cookie, Depends, FastAPI,
                      File, Form, Header, HTTPException, Request, UploadFile)
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -1621,6 +1621,98 @@ async def regenerate_single_image(pid: str, idx: int, user=Depends(current_user)
     return await db.projects.find_one({"id": pid}, {"_id": 0})
 
 
+# --------------------------- Sora 2 "Animate scene" endpoint ---------------------------
+async def _run_animate_scene(project_id: str, scene_idx: int):
+    """Background worker: turns a still image into a Sora-generated animated clip.
+    On failure, refunds the credit charge so the user is never overcharged."""
+    proj = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not proj:
+        return
+    scenes = proj.get("scenes") or []
+    if scene_idx < 0 or scene_idx >= len(scenes):
+        return
+    sc = scenes[scene_idx]
+    img_path = STORAGE_DIR / "images" / project_id / f"s{scene_idx}.png"
+    out_dir = STORAGE_DIR / "videos"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{project_id}_scene_{scene_idx}.mp4"
+    try:
+        await _generate_animated_scene(
+            prompt=sc.get("image_prompt") or sc.get("heading") or "cinematic scene",
+            image_path=img_path,
+            out_path=out_path,
+        )
+        # Mark scene as animated
+        import time as _t
+        scenes = (await db.projects.find_one({"id": project_id}, {"_id": 0})).get("scenes") or []
+        scenes[scene_idx] = {
+            **scenes[scene_idx],
+            "animated_clip_url": f"/api/media/videos/{project_id}_scene_{scene_idx}.mp4?v={int(_t.time())}",
+            "animating": False,
+        }
+        await db.projects.update_one({"id": project_id}, {"$set": {"scenes": scenes}})
+        logger.info("Sora animated scene ready: %s idx=%d", project_id, scene_idx)
+    except Exception as e:
+        logger.exception("Sora animate failed for %s scene %d", project_id, scene_idx)
+        # Refund the credit charge
+        await db.users.update_one({"user_id": proj["user_id"]},
+                                  {"$inc": {"credits": ANIMATED_SCENE_CREDIT_COST}})
+        # Clear the animating flag + surface error on the scene
+        scenes_now = (await db.projects.find_one({"id": project_id}, {"_id": 0})).get("scenes") or []
+        if scene_idx < len(scenes_now):
+            scenes_now[scene_idx] = {**scenes_now[scene_idx], "animating": False,
+                                     "animate_error": str(e)[:200]}
+            await db.projects.update_one({"id": project_id}, {"$set": {"scenes": scenes_now}})
+
+
+@api.post("/projects/{pid}/scenes/{idx}/animate")
+async def animate_scene(pid: str, idx: int, bg: BackgroundTasks, user=Depends(current_user)):
+    """Charge credits and queue a Sora 2 job that turns the approved scene image
+    into a 4-second animated clip. Once done, the final video uses the animated
+    clip instead of a Ken-Burns pan for that scene."""
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    if p["status"] != "awaiting_image_approval":
+        raise HTTPException(400, f"Scenes only animatable while awaiting image approval (got '{p['status']}').")
+    scenes = p.get("scenes") or []
+    if idx < 0 or idx >= len(scenes):
+        raise HTTPException(400, "Invalid scene index")
+    sc = scenes[idx]
+    if sc.get("animating"):
+        raise HTTPException(409, "Scene is already being animated")
+    # Credit check + atomic deduction
+    u = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
+    if (u.get("credits", 0) or 0) < ANIMATED_SCENE_CREDIT_COST:
+        raise HTTPException(402, f"Not enough credits. Animating a scene costs {ANIMATED_SCENE_CREDIT_COST} credits.")
+    r = await db.users.update_one(
+        {"user_id": user["user_id"], "credits": {"$gte": ANIMATED_SCENE_CREDIT_COST}},
+        {"$inc": {"credits": -ANIMATED_SCENE_CREDIT_COST}},
+    )
+    if r.modified_count == 0:
+        raise HTTPException(402, "Credit deduction failed (race condition).")
+    # Mark scene as animating and drop any prior clip so UI shows spinner
+    scenes[idx] = {**scenes[idx], "animating": True, "animate_error": None,
+                   "animated_clip_url": None}
+    await db.projects.update_one({"id": pid}, {"$set": {"scenes": scenes}})
+    bg.add_task(_run_animate_scene, pid, idx)
+    return {"ok": True, "credits_charged": ANIMATED_SCENE_CREDIT_COST}
+
+
+@api.delete("/projects/{pid}/scenes/{idx}/animate")
+async def remove_scene_animation(pid: str, idx: int, user=Depends(current_user)):
+    """Revert an animated scene back to the still image (no credit refund —
+    the Sora generation already happened). Useful if the user didn't like the
+    animated result."""
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    scenes = p.get("scenes") or []
+    if idx < 0 or idx >= len(scenes):
+        raise HTTPException(400, "Invalid scene index")
+    scenes[idx] = {**scenes[idx], "animated_clip_url": None, "animate_error": None}
+    await db.projects.update_one({"id": pid}, {"$set": {"scenes": scenes}})
+    return await db.projects.find_one({"id": pid}, {"_id": 0})
+
+
 @api.post("/projects/{pid}/images/regenerate")
 async def regenerate_all_images(pid: str, bg: BackgroundTasks, user=Depends(current_user)):
     """Regenerate every scene's image (rare — user hated all of them)."""
@@ -2592,6 +2684,35 @@ async def _generate_image(prompt: str, out_path: Path):
     out_path.write_bytes(base64.b64decode(images[0]["data"]))
 
 
+# --------------------------- Sora 2 animated-scene generation ---------------------------
+# Uses OpenAIVideoGeneration from emergentintegrations, routed via the Emergent
+# Universal LLM Key (no separate OpenAI wallet). Sora 2 supports 4s / 8s / 12s
+# clips at 720p/1024p. We use the approved scene image as the first frame so the
+# animation stays visually consistent with the storyboard the user already OK'd.
+ANIMATED_SCENE_DURATION = 4      # seconds — cheapest Sora tier
+ANIMATED_SCENE_CREDIT_COST = 5   # user-facing app credits per animated scene
+
+
+async def _generate_animated_scene(prompt: str, image_path: Path, out_path: Path,
+                                   duration: int = ANIMATED_SCENE_DURATION):
+    """Blocking Sora call runs in a thread — never on the event loop."""
+    def _run():
+        gen = OpenAIVideoGeneration(api_key=EMERGENT_LLM_KEY)
+        video_bytes = gen.text_to_video(
+            prompt=f"Cinematic 16:9. {prompt}",
+            model="sora-2",
+            size="1280x720",
+            duration=duration,
+            image_path=str(image_path) if image_path.exists() else None,
+            mime_type="image/png",
+            max_wait_time=300,
+        )
+        if not video_bytes:
+            raise RuntimeError("Sora 2 returned no video bytes")
+        out_path.write_bytes(video_bytes)
+    await asyncio.to_thread(_run)
+
+
 async def _generate_tts(text: str, voice: str, out_path: Path):
     tts = OpenAITextToSpeech(api_key=EMERGENT_LLM_KEY)
     audio_bytes = await tts.generate_speech(text=text, model="tts-1",
@@ -2628,22 +2749,49 @@ def _ffmpeg_compose_format(project_id: str, fmt_id: str, spec: dict,
                            scenes: list, images: list,
                            audio_path: Path, out_path: Path,
                            total_duration: float, language: str = "English"):
-    """Compose a single output MP4 for one aspect-ratio format spec."""
+    """Compose a single output MP4 for one aspect-ratio format spec.
+
+    If a scene has `animated_clip_url` set (from Sora 2), that clip is used
+    instead of the Ken-Burns pan on the still image — trimmed / scaled to the
+    scene's audio-timed slice and given the same subtitle overlay.
+    """
     per = total_duration / max(len(images), 1)
     tmp_dir = STORAGE_DIR / "videos" / f"tmp_{project_id}_{fmt_id}"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     clips = []
-    from formats import build_scene_vf
+    from formats import build_scene_vf, font_for_language
+    w, h = spec["width"], spec["height"]
+    box_h = spec["subtitle_box_height"]
+    y_off = spec["subtitle_y_offset"]
+    font_sz = spec["subtitle_font"]
+    font_path = font_for_language(language)
     for i, (img, sc) in enumerate(zip(images, scenes)):
         clip = tmp_dir / f"c{i}.mp4"
         sub = _wrap_text(sc.get("subtitle", ""), width=spec.get("subtitle_wrap_chars", 34))
         sub_esc = sub.replace(":", "\\:").replace("'", "\u2019")
-        vf = build_scene_vf(spec, per, sub_esc, language=language)
-        subprocess.run([
-            "ffmpeg", "-y", "-loop", "1", "-i", str(img), "-t", f"{per:.2f}",
-            "-vf", vf, "-r", "30", "-pix_fmt", "yuv420p",
-            "-c:v", "libx264", "-preset", "veryfast", str(clip)
-        ], check=True, capture_output=True)
+        animated_clip = STORAGE_DIR / "videos" / f"{project_id}_scene_{i}.mp4"
+        if sc.get("animated_clip_url") and animated_clip.exists():
+            # Loop the Sora clip to fill the scene's audio slice, then overlay caption.
+            vf_animated = (
+                f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},"
+                f"drawbox=y=ih-{box_h}:color=black@0.55:width=iw:height={box_h}:t=fill,"
+                f"drawtext=fontfile={font_path}:"
+                f"text='{sub_esc}':fontcolor=white:fontsize={font_sz}:"
+                f"x=(w-text_w)/2:y=h-{y_off}"
+            )
+            subprocess.run([
+                "ffmpeg", "-y", "-stream_loop", "-1", "-i", str(animated_clip),
+                "-t", f"{per:.2f}", "-vf", vf_animated,
+                "-r", "30", "-pix_fmt", "yuv420p",
+                "-c:v", "libx264", "-preset", "veryfast", "-an", str(clip)
+            ], check=True, capture_output=True)
+        else:
+            vf = build_scene_vf(spec, per, sub_esc, language=language)
+            subprocess.run([
+                "ffmpeg", "-y", "-loop", "1", "-i", str(img), "-t", f"{per:.2f}",
+                "-vf", vf, "-r", "30", "-pix_fmt", "yuv420p",
+                "-c:v", "libx264", "-preset", "veryfast", str(clip)
+            ], check=True, capture_output=True)
         clips.append(clip)
 
     concat_txt = tmp_dir / "list.txt"

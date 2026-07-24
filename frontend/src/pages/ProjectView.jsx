@@ -43,7 +43,7 @@ export default function ProjectView() {
     };
     load();
     const iv = setInterval(() => {
-      if (p?.status === "generating") load();
+      if (p?.status === "generating" || (p?.scenes || []).some((s) => s.animating)) load();
     }, 3000);
     return () => { alive = false; clearInterval(iv); };
   }, [id, p?.status]);
@@ -164,6 +164,29 @@ export default function ProjectView() {
       setP(data);
     } catch (e) { toast.error(e?.response?.data?.detail || "Approve failed"); }
     finally { setImgAllBusy(false); }
+  };
+
+  // --- Sora 2 animated-scene handlers ---
+  const animateScene = async (idx) => {
+    try {
+      const { data } = await api.post(`/projects/${id}/scenes/${idx}/animate`);
+      toast.success(`Animating scene ${idx + 1} — ${data.credits_charged} credits`, {
+        description: "This takes 1–3 minutes. You can leave the page.",
+      });
+      const { data: fresh } = await api.get(`/projects/${id}`);
+      setP(fresh);
+    } catch (e) {
+      const status = e?.response?.status;
+      if (status !== 402) toast.error(e?.response?.data?.detail || "Couldn't start animation");
+    }
+  };
+
+  const removeAnimation = async (idx) => {
+    try {
+      const { data } = await api.delete(`/projects/${id}/scenes/${idx}/animate`);
+      setP(data);
+      toast.success(`Scene ${idx + 1} reverted to still image`);
+    } catch (e) { toast.error(e?.response?.data?.detail || "Couldn't revert scene"); }
   };
 
   // --- Voice approval handlers ---
@@ -475,30 +498,67 @@ export default function ProjectView() {
                 {(p.scenes || []).map((sc) => (
                   <div key={sc.idx} className="bg-white border border-ink-200 rounded-2xl overflow-hidden" data-testid={`img-scene-${sc.idx}`}>
                     <div className="aspect-video bg-ink-100 relative">
-                      {sc.image_url ? (
+                      {sc.animated_clip_url ? (
+                        <video src={`${process.env.REACT_APP_BACKEND_URL}${sc.animated_clip_url}`}
+                               className="w-full h-full object-cover"
+                               autoPlay muted loop playsInline
+                               data-testid={`animated-preview-${sc.idx}`} />
+                      ) : sc.image_url ? (
                         <img src={`${process.env.REACT_APP_BACKEND_URL}${sc.image_url}`} alt={sc.heading}
                              className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-ink-400"><ImageIcon className="w-8 h-8" /></div>
                       )}
                       <div className="absolute bottom-2 left-2 bg-black/70 text-white text-[11px] px-2 py-1 rounded font-mono">Scene {sc.idx + 1}</div>
-                      {imgBusy[sc.idx] && (
-                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                          <Loader2 className="w-6 h-6 text-white animate-spin" />
+                      {sc.animated_clip_url && (
+                        <div className="absolute top-2 left-2 bg-brand-600 text-white text-[10px] px-2 py-0.5 rounded-full font-semibold tracking-wide">
+                          ✨ ANIMATED
+                        </div>
+                      )}
+                      {(imgBusy[sc.idx] || sc.animating) && (
+                        <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-white gap-1">
+                          <Loader2 className="w-6 h-6 animate-spin" />
+                          {sc.animating && <div className="text-[11px] font-medium">Generating animation (1–3 min)…</div>}
                         </div>
                       )}
                     </div>
-                    <div className="p-3 flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="text-xs font-semibold text-ink-700 truncate">{sc.heading}</div>
-                        <div className="text-[11px] text-ink-400 mt-0.5 line-clamp-2">{sc.image_prompt}</div>
+                    <div className="p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-ink-700 truncate">{sc.heading}</div>
+                          <div className="text-[11px] text-ink-400 mt-0.5 line-clamp-2">{sc.image_prompt}</div>
+                        </div>
+                        <Button size="sm" variant="outline"
+                          onClick={() => regenerateOneImage(sc.idx)} disabled={imgBusy[sc.idx] || imgAllBusy || sc.animating}
+                          className="rounded-full text-xs shrink-0"
+                          data-testid={`img-regen-${sc.idx}`}>
+                          <RefreshCw className="w-3.5 h-3.5 mr-1" /> Regen
+                        </Button>
                       </div>
-                      <Button size="sm" variant="outline"
-                        onClick={() => regenerateOneImage(sc.idx)} disabled={imgBusy[sc.idx] || imgAllBusy}
-                        className="rounded-full text-xs shrink-0"
-                        data-testid={`img-regen-${sc.idx}`}>
-                        <RefreshCw className="w-3.5 h-3.5 mr-1" /> Regen
-                      </Button>
+                      {sc.animate_error && (
+                        <div className="mt-2 text-[11px] text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">
+                          Animation failed: {sc.animate_error}
+                        </div>
+                      )}
+                      <div className="mt-2 flex items-center gap-2">
+                        {sc.animated_clip_url ? (
+                          <Button size="sm" variant="ghost"
+                            onClick={() => removeAnimation(sc.idx)}
+                            disabled={imgAllBusy || sc.animating}
+                            className="rounded-full text-[11px] text-ink-500 hover:text-red-600"
+                            data-testid={`animate-remove-${sc.idx}`}>
+                            <X className="w-3 h-3 mr-1" /> Revert to still
+                          </Button>
+                        ) : (
+                          <Button size="sm"
+                            onClick={() => animateScene(sc.idx)}
+                            disabled={imgBusy[sc.idx] || imgAllBusy || sc.animating}
+                            className="rounded-full text-[11px] bg-gradient-to-r from-purple-600 to-brand-600 hover:from-purple-700 hover:to-brand-700 text-white"
+                            data-testid={`animate-scene-${sc.idx}`}>
+                            ✨ Animate • 5 cr
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
