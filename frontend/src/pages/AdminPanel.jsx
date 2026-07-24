@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, LineChart, Line } from "recharts";
 import UtmLinksTab from "@/pages/admin/UtmLinksTab";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import HealthTile from "@/components/admin/HealthTile";
 
 const TABS = [
   { id: "overview",   label: "Overview",    icon: BarChart3 },
@@ -196,6 +197,7 @@ export default function AdminPanel() {
           {/* Overview */}
           {activeTab === "overview" && stats && (
             <div className="mt-6 space-y-6">
+              <HealthTile />
               <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatCard label="Waitlist" value={stats.waitlist_total} icon={Mail} testid="stat-waitlist" />
                 <StatCard label="Signups · 24h" value={stats.waitlist_24h} icon={TrendingUp} testid="stat-signups-24h" />
