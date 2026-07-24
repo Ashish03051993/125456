@@ -61,6 +61,7 @@ export default function AdminPanel() {
   const [stats, setStats] = useState(null);
   const [waitlist, setWaitlist] = useState(null);
   const [analytics, setAnalytics] = useState(null);
+  const [cohorts, setCohorts] = useState(null);
   const [experiments, setExperiments] = useState(null);
   const [attribution, setAttribution] = useState(null);
   const [sanity, setSanity] = useState(null);
@@ -82,7 +83,7 @@ export default function AdminPanel() {
       if (sourceFilter)  wParams.source = sourceFilter;
       if (planFilter)    wParams.plan = planFilter;
       if (variantFilter) wParams.variant = variantFilter;
-      const [s, w, a, e, matrix, san, d, dc, dp] = await Promise.all([
+      const [s, w, a, e, matrix, san, d, dc, dp, coh] = await Promise.all([
         api.get("/admin/stats"),
         api.get("/admin/waitlist", { params: wParams }),
         api.get("/admin/analytics"),
@@ -92,12 +93,14 @@ export default function AdminPanel() {
         api.get("/admin/digest"),
         api.get("/admin/digest/config"),
         api.get("/admin/digest/preview"),
+        api.get("/admin/analytics/cohorts", { params: { weeks: 8 } }),
       ]);
       setStats(s.data); setWaitlist(w.data); setAnalytics(a.data);
       setExperiments(e.data); setAttribution(matrix.data);
       setSanity(san.data);
       setDigestList(d.data);
       setDigestConfig(dc.data); setDigestPreview(dp.data);
+      setCohorts(coh.data);
     } catch { toast.error("Could not load admin data"); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [sourceFilter, planFilter, variantFilter]);
@@ -590,6 +593,77 @@ export default function AdminPanel() {
                   </table>
                 </div>
               </div>
+
+              {/* Cohort Retention — signup-week activation + engagement */}
+              {cohorts && (
+                <div className="bg-white border border-ink-200 rounded-2xl p-6" data-testid="cohorts-section">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div>
+                      <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">Signup-week cohorts</div>
+                      <div className="font-heading font-bold text-xl mt-1">Retention &amp; activation by cohort</div>
+                      <p className="text-sm text-ink-500 mt-1 max-w-xl">
+                        For each of the last 8 weeks: how many new users signed up,
+                        how many created at least one project, and how many published a share link.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-4 text-right shrink-0">
+                      <div>
+                        <div className="text-2xl font-heading font-black text-brand-700" data-testid="cohorts-total-activated-pct">{cohorts.totals.activated_pct}%</div>
+                        <div className="text-[10px] uppercase tracking-widest text-ink-500 font-semibold">All-time activation</div>
+                      </div>
+                      <div className="w-px h-8 bg-ink-200" />
+                      <div>
+                        <div className="text-2xl font-heading font-black text-emerald-600" data-testid="cohorts-total-shared-pct">{cohorts.totals.shared_pct}%</div>
+                        <div className="text-[10px] uppercase tracking-widest text-ink-500 font-semibold">Shared a video</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="text-left text-xs uppercase tracking-widest text-ink-500 border-b border-ink-200">
+                        <tr>
+                          <th className="px-4 py-2">Week starting</th>
+                          <th className="px-4 py-2 text-right">Signups</th>
+                          <th className="px-4 py-2 text-right">Activated</th>
+                          <th className="px-4 py-2 text-right">Activation %</th>
+                          <th className="px-4 py-2 text-right">Shared</th>
+                          <th className="px-4 py-2 text-right">Share %</th>
+                        </tr>
+                      </thead>
+                      <tbody data-testid="cohorts-table-body">
+                        {cohorts.weeks.map((w) => (
+                          <tr key={w.week_start} className="border-b border-ink-100 last:border-b-0" data-testid={`cohort-row-${w.week_start}`}>
+                            <td className="px-4 py-3 font-mono text-xs">{w.week_start}</td>
+                            <td className="px-4 py-3 text-right font-mono">{w.signups}</td>
+                            <td className="px-4 py-3 text-right font-mono">{w.activated}</td>
+                            <td className="px-4 py-3 text-right font-mono font-semibold text-brand-700">{w.activated_pct}%</td>
+                            <td className="px-4 py-3 text-right font-mono">{w.shared}</td>
+                            <td className="px-4 py-3 text-right font-mono font-semibold text-emerald-700">{w.shared_pct}%</td>
+                          </tr>
+                        ))}
+                        {cohorts.weeks.every((w) => w.signups === 0) && (
+                          <tr><td colSpan={6} className="px-4 py-8 text-center text-ink-400">No signups in the tracked window yet.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-4 h-56">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={cohorts.weeks}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#eef2ff" />
+                        <XAxis dataKey="week_start" tick={{ fontSize: 10 }} />
+                        <YAxis allowDecimals={false} />
+                        <Tooltip />
+                        <Bar dataKey="signups" fill="#c7d2fe" name="Signups" />
+                        <Bar dataKey="activated" fill="#6366f1" name="Activated" />
+                        <Bar dataKey="shared" fill="#10b981" name="Shared" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

@@ -714,7 +714,7 @@ async def _send_reset_email(email: str, name: str, reset_url: str) -> str:
                 headers={"Authorization": f"Bearer {resend_key}",
                          "Content-Type": "application/json"},
                 json={
-                    "from": os.environ.get("RESEND_FROM", "noreply@kadenza.app"),
+                    "from": os.environ.get("RESEND_FROM", "onboarding@resend.dev"),
                     "to": [email],
                     "subject": "Reset your AI Video Studio password",
                     "html": f"""<div style="font-family:sans-serif;max-width:520px;margin:0 auto">
@@ -2322,6 +2322,86 @@ async def admin_stats(_admin=Depends(require_admin)):
             "top_referrers": top_referrers,
         },
     }
+
+
+@api.get("/admin/analytics/cohorts")
+async def admin_cohorts(_admin=Depends(require_admin), weeks: int = 8):
+    """Signup-week cohorts with activation + engagement rates. For each of the
+    last `weeks` (default 8) ISO weeks, returns:
+    - signups: number of new users created that week
+    - activated: how many of them created ≥1 project
+    - shared: how many of them published a video (share_enabled=True)
+    Percentages are computed defensively (0 signups → 0%)."""
+    weeks = max(1, min(int(weeks or 8), 26))  # 1..26 range
+    now = datetime.now(timezone.utc)
+    # ISO week starts Monday. Anchor to Monday of current week UTC.
+    anchor_monday = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    windows = []
+    for i in range(weeks - 1, -1, -1):
+        start = anchor_monday - timedelta(days=7 * i)
+        end = start + timedelta(days=7)
+        windows.append((start, end))
+
+    # Load users with created_at + user_id only (cheap projection)
+    users_cur = db.users.find({}, {"_id": 0, "user_id": 1, "created_at": 1})
+    users = []
+    async for u in users_cur:
+        ca = u.get("created_at")
+        if isinstance(ca, str):
+            try:
+                dt = datetime.fromisoformat(ca.replace("Z", "+00:00"))
+            except Exception:
+                continue
+        elif isinstance(ca, datetime):
+            dt = ca if ca.tzinfo else ca.replace(tzinfo=timezone.utc)
+        else:
+            continue
+        users.append((u["user_id"], dt))
+
+    # Bucket user IDs by cohort window
+    cohort_users = [set() for _ in windows]
+    for uid, dt in users:
+        for i, (s, e) in enumerate(windows):
+            if s <= dt < e:
+                cohort_users[i].add(uid)
+                break
+
+    # For each cohort, count activated (≥1 project) + shared (share_enabled)
+    result = []
+    for i, (s, e) in enumerate(windows):
+        signups = len(cohort_users[i])
+        activated = 0
+        shared = 0
+        if signups:
+            uids = list(cohort_users[i])
+            activated = len(await db.projects.distinct("user_id", {"user_id": {"$in": uids}}))
+            shared = len(await db.projects.distinct("user_id",
+                {"user_id": {"$in": uids}, "share_enabled": True}))
+        result.append({
+            "week_start": s.date().isoformat(),
+            "week_end": e.date().isoformat(),
+            "signups": signups,
+            "activated": activated,
+            "shared": shared,
+            "activated_pct": round((activated / signups) * 100, 1) if signups else 0.0,
+            "shared_pct": round((shared / signups) * 100, 1) if signups else 0.0,
+        })
+
+    totals_signups = sum(w["signups"] for w in result)
+    totals_activated = sum(w["activated"] for w in result)
+    totals_shared = sum(w["shared"] for w in result)
+    return {
+        "weeks": result,
+        "totals": {
+            "signups": totals_signups,
+            "activated": totals_activated,
+            "shared": totals_shared,
+            "activated_pct": round((totals_activated / totals_signups) * 100, 1) if totals_signups else 0.0,
+            "shared_pct": round((totals_shared / totals_signups) * 100, 1) if totals_signups else 0.0,
+        },
+    }
+
+
 
 
 # --------------------------- Media static ---------------------------
