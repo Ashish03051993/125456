@@ -28,6 +28,7 @@ export default function ProjectView() {
   // Share state
   const [shareOpen, setShareOpen] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
+  const [retryBusy, setRetryBusy] = useState(false);
   const [shareSlug, setShareSlug] = useState(null);
 
   useEffect(() => {
@@ -75,6 +76,22 @@ export default function ProjectView() {
       setDraftTitle(p.title || "");
     }
   }, [p?.status, p?.scenes, p?.title, editingScript]);
+
+  const retryGenerate = async () => {
+    setRetryBusy(true);
+    try {
+      await api.post(`/projects/${id}/generate`);
+      toast.success("Restarting generation…", { description: "This usually takes 1–3 minutes." });
+      const { data } = await api.get(`/projects/${id}`);
+      setP(data);
+    } catch (e) {
+      // Payment-required or insufficient-credit codes handled by the axios 402 interceptor's paywall modal
+      const status = e?.response?.status;
+      if (status !== 402) {
+        toast.error(e?.response?.data?.detail || "Couldn't restart — try again in a moment.");
+      }
+    } finally { setRetryBusy(false); }
+  };
 
   const regenerateScript = async () => {
     setScriptBusy(true);
@@ -388,12 +405,31 @@ export default function ProjectView() {
           )}
 
           {p.status === "error" && (
-            <div className="mt-6 bg-red-50 border border-red-200 rounded-2xl p-6 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
-              <div>
+            <div className="mt-6 bg-red-50 border border-red-200 rounded-2xl p-6 flex items-start gap-3" data-testid="error-panel">
+              <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
                 <div className="font-heading font-bold text-red-700">Generation failed</div>
-                <div className="text-sm text-red-600 mt-1">{p.error}</div>
-                <div className="text-xs text-ink-500 mt-2">Your credit was refunded. Try again from the dashboard.</div>
+                <div className="text-sm text-red-600 mt-1 break-words">{p.error}</div>
+                <div className="text-xs text-ink-500 mt-2">
+                  Your {p.credit_cost || 1} credit{(p.credit_cost || 1) > 1 ? "s were" : " was"} refunded.
+                  You can retry — the same topic and settings will be used.
+                </div>
+                <div className="mt-4 flex items-center gap-2 flex-wrap">
+                  <Button onClick={retryGenerate} disabled={retryBusy}
+                          className="rounded-full bg-red-600 hover:bg-red-700 text-white"
+                          data-testid="retry-generate-btn">
+                    {retryBusy ? (
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Retrying…</>
+                    ) : (
+                      <><RefreshCw className="w-4 h-4 mr-2" /> Retry generation</>
+                    )}
+                  </Button>
+                  <Link to="/dashboard">
+                    <Button variant="outline" className="rounded-full" data-testid="back-to-dashboard-btn">
+                      Back to dashboard
+                    </Button>
+                  </Link>
+                </div>
               </div>
             </div>
           )}
