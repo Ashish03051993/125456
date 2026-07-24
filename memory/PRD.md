@@ -27,8 +27,9 @@ Dashboard, credit system, projects, download, admin panel, pricing.
 - Blue & white professional theme (Canva/InVideo inspired)
 
 
-## Phase 14 (2026-02) — Welcome Banner (verified)
+## Phase 14 (2026-02) — Welcome Banner + Starter Templates
 - ✅ **Welcome Banner mounted + verified** — `<WelcomeBanner hasProjects={projects.length > 0} />` now renders on the Dashboard between `<LowCreditNudge />` and the projects list. Auto-hides once the user has any projects OR dismissed the banner (persisted in `localStorage['avs_welcome_dismissed_v1']`). Three-step guide (Topic → Approve → Download), CTA button routes to `/new` and dismisses. Test-ids `welcome-banner`, `welcome-cta-btn`, `welcome-step-1/2/3`, `welcome-dismiss`. Fixed missing JSX mount from previous session (import was present but component was never rendered). E2E verified via screenshot with a freshly-registered account.
+- ✅ **Starter Templates on empty dashboard** — new `<StarterTemplates />` component shows 4 curated one-click starters (Educational, Business, Storytelling, Cinematic) under the empty state. Clicking a card writes `{topic, style, fromTemplate:true, templateId}` to `avs_wizard_draft_v1` and navigates to `/new`. `ProjectWizard.jsx` now detects `fromTemplate` and shows a friendly *"Template loaded — tweak the topic or style, then generate"* toast instead of the generic "Draft restored". Removes the cold-start "what do I even ask for?" friction for new users. Test-ids `starter-templates`, `starter-template-{id}`. E2E verified: clicking Educational template lands wizard at `/new` with the 95-char topic pre-populated.
 
 ## Phase 13 (2026-02) — Launch Compliance + Wizard Draft-Save + Prod Hardening + Referrals
 - ✅ **Cookie Consent Banner mounted** — `<CookieConsent />` mounted globally in `App.js` (right below `<UpgradeModal />`). Appears 700ms after first paint (avoids CLS), stores choice in `localStorage['avs_cookie_consent_v1']` with `{necessary, analytics, at, v}`, broadcasts `cookie-consent:updated` event so downstream analytics layers can respect user choice. Verified: shows on first visit → hides on Accept/Only-Necessary → stays hidden across reload.

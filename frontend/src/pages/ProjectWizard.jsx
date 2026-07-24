@@ -87,7 +87,11 @@ export default function ProjectWizard() {
       if (d.voice) setVoice(d.voice);
       if (typeof d.dialogueMode === "boolean") setDialogueMode(d.dialogueMode);
       if (d.topic?.trim()) {
-        toast.info("Draft restored", { description: "Picked up where you left off — clear the topic to start fresh." });
+        if (d.fromTemplate) {
+          toast.success("Template loaded", { description: "Tweak the topic or style, then generate." });
+        } else {
+          toast.info("Draft restored", { description: "Picked up where you left off — clear the topic to start fresh." });
+        }
       }
     }
   }, []);

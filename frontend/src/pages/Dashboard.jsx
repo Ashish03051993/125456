@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, resolveMediaUrl } from "@/lib/api";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import WelcomeBanner from "@/components/WelcomeBanner";
+import StarterTemplates from "@/components/StarterTemplates";
 
 // Format catalogue for the download dropdown — id maps to keys in `video_urls`.
 const DOWNLOAD_FORMATS = [
@@ -189,14 +190,17 @@ export default function Dashboard() {
           {loading ? (
             <div className="mt-16 flex justify-center text-ink-500"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
           ) : projects.length === 0 ? (
-            <div className="mt-16 rounded-2xl border border-dashed border-ink-200 bg-white p-16 text-center">
-              <Video className="w-10 h-10 mx-auto text-ink-400" />
-              <div className="mt-4 font-heading font-bold text-xl">No videos yet</div>
-              <p className="mt-2 text-ink-500">Kick off your first generation — you have free credits waiting.</p>
-              <Link to="/new"><Button className="mt-6 rounded-full bg-brand-600 hover:bg-brand-700 text-white" data-testid="empty-new-btn">
-                <Plus className="w-4 h-4 mr-2" /> Create first video
-              </Button></Link>
-            </div>
+            <>
+              <div className="mt-16 rounded-2xl border border-dashed border-ink-200 bg-white p-12 text-center">
+                <Video className="w-10 h-10 mx-auto text-ink-400" />
+                <div className="mt-4 font-heading font-bold text-xl">No videos yet</div>
+                <p className="mt-2 text-ink-500">Kick off your first generation — you have free credits waiting.</p>
+                <Link to="/new"><Button className="mt-6 rounded-full bg-brand-600 hover:bg-brand-700 text-white" data-testid="empty-new-btn">
+                  <Plus className="w-4 h-4 mr-2" /> Create first video
+                </Button></Link>
+              </div>
+              <StarterTemplates />
+            </>
           ) : (
             <>
               {/* Search + status filter row */}
