@@ -364,7 +364,7 @@ async def auth_session(payload: SessionIn, response: Response):
             "picture": data.get("picture"),
             "role": role,
             "plan": "free",
-            "credits": 3,   # Free plan: 1 × 30-sec video / month (as designed)
+            "credits": FREE_MONTHLY_CREDITS,   # Free plan: 1 × 30-sec video / month
             "created_at": datetime.now(timezone.utc).isoformat(),
             "last_refill_at": datetime.now(timezone.utc).isoformat(),
         })
@@ -659,7 +659,7 @@ async def auth_register(payload: RegisterIn, request: Request, response: Respons
         "name": name,
         "role": "user",
         "plan": "free",
-        "credits": 3,
+        "credits": FREE_MONTHLY_CREDITS,
         "password_hash": _hash_password(payload.password),
         "created_at": now_iso,
         "last_refill_at": now_iso,
