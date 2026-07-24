@@ -36,14 +36,18 @@ export default function Signup() {
     if (user) navigate("/dashboard", { replace: true });
   }, [user, loading, navigate]);
 
-  // Pick up referral code from URL (?ref=ABC123) once on mount
+  // Pick up referral code — precedence: URL `?ref=` > localStorage (persisted
+  // by the public share page when the viewer opened /v/:slug). Cleared once
+  // signup succeeds so it doesn't leak into a future session.
   useEffect(() => {
     try {
       const q = new URLSearchParams(window.location.search);
-      const r = (q.get("ref") || "").trim().toUpperCase();
+      const urlRef = (q.get("ref") || "").trim().toUpperCase();
+      const stashed = (localStorage.getItem("avs_pending_referral") || "").trim().toUpperCase();
+      const r = urlRef || stashed;
       if (/^[A-Z0-9]{4,10}$/.test(r)) {
         setRefCode(r);
-        track("referral_landing", { code: r });
+        track("referral_landing", { code: r, source: urlRef ? "url" : "storage" });
       }
     } catch { /* ignore */ }
   }, []);
@@ -64,6 +68,7 @@ export default function Signup() {
         ...(refCode ? { referral_code: refCode } : {}),
       });
       setUser(data.user);
+      try { localStorage.removeItem("avs_pending_referral"); } catch {}
       track("signup_success", { method: "password", linked: !!data.linked, referred: !!data.referred_by });
       navigate("/dashboard", { replace: true });
     } catch (e2) {
