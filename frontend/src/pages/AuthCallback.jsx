@@ -6,7 +6,12 @@ import { useAuth } from "@/lib/auth";
 
 export function login() {
   // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
-  const redirectUrl = window.location.origin + "/auth/callback";
+  // BUT: strip the `.static.` subdomain — that host serves a CloudFront-cached
+  // JS bundle that lags behind the live dev server. Redirecting the OAuth
+  // callback to the non-static host guarantees fresh JS runs after Google
+  // sign-in, avoiding the "stale bundle → old sign-in bug" trap.
+  const origin = window.location.origin.replace(".static.emergentagent.com", ".emergentagent.com");
+  const redirectUrl = origin + "/auth/callback";
   window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
 }
 
