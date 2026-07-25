@@ -52,6 +52,7 @@ export default function ProjectWizard() {
   const [language, setLanguage] = useState("English");
   const [voice, setVoice] = useState("female");
   const [dialogueMode, setDialogueMode] = useState(false);
+  const [autoAnimate, setAutoAnimate] = useState(false);
   const [talkingHead, setTalkingHead] = useState(false);
   const [charSource, setCharSource] = useState(null);         // "upload" | "ai_generated"
   const [charImageUrl, setCharImageUrl] = useState(null);
@@ -220,11 +221,13 @@ export default function ProjectWizard() {
         await api.patch(`/projects/${pid}`, {
           topic, duration_sec: durationSec, style, language, voice,
           dialogue_mode: dialogueMode, talking_head: talkingHead,
+          auto_animate: autoAnimate,
         }).catch(() => {}); // PATCH may not exist yet — soft-fail so we still generate
       } else {
         const { data } = await api.post("/projects", {
           topic, duration_sec: durationSec, style, language, voice,
           dialogue_mode: dialogueMode, talking_head: talkingHead,
+          auto_animate: autoAnimate,
           character_image_url: charImageUrl || undefined,
         });
         pid = data.id;
@@ -372,11 +375,11 @@ export default function ProjectWizard() {
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <Label className="text-sm font-semibold text-ink-900">Character dialogue mode</Label>
+                      <Label className="text-sm font-semibold text-ink-900">Multi-voice dialogue (audio only)</Label>
                       <span className="text-[10px] uppercase tracking-widest font-bold text-brand-700 bg-brand-100 rounded-full px-2 py-0.5">Beta</span>
                     </div>
                     <p className="mt-1 text-xs text-ink-500">
-                      Instead of a single narrator, let characters in your video speak their own lines. Script will be written with named speakers (e.g. <span className="font-mono">Sarah:</span> and <span className="font-mono">Narrator:</span>) and different voices will be used per speaker.
+                      Instead of one narrator, the script is written with named speakers (e.g. <span className="font-mono">Sarah:</span> and <span className="font-mono">Narrator:</span>) and different voices are used per speaker. <strong className="text-ink-700">This changes audio only</strong> — for characters that visually speak on screen, also turn on <em>Animated scenes</em> below.
                     </p>
                   </div>
                   <button type="button"
@@ -386,6 +389,29 @@ export default function ProjectWizard() {
                     className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${dialogueMode ? "bg-brand-600" : "bg-ink-200"}`}
                     data-testid="dialogue-toggle">
                     <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${dialogueMode ? "translate-x-6" : "translate-x-1"}`} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Auto-animate with Sora 2 toggle */}
+              <div className={`rounded-xl border-2 p-4 ${autoAnimate ? "border-purple-500 bg-gradient-to-br from-purple-50 via-white to-brand-50" : "border-dashed border-purple-200 bg-purple-50/30"}`} data-testid="auto-animate-block">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Label className="text-sm font-semibold text-ink-900">✨ Animated scenes (Sora 2)</Label>
+                      <span className="text-[10px] uppercase tracking-widest font-bold text-white bg-gradient-to-r from-purple-600 to-brand-600 rounded-full px-2 py-0.5">Cinematic</span>
+                    </div>
+                    <p className="mt-1 text-xs text-ink-500">
+                      Every scene becomes a real animated 4-second cinematic clip via OpenAI's Sora 2 (not a still image with pan). <strong className="text-purple-700">Costs 5 extra credits per scene</strong> (usually 5–7 scenes per video). You can still turn this off on individual scenes during approval if you want to save credits.
+                    </p>
+                  </div>
+                  <button type="button"
+                    onClick={() => setAutoAnimate(v => !v)}
+                    role="switch"
+                    aria-checked={autoAnimate}
+                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${autoAnimate ? "bg-purple-600" : "bg-ink-200"}`}
+                    data-testid="auto-animate-toggle">
+                    <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${autoAnimate ? "translate-x-6" : "translate-x-1"}`} />
                   </button>
                 </div>
               </div>

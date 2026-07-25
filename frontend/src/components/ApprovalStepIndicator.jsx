@@ -1,25 +1,28 @@
-import { Check, Sparkles, Image as ImageIcon, Mic, Film } from "lucide-react";
+import { Check, Sparkles, Image as ImageIcon, Mic, Film, Layout } from "lucide-react";
 
-// Shared 4-step visualisation used in every approval gate (script → images →
-// voice → composing). Highlights the current step so users always know where
-// they are in the pipeline instead of getting a raw stage string.
+// Shared 5-step visualisation used in every approval gate:
+//   script → images → voice → compose → thumbnail → done.
+// Highlights the current step so users always know where they are in the
+// pipeline instead of getting a raw stage string.
 const STEPS = [
-  { id: "script",   label: "Script",   Icon: Sparkles },
-  { id: "images",   label: "Visuals",  Icon: ImageIcon },
-  { id: "voice",    label: "Voice",    Icon: Mic },
-  { id: "compose",  label: "Final",    Icon: Film },
+  { id: "script",    label: "Script",    Icon: Sparkles },
+  { id: "images",    label: "Visuals",   Icon: ImageIcon },
+  { id: "voice",     label: "Voice",     Icon: Mic },
+  { id: "compose",   label: "Compose",   Icon: Film },
+  { id: "thumbnail", label: "Thumbnail", Icon: Layout },
 ];
 
-// Map a project's `status` to the current step index. Anything post-compose
+// Map a project's `status` to the current step index. Anything post-thumbnail
 // counts as fully done (index === STEPS.length).
 export function currentStepIndex(status) {
   switch (status) {
-    case "awaiting_script_approval": return 0;
-    case "awaiting_image_approval":  return 1;
-    case "awaiting_voice_approval":  return 2;
-    case "generating":               return 3;
-    case "ready":                    return STEPS.length;
-    default:                         return 0;
+    case "awaiting_script_approval":    return 0;
+    case "awaiting_image_approval":     return 1;
+    case "awaiting_voice_approval":     return 2;
+    case "generating":                  return 3;
+    case "awaiting_thumbnail_approval": return 4;
+    case "ready":                       return STEPS.length;
+    default:                            return 0;
   }
 }
 

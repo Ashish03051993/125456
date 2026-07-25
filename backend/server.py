@@ -239,6 +239,7 @@ class CreateProjectIn(BaseModel):
     voice: str = "female"
     dialogue_mode: bool = False           # Character dialogue toggle
     talking_head: bool = False            # Realistic on-screen speaker (paid plans only)
+    auto_animate: bool = False            # Auto-animate every scene with Sora 2
     character_image_url: Optional[str] = None  # Pre-uploaded/generated character portrait
 
 
@@ -1083,6 +1084,9 @@ async def create_project(payload: CreateProjectIn, user=Depends(current_user)):
     )
     doc = project.model_dump()
     doc["created_at"] = doc["created_at"].isoformat()
+    # `auto_animate` isn't a persisted field on the Project model — keep it as a
+    # sidecar flag on the doc so run_after_image_approval can auto-trigger Sora.
+    doc["auto_animate"] = bool(payload.auto_animate)
     await db.projects.insert_one(doc)
     return await db.projects.find_one({"id": project.id}, {"_id": 0})
 
@@ -1186,6 +1190,7 @@ class ProjectPatchIn(BaseModel):
     voice: Optional[str] = None
     dialogue_mode: Optional[bool] = None
     talking_head: Optional[bool] = None
+    auto_animate: Optional[bool] = None
 
 
 @api.patch("/projects/{pid}")
@@ -1857,6 +1862,53 @@ async def approve_voice(pid: str, bg: BackgroundTasks, user=Depends(current_user
     )
     bg.add_task(run_after_voice_approval, pid)
     return {"ok": True}
+
+
+# --------------------------- Guided Approval Endpoints (Batch 5: Thumbnail) ---------------------------
+class ThumbRegenIn(BaseModel):
+    seek_t: Optional[float] = None   # seconds into the video; None = auto (1s / middle)
+
+
+async def _run_thumbnail_regen(pid: str, seek_t: Optional[float]):
+    proj = await db.projects.find_one({"id": pid}, {"_id": 0})
+    if not proj: return
+    primary_url = proj.get("video_url") or (proj.get("video_urls") or {}).get("landscape")
+    if not primary_url: return
+    audio_path = STORAGE_DIR / "audio" / f"{pid}.mp3"
+    dur = _ffprobe_duration(audio_path) if audio_path.exists() else 30.0
+    new_url = await _extract_thumbnail(pid, primary_url, dur, seek_t=seek_t)
+    await db.projects.update_one({"id": pid}, {"$set": {
+        "thumbnail_url": new_url or proj.get("thumbnail_url"),
+        "thumbnail_regen_at": datetime.now(timezone.utc).isoformat(),
+    }})
+
+
+@api.post("/projects/{pid}/thumbnail/regenerate")
+async def regenerate_thumbnail(pid: str, payload: ThumbRegenIn, user=Depends(current_user)):
+    """Regenerate the thumbnail from a different second of the composed video.
+    Free (no credit charge) — it's just an ffmpeg frame-grab. Runs synchronously
+    so the caller gets back the fresh thumbnail URL immediately."""
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    if p["status"] not in ("awaiting_thumbnail_approval", "ready"):
+        raise HTTPException(400, f"Thumbnail only editable after compose (got '{p['status']}').")
+    await _run_thumbnail_regen(pid, payload.seek_t)
+    return await db.projects.find_one({"id": pid}, {"_id": 0})
+
+
+@api.post("/projects/{pid}/thumbnail/approve")
+async def approve_thumbnail(pid: str, user=Depends(current_user)):
+    """User approved the poster thumbnail — mark project ready. Terminal state."""
+    p = await db.projects.find_one({"id": pid, "user_id": user["user_id"]}, {"_id": 0})
+    if not p: raise HTTPException(404, "Not found")
+    if p["status"] != "awaiting_thumbnail_approval":
+        raise HTTPException(400, f"Cannot approve thumbnail from status '{p['status']}'.")
+    await db.projects.update_one(
+        {"id": pid},
+        {"$set": {"status": "ready", "stage": "done", "progress": 100, "error": None}},
+    )
+    logger.info("Project %s ready (thumbnail approved)", pid)
+    return await db.projects.find_one({"id": pid}, {"_id": 0})
 
 
 # --------------------------- Admin ---------------------------
@@ -3018,12 +3070,45 @@ async def regen_single_image(project_id: str, scene_idx: int):
 
 
 async def run_after_image_approval(project_id: str):
-    """Stage 3: Generate voiceover, then STOP at status='awaiting_voice_approval'."""
+    """Stage 3: Generate voiceover, then STOP at status='awaiting_voice_approval'.
+    If the project has `auto_animate=True`, also fires Sora 2 animation tasks
+    for every scene in parallel — they run in the background while voice
+    generates, so the user doesn't wait for Sora before reviewing the voiceover.
+    Credits for animation are charged atomically here; on any Sora failure the
+    scene keeps its still image and the per-scene credit is refunded."""
     async def upd(**fields):
         await db.projects.update_one({"id": project_id}, {"$set": fields})
     try:
         proj = await db.projects.find_one({"id": project_id}, {"_id": 0})
         scenes = proj.get("scenes") or []
+
+        # Auto-animate: charge total credits + queue Sora jobs (best-effort;
+        # never blocks voice generation).
+        if proj.get("auto_animate"):
+            per_cost = _animate_cost_for(4)
+            targets = [i for i, s in enumerate(scenes) if not s.get("animated_clip_url")]
+            total_cost = per_cost * len(targets)
+            u = await db.users.find_one({"user_id": proj["user_id"]}, {"_id": 0})
+            if u and (u.get("credits", 0) or 0) >= total_cost and targets:
+                r = await db.users.update_one(
+                    {"user_id": proj["user_id"], "credits": {"$gte": total_cost}},
+                    {"$inc": {"credits": -total_cost}},
+                )
+                if r.modified_count:
+                    for i in targets:
+                        scenes[i] = {**scenes[i], "animating": True, "animate_error": None}
+                    await db.projects.update_one({"id": project_id}, {"$set": {"scenes": scenes}})
+                    # Kick off Sora jobs sequentially in an unawaited task — running
+                    # them in strict sequence prevents Sora rate-limit collisions.
+                    async def _sequential():
+                        for i in targets:
+                            await _run_animate_scene(project_id, i, 4, bool(proj.get("character_image_url")))
+                    asyncio.create_task(_sequential())
+                    logger.info("Auto-animate queued: pid=%s scenes=%d cost=%d", project_id, len(targets), total_cost)
+            elif targets and u:
+                logger.warning("Auto-animate skipped for %s — insufficient credits (need %d, have %d)",
+                               project_id, total_cost, u.get("credits", 0))
+
         await upd(stage="generating voiceover", progress=65, status="generating")
         full_narration = " ".join(s["narration"] for s in scenes)
         audio_path = STORAGE_DIR / "audio" / f"{project_id}.mp3"
@@ -3046,7 +3131,9 @@ async def run_after_image_approval(project_id: str):
 
 
 async def run_after_voice_approval(project_id: str):
-    """Stage 4 (final): Compose the MP4 in every format."""
+    """Stage 4: Compose the MP4, extract initial thumbnail, then STOP at
+    status='awaiting_thumbnail_approval'. Final ready state is set by the
+    user calling POST /api/projects/{id}/thumbnail/approve."""
     async def upd(**fields):
         await db.projects.update_one({"id": project_id}, {"$set": fields})
     try:
@@ -3067,39 +3154,13 @@ async def run_after_voice_approval(project_id: str):
         per = total_dur / max(len(scenes), 1)
         final_scenes = [{**sc, "duration": per} for sc in scenes]
 
-        # Extract a poster thumbnail from the composed video at ~1s in.
-        # Never fatal — if this fails, the project still ships (frontend
-        # falls back to scene[0]'s image).
+        # Extract initial thumbnail — user can regenerate/reroll before approving.
         await upd(stage="generating thumbnail", progress=95)
-        thumbnail_url = None
-        try:
-            primary_video_url = video_urls[primary]
-            primary_video_path = STORAGE_DIR / primary_video_url.replace("/api/media/", "").lstrip("/")
-            if primary_video_path.exists():
-                thumb_dir = STORAGE_DIR / "thumbnails"
-                thumb_dir.mkdir(parents=True, exist_ok=True)
-                thumb_path = thumb_dir / f"{project_id}.jpg"
-                # Grab a frame at t=1s (or middle if video is short). Scale to
-                # 1280x720 max keeping aspect, quality 3 (excellent JPEG).
-                seek_t = 1.0 if total_dur > 2.0 else max(0.1, total_dur / 2)
-                cmd = [
-                    "ffmpeg", "-y", "-ss", f"{seek_t:.2f}", "-i", str(primary_video_path),
-                    "-frames:v", "1",
-                    "-vf", "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease",
-                    "-q:v", "3", str(thumb_path),
-                ]
-                proc = await asyncio.to_thread(
-                    subprocess.run, cmd, capture_output=True, text=True, timeout=30,
-                )
-                if proc.returncode == 0 and thumb_path.exists() and thumb_path.stat().st_size > 0:
-                    thumbnail_url = f"/api/media/thumbnails/{project_id}.jpg"
-                else:
-                    logger.warning("Thumbnail ffmpeg rc=%s stderr=%s", proc.returncode, proc.stderr[-200:])
-        except Exception:
-            logger.exception("Thumbnail extraction failed for %s (non-fatal)", project_id)
+        thumbnail_url = await _extract_thumbnail(project_id, video_urls[primary], total_dur, seek_t=None)
 
         finish_fields = {
-            "stage": "done", "progress": 100, "status": "ready",
+            "stage": "awaiting thumbnail approval", "progress": 98,
+            "status": "awaiting_thumbnail_approval",
             "scenes": final_scenes,
             "video_url": video_urls[primary],
             "video_urls": video_urls,
@@ -3107,7 +3168,7 @@ async def run_after_voice_approval(project_id: str):
         if thumbnail_url:
             finish_fields["thumbnail_url"] = thumbnail_url
         await upd(**finish_fields)
-        logger.info("Project %s ready (thumbnail=%s)", project_id, bool(thumbnail_url))
+        logger.info("Project %s composed, awaiting thumbnail approval", project_id)
     except Exception as e:
         logger.exception("Compose stage failed for %s", project_id)
         await db.projects.update_one({"id": project_id},
@@ -3118,6 +3179,39 @@ async def run_after_voice_approval(project_id: str):
             cost = int(proj.get("credit_cost", 1) or 1)
             await db.users.update_one({"user_id": proj["user_id"]},
                                       {"$inc": {"credits": cost}})
+
+
+async def _extract_thumbnail(project_id: str, primary_video_url: str,
+                             total_dur: float, seek_t: Optional[float] = None) -> Optional[str]:
+    """Grab a poster frame at `seek_t` seconds (defaults to 1s / middle).
+    Returns the media URL on success, or None on failure. Adds a cache-buster
+    so the browser doesn't stick to a stale image after regeneration."""
+    try:
+        primary_video_path = STORAGE_DIR / primary_video_url.replace("/api/media/", "").lstrip("/")
+        if not primary_video_path.exists():
+            return None
+        thumb_dir = STORAGE_DIR / "thumbnails"
+        thumb_dir.mkdir(parents=True, exist_ok=True)
+        thumb_path = thumb_dir / f"{project_id}.jpg"
+        if seek_t is None:
+            seek_t = 1.0 if total_dur > 2.0 else max(0.1, total_dur / 2)
+        seek_t = max(0.0, min(seek_t, max(0.1, total_dur - 0.1)))
+        cmd = [
+            "ffmpeg", "-y", "-ss", f"{seek_t:.2f}", "-i", str(primary_video_path),
+            "-frames:v", "1",
+            "-vf", "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease",
+            "-q:v", "3", str(thumb_path),
+        ]
+        proc = await asyncio.to_thread(
+            subprocess.run, cmd, capture_output=True, text=True, timeout=30,
+        )
+        if proc.returncode == 0 and thumb_path.exists() and thumb_path.stat().st_size > 0:
+            import time as _t
+            return f"/api/media/thumbnails/{project_id}.jpg?v={int(_t.time())}"
+        logger.warning("Thumbnail ffmpeg rc=%s stderr=%s", proc.returncode, proc.stderr[-200:])
+    except Exception:
+        logger.exception("Thumbnail extraction failed for %s", project_id)
+    return None
 
 
 # --------------------------- Experiments (A/B testing) ---------------------------

@@ -172,6 +172,28 @@ export default function ProjectView() {
   const [charKeep, setCharKeep] = useState(false);
   const animCost = (animDuration / 4) * 5;    // 4→5, 8→10, 12→15
 
+  // --- Thumbnail approval handlers ---
+  const [thumbBusy, setThumbBusy] = useState(false);
+  const regenerateThumb = async (seekT) => {
+    setThumbBusy(true);
+    try {
+      const { data } = await api.post(`/projects/${id}/thumbnail/regenerate`, { seek_t: seekT });
+      setP(data);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Couldn't regenerate thumbnail");
+    } finally { setThumbBusy(false); }
+  };
+  const approveThumbnail = async () => {
+    setThumbBusy(true);
+    try {
+      const { data } = await api.post(`/projects/${id}/thumbnail/approve`);
+      setP(data);
+      toast.success("Thumbnail approved — video is ready to share!");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Approve failed");
+    } finally { setThumbBusy(false); }
+  };
+
   const animateScene = async (idx) => {
     try {
       const { data } = await api.post(`/projects/${id}/scenes/${idx}/animate`, null, {
@@ -724,8 +746,75 @@ export default function ProjectView() {
           )}
 
 
-          {/* Video Player + Format Switcher */}
-          {p.status === "ready" && active && (
+          {/* Thumbnail Approval — after compose, before ready */}
+          {p.status === "awaiting_thumbnail_approval" && (
+            <div className="mt-6 space-y-4" data-testid="thumbnail-approval-panel">
+              <div className="rounded-2xl overflow-hidden shadow-lg shadow-brand-900/20">
+                <div className="bg-gradient-to-br from-amber-600 via-orange-600 to-rose-600 text-white p-5 sm:p-6">
+                  <ApprovalStepIndicator status={p.status} />
+                  <div className="mt-4 flex items-start justify-between flex-wrap gap-4">
+                    <div>
+                      <div className="font-heading font-black text-2xl sm:text-3xl tracking-tighter">Pick your thumbnail</div>
+                      <p className="text-sm text-white/90 mt-1 max-w-lg">
+                        Thumbnails drive clicks on YouTube, LinkedIn, and Reels. Try a few frames — the video is already composed, this is free.
+                      </p>
+                    </div>
+                    <Button onClick={approveThumbnail} disabled={thumbBusy}
+                      className="rounded-full bg-white text-orange-700 hover:bg-white/90 font-bold shadow"
+                      data-testid="thumb-approve-btn">
+                      <Check className="w-4 h-4 mr-2" /> Approve thumbnail
+                    </Button>
+                  </div>
+                </div>
+                <div className="bg-white p-5 sm:p-6">
+                  <div className="grid md:grid-cols-2 gap-6 items-start">
+                    <div className="rounded-xl overflow-hidden border border-ink-200 bg-ink-100 aspect-video relative"
+                         data-testid="thumb-preview">
+                      {p.thumbnail_url ? (
+                        <img src={resolveMediaUrl(p.thumbnail_url)} alt="thumbnail"
+                             className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-ink-400 text-sm">No thumbnail yet</div>
+                      )}
+                      {thumbBusy && (
+                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                          <Loader2 className="w-6 h-6 text-white animate-spin" />
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-widest font-bold text-ink-500">Try a different frame</div>
+                      <p className="text-sm text-ink-600 mt-1">Pick a moment from the video — we'll grab that exact frame as the poster.</p>
+                      <div className="mt-3 flex flex-wrap gap-2" data-testid="thumb-seek-group">
+                        {[0.5, 1.5, 3, 5, 8, 12].map((t) => (
+                          <button key={t}
+                            onClick={() => regenerateThumb(t)}
+                            disabled={thumbBusy}
+                            className="px-3 py-1.5 rounded-full text-xs font-mono font-semibold border border-ink-200 bg-white text-ink-700 hover:border-orange-500 hover:text-orange-700 transition"
+                            data-testid={`thumb-seek-${t}`}>
+                            {t}s
+                          </button>
+                        ))}
+                        <button onClick={() => regenerateThumb(null)}
+                          disabled={thumbBusy}
+                          className="px-3 py-1.5 rounded-full text-xs font-semibold border border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100 transition inline-flex items-center gap-1"
+                          data-testid="thumb-random">
+                          <RefreshCw className="w-3 h-3" /> Random frame
+                        </button>
+                      </div>
+                      <p className="mt-3 text-[11px] text-ink-400">
+                        Free to reroll — thumbnail changes never cost credits.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+
+          {/* Video Player + Format Switcher — visible during thumbnail approval AND when ready */}
+          {(p.status === "ready" || p.status === "awaiting_thumbnail_approval") && active && (
             <div className="mt-6" data-testid="format-switcher-wrap">
               {availableFormats.length > 1 && (
                 <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -773,7 +862,7 @@ export default function ProjectView() {
           )}
 
           {/* Scenes storyboard (only shown after all approvals) */}
-          {!["awaiting_script_approval", "awaiting_image_approval", "awaiting_voice_approval"].includes(p.status) && p.scenes?.length > 0 && (
+          {!["awaiting_script_approval", "awaiting_image_approval", "awaiting_voice_approval", "awaiting_thumbnail_approval"].includes(p.status) && p.scenes?.length > 0 && (
             <div className="mt-10">
               <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">Storyboard</div>
               <h2 className="mt-1 font-heading text-3xl font-bold tracking-tight">Scenes ({p.scenes.length})</h2>
@@ -798,7 +887,7 @@ export default function ProjectView() {
           )}
 
           {/* Script (only shown after all approvals) */}
-          {!["awaiting_script_approval", "awaiting_image_approval", "awaiting_voice_approval"].includes(p.status) && p.script && (
+          {!["awaiting_script_approval", "awaiting_image_approval", "awaiting_voice_approval", "awaiting_thumbnail_approval"].includes(p.status) && p.script && (
             <div className="mt-10">
               <div className="text-xs uppercase tracking-widest text-brand-600 font-semibold">Script</div>
               <div className="mt-2 bg-white border border-ink-200 rounded-2xl p-6 text-ink-700 leading-relaxed whitespace-pre-line" data-testid="script-text">{p.script}</div>
