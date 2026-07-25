@@ -378,7 +378,9 @@ async def auth_session(payload: SessionIn, response: Response):
     response.set_cookie("session_token", session_token, max_age=7 * 24 * 3600,
                         httponly=True, secure=True, samesite="none", path="/")
     user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
-    return {"user": user}
+    # Return token in body too — proxy strips CORS credentials so cookie auth
+    # can silently fail on cross-origin (.static. subdomain) preview URLs.
+    return {"user": user, "token": session_token}
 
 
 @api.get("/auth/me")
@@ -647,10 +649,10 @@ async def auth_register(payload: RegisterIn, request: Request, response: Respons
                 **({"mobile": mobile_val} if mobile_val and not existing.get("mobile") else {}),
             }},
         )
-        await _issue_session(existing["user_id"], response)
+        _tok = await _issue_session(existing["user_id"], response)
         user = await db.users.find_one({"user_id": existing["user_id"]}, {"_id": 0, "password_hash": 0})
         user = await apply_free_refill(user)
-        return {"user": user, "linked": True}
+        return {"user": user, "linked": True, "token": _tok}
 
     user_id = f"user_{uuid.uuid4().hex[:12]}"
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -676,9 +678,9 @@ async def auth_register(payload: RegisterIn, request: Request, response: Respons
     referred_by = await _apply_referral_bonus(user_id, payload.referral_code) if payload.referral_code else None
     # Give the new user their own referral code so they can invite others immediately
     await _ensure_referral_code(user_id)
-    await _issue_session(user_id, response)
+    _tok = await _issue_session(user_id, response)
     user = await db.users.find_one({"user_id": user_id}, {"_id": 0, "password_hash": 0})
-    return {"user": user, "created": True, "referred_by": bool(referred_by)}
+    return {"user": user, "created": True, "referred_by": bool(referred_by), "token": _tok}
 
 
 @api.post("/auth/login")
@@ -695,10 +697,10 @@ async def auth_login(payload: LoginIn, request: Request, response: Response):
         await _record_login_failure(request, ident)
         raise HTTPException(401, "Invalid credentials")
     await _clear_login_failures(request, ident)
-    await _issue_session(user["user_id"], response)
+    _tok = await _issue_session(user["user_id"], response)
     user_public = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0})
     user_public = await apply_free_refill(user_public)
-    return {"user": user_public}
+    return {"user": user_public, "token": _tok}
 
 
 class SetPasswordIn(BaseModel):
@@ -840,10 +842,10 @@ async def auth_reset_password(payload: ResetPasswordIn, request: Request, respon
         {"$set": {"used": True, "used_at": datetime.now(timezone.utc).isoformat()}},
     )
     # Auto-log-in the user for a smooth UX
-    await _issue_session(rec["user_id"], response)
+    _tok = await _issue_session(rec["user_id"], response)
     user_public = await db.users.find_one({"user_id": rec["user_id"]},
                                           {"_id": 0, "password_hash": 0})
-    return {"user": user_public, "message": "Password reset successful."}
+    return {"user": user_public, "message": "Password reset successful.", "token": _tok}
 
 
 class ChangePasswordIn(BaseModel):
@@ -879,11 +881,11 @@ async def auth_change_password(payload: ChangePasswordIn, request: Request, resp
     # Nuke every existing session so any previously-stolen cookie can't be replayed
     await db.user_sessions.delete_many({"user_id": user["user_id"]})
     # Issue a fresh session for the current browser so the user stays logged in
-    await _issue_session(user["user_id"], response)
+    _tok = await _issue_session(user["user_id"], response)
     logger.info(f"Password changed for user {user.get('email')}")
     user_public = await db.users.find_one({"user_id": user["user_id"]},
                                           {"_id": 0, "password_hash": 0})
-    return {"user": user_public, "message": "Password updated. All other devices signed out."}
+    return {"user": user_public, "message": "Password updated. All other devices signed out.", "token": _tok}
 
 
 # --------------------------- Project CRUD ---------------------------

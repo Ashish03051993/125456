@@ -1,7 +1,7 @@
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { api } from "@/lib/api";
+import { api, setAuthToken } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
 export function login() {
@@ -26,6 +26,9 @@ export default function AuthCallback() {
     (async () => {
       try {
         const { data } = await api.post("/auth/session", { session_id: m[1] });
+        // Bearer token is auto-captured by the axios response interceptor,
+        // but set it explicitly here too as a safety net for older code paths.
+        if (data.token) setAuthToken(data.token);
         setUser(data.user);
         navigate("/dashboard", { replace: true, state: { user: data.user } });
       } catch (e) {

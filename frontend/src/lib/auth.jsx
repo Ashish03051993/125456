@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, setAuthToken } from "@/lib/api";
 
 const AuthCtx = createContext({ user: null, loading: true, refresh: async () => {}, logout: async () => {} });
 
@@ -31,6 +31,7 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(async () => {
     try { await api.post("/auth/logout"); } catch { /* ignore */ }
+    setAuthToken(null);   // Clear Bearer token from localStorage
     setUser(null);
     window.location.href = "/";
   }, []);
