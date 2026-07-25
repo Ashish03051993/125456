@@ -239,7 +239,10 @@ class CreateProjectIn(BaseModel):
     voice: str = "female"
     dialogue_mode: bool = False           # Character dialogue toggle
     talking_head: bool = False            # Realistic on-screen speaker (paid plans only)
-    auto_animate: bool = False            # Auto-animate every scene with Sora 2
+    # Animated Sora scenes are the DEFAULT for every video — this is a cinematic
+    # video product, not a slideshow generator. Users can turn it OFF explicitly
+    # in the wizard if they need a fast preview/draft on limited credits.
+    auto_animate: bool = True
     character_image_url: Optional[str] = None  # Pre-uploaded/generated character portrait
 
 
@@ -1634,7 +1637,8 @@ async def regenerate_single_image(pid: str, idx: int, user=Depends(current_user)
 
 # --------------------------- Sora 2 "Animate scene" endpoint ---------------------------
 async def _run_animate_scene(project_id: str, scene_idx: int, duration: int = 4,
-                             use_character: bool = False):
+                             use_character: bool = False,
+                             dialogue_mode: bool = False):
     """Background worker: turns a still image into a Sora-generated animated clip.
     On failure, refunds the credit charge so the user is never overcharged.
 
@@ -1642,7 +1646,11 @@ async def _run_animate_scene(project_id: str, scene_idx: int, duration: int = 4,
     face is used as the first-frame reference instead of the scene image. This
     is how we keep the same person/mascot recognizable across every animated
     scene (poor-man's character-consistency without a full identity model).
-    """
+
+    If `dialogue_mode` is True, the Sora prompt is enriched with cinematic
+    dialogue framing (speaking characters, mouth movement, camera angles)
+    so the video actually shows people talking/gesturing to each other
+    instead of a static illustration."""
     proj = await db.projects.find_one({"id": project_id}, {"_id": 0})
     if not proj:
         return
@@ -1665,9 +1673,27 @@ async def _run_animate_scene(project_id: str, scene_idx: int, duration: int = 4,
     out_dir = STORAGE_DIR / "videos"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{project_id}_scene_{scene_idx}.mp4"
+    # Enrich the prompt for talking-character scenes so Sora actually renders
+    # people speaking (visible mouth motion, gestures, close-up framing).
+    base_prompt = sc.get("image_prompt") or sc.get("heading") or "cinematic scene"
+    subtitle = (sc.get("subtitle") or "").strip()
+    narration = (sc.get("narration") or "").strip()
+    if dialogue_mode:
+        conversation_hint = subtitle or narration[:120]
+        prompt = (
+            f"{base_prompt}. Live-action cinematic shot of characters actively speaking to camera "
+            f"with natural mouth movement, expressive gestures, warm lighting, "
+            f"shallow depth of field. Conversation vibe: \"{conversation_hint}\". "
+            f"Realistic human motion, no text overlay, no watermark."
+        )
+    else:
+        prompt = (
+            f"{base_prompt}. Cinematic camera motion, smooth parallax, film grain, "
+            f"warm cinematic lighting. High detail, no text overlay, no watermark."
+        )
     try:
         await _generate_animated_scene(
-            prompt=sc.get("image_prompt") or sc.get("heading") or "cinematic scene",
+            prompt=prompt,
             image_path=ref_path,
             out_path=out_path,
             duration=duration,
@@ -3104,11 +3130,14 @@ async def run_after_image_approval(project_id: str):
                     await db.projects.update_one({"id": project_id}, {"$set": {"scenes": scenes}})
                     # Kick off Sora jobs sequentially in an unawaited task — running
                     # them in strict sequence prevents Sora rate-limit collisions.
+                    dialogue_on = bool(proj.get("dialogue_mode"))
                     async def _sequential():
                         for i in targets:
-                            await _run_animate_scene(project_id, i, 4, bool(proj.get("character_image_url")))
+                            await _run_animate_scene(project_id, i, 4,
+                                                     bool(proj.get("character_image_url")),
+                                                     dialogue_mode=dialogue_on)
                     asyncio.create_task(_sequential())
-                    logger.info("Auto-animate queued: pid=%s scenes=%d cost=%d", project_id, len(targets), total_cost)
+                    logger.info("Auto-animate queued: pid=%s scenes=%d cost=%d dialogue=%s", project_id, len(targets), total_cost, dialogue_on)
             elif targets and u:
                 logger.warning("Auto-animate skipped for %s — insufficient credits (need %d, have %d)",
                                project_id, total_cost, u.get("credits", 0))

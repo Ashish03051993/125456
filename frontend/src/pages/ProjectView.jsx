@@ -671,11 +671,26 @@ export default function ProjectView() {
                       <p className="text-sm text-white/85 mt-1 max-w-lg">Listen back, switch voice, or regenerate. When it sounds right, we'll compose the final video.</p>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <Button onClick={approveVoice} disabled={voiceBusy}
-                        className="rounded-full bg-white text-brand-700 hover:bg-white/90 font-bold shadow"
-                        data-testid="voice-approve-btn">
-                        <Check className="w-4 h-4 mr-2" /> Approve & compose video
-                      </Button>
+                      {(() => {
+                        const animatingCount = (p.scenes || []).filter((s) => s.animating).length;
+                        const btnDisabled = voiceBusy || animatingCount > 0;
+                        return (
+                          <div className="flex flex-col items-end gap-1">
+                            <Button onClick={approveVoice} disabled={btnDisabled}
+                              className="rounded-full bg-white text-brand-700 hover:bg-white/90 font-bold shadow disabled:opacity-70"
+                              data-testid="voice-approve-btn">
+                              {animatingCount > 0
+                                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Waiting for {animatingCount} animation{animatingCount > 1 ? "s" : ""}…</>
+                                : <><Check className="w-4 h-4 mr-2" /> Approve & compose video</>}
+                            </Button>
+                            {animatingCount > 0 && (
+                              <div className="text-[11px] text-white/85 max-w-[240px] text-right">
+                                Sora is still animating scenes — please wait so your final video isn't a still-image fallback.
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>

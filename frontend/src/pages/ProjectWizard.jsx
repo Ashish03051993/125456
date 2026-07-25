@@ -52,7 +52,10 @@ export default function ProjectWizard() {
   const [language, setLanguage] = useState("English");
   const [voice, setVoice] = useState("female");
   const [dialogueMode, setDialogueMode] = useState(false);
-  const [autoAnimate, setAutoAnimate] = useState(false);
+  // Animated cinematic scenes are the DEFAULT — this is a video product for
+  // professional creators, not a slideshow generator. User can still turn OFF
+  // for a fast still-image draft on limited credits.
+  const [autoAnimate, setAutoAnimate] = useState(true);
   const [talkingHead, setTalkingHead] = useState(false);
   const [charSource, setCharSource] = useState(null);         // "upload" | "ai_generated"
   const [charImageUrl, setCharImageUrl] = useState(null);
