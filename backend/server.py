@@ -2829,16 +2829,20 @@ def _animate_cost_for(duration: int) -> int:
 
 async def _generate_animated_scene(prompt: str, image_path: Path, out_path: Path,
                                    duration: int = ANIMATED_SCENE_DURATION):
-    """Blocking Sora call runs in a thread — never on the event loop."""
+    """Blocking Sora call runs in a thread — never on the event loop.
+
+    NOTE: `image_path` is intentionally *not* forwarded to Sora right now — the
+    upstream `emergentintegrations` SDK sends OpenAI a legacy `reference_image`
+    field that Sora 2's current API rejects with 400 "Unknown parameter". We
+    still take the arg for forward-compat (once the SDK is patched we can
+    re-enable image conditioning) but the call is text-only for now."""
     def _run():
         gen = OpenAIVideoGeneration(api_key=EMERGENT_LLM_KEY)
         video_bytes = gen.text_to_video(
-            prompt=f"Cinematic 16:9. {prompt}",
+            prompt=f"Cinematic, high-detail, 16:9. {prompt}",
             model="sora-2",
             size="1280x720",
             duration=duration,
-            image_path=str(image_path) if image_path and image_path.exists() else None,
-            mime_type="image/png",
             max_wait_time=600,
         )
         if not video_bytes:
