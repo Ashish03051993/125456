@@ -40,7 +40,7 @@ export default function DemoVideoSection({ videoSrc, posterSrc }) {
           One idea. Every platform.
         </h2>
         <p className="mt-4 text-ink-500 text-base sm:text-lg max-w-2xl">
-          Feed AI Video Studio a topic and it hands you cinematic video for <span className="font-semibold text-ink-900">YouTube, Instagram, Reels, Facebook and LinkedIn</span> — every format included from a single prompt.
+          Feed ContentOS AI a topic and it hands you cinematic video for <span className="font-semibold text-ink-900">YouTube, Instagram, Reels, Facebook and LinkedIn</span> — every format included from a single prompt.
         </p>
       </div>
 

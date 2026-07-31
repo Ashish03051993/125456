@@ -35,7 +35,7 @@ export async function purchaseCreditPack({ packId, onSuccess } = {}) {
       key: order.key_id,
       amount: order.amount,
       currency: order.currency,
-      name: "AI Video Studio",
+      name: "ContentOS AI",
       description: `${order.pack.label} — ${order.pack.credits} credits`,
       order_id: order.order_id,
       prefill: order.prefill || {},

@@ -58,7 +58,7 @@ export default function PublicVideo() {
         <p className="text-ink-400 mt-2 text-center max-w-md">The creator may have made this private, or the link has expired.</p>
         <Link to="/" className="mt-6">
           <Button className="rounded-full bg-brand-600 hover:bg-brand-700 text-white px-6 h-11" data-testid="err-cta">
-            <Sparkles className="w-4 h-4 mr-2" /> Make your own with AI Video Studio
+            <Sparkles className="w-4 h-4 mr-2" /> Make your own with ContentOS AI
           </Button>
         </Link>
       </div>
@@ -148,7 +148,7 @@ export default function PublicVideo() {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="min-w-0">
               <div className="text-xs uppercase tracking-widest text-white/70 font-bold">Made with</div>
-              <div className="mt-1 font-heading text-2xl sm:text-3xl font-black tracking-tighter">AI Video Studio</div>
+              <div className="mt-1 font-heading text-2xl sm:text-3xl font-black tracking-tighter">ContentOS AI</div>
               <p className="text-white/80 text-sm mt-2 max-w-lg">
                 {refCode
                   ? "Turn any topic into a polished video — script, visuals, voice — all approved by you. Sign up with this invite and start with 3 bonus credits on the house."
@@ -191,7 +191,7 @@ export default function PublicVideo() {
       </main>
 
       <footer className="mt-16 border-t border-white/5 py-8 text-center text-xs text-ink-500">
-        <Link to="/" className="hover:text-white transition-colors">© AI Video Studio · Made with love</Link>
+        <Link to="/" className="hover:text-white transition-colors">© ContentOS AI · Made with love</Link>
       </footer>
     </div>
   );

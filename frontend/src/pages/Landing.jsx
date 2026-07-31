@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import usePageTitle from "@/lib/usePageTitle";
-import { Sparkles, Palette, CheckCircle2, ArrowRight, Wand2, Image as ImageIcon, Mic, Film, HelpCircle } from "lucide-react";
+import { Sparkles, Palette, CheckCircle2, ArrowRight, Wand2, Image as ImageIcon, Mic, Film, HelpCircle, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TopBar } from "@/components/Layout";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -42,14 +42,14 @@ const FAQ_ITEMS = [
 ];
 
 const DURATION_CHIPS = [
-  { label: "30s",  credits: 3,  hint: "Reels · Shorts" },
-  { label: "45s",  credits: 4,  hint: "LinkedIn" },
-  { label: "60s",  credits: 5,  hint: "Instagram" },
-  { label: "90s",  credits: 7,  hint: "X / Twitter" },
-  { label: "2 min", credits: 10, hint: "Demos" },
-  { label: "3 min", credits: 15, hint: "Explainers" },
-  { label: "5 min", credits: 25, hint: "Tutorials" },
-  { label: "10 min",credits: 50, hint: "Long-form" },
+  { label: "30s",  credits: 50,   hint: "Reels · Shorts" },
+  { label: "45s",  credits: 75,   hint: "LinkedIn" },
+  { label: "60s",  credits: 100,  hint: "Instagram" },
+  { label: "90s",  credits: 150,  hint: "X / Twitter" },
+  { label: "2 min", credits: 200,  hint: "Demos" },
+  { label: "3 min", credits: 300,  hint: "Explainers" },
+  { label: "5 min", credits: 500,  hint: "Tutorials" },
+  { label: "10 min",credits: 1000, hint: "Long-form" },
 ];
 
 const STEPS = [
@@ -98,14 +98,27 @@ export default function Landing() {
         <div className="absolute inset-0 -z-10 bg-[radial-gradient(60%_50%_at_50%_0%,rgba(79,70,229,0.10),transparent)]" />
         <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-14 sm:pt-24 pb-12 sm:pb-20">
           <div className="inline-flex items-center gap-2 rounded-full border border-brand-100 bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700" data-testid="hero-eyebrow">
-            <Sparkles className="w-3.5 h-3.5" /> Your first 30-second video is on us — every month
+            <Sparkles className="w-3.5 h-3.5" /> ContentOS AI · Pay for access · Credits never expire
           </div>
           <h1 className="mt-5 font-heading font-black tracking-tighter text-4xl sm:text-6xl lg:text-7xl max-w-4xl" data-testid="hero-headline">
-            Turn any idea into a video — <span className="text-brand-600">from 30 seconds to 10 minutes.</span>
+            One platform for <span className="text-brand-600">YouTube, LinkedIn, Reels</span> — powered by Sora&nbsp;2.
           </h1>
           <p className="mt-5 text-ink-500 text-base sm:text-lg max-w-2xl" data-testid="hero-subtitle">
-            Type your idea. Approve the script. Approve the visuals. Approve the voice. Get a polished video in minutes — with you in control at every step.
+            Type a topic. Get a cinematic AI video with real animated scenes (not slideshow). Approve script, visuals, voice, and thumbnail — you stay in control at every step. Fair, transparent credits that never expire.
           </p>
+
+          {/* Value pillars — the "why us" in 3 chips */}
+          <div className="mt-6 flex flex-wrap gap-2" data-testid="hero-value-pillars">
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-white border border-ink-200 px-3 py-1.5 text-xs font-semibold text-ink-700">
+              <Film className="w-3.5 h-3.5 text-brand-600" /> Real cinematic animation (Sora 2)
+            </div>
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-white border border-ink-200 px-3 py-1.5 text-xs font-semibold text-ink-700">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Credits never expire
+            </div>
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-white border border-ink-200 px-3 py-1.5 text-xs font-semibold text-ink-700">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Approve every stage
+            </div>
+          </div>
 
           {/* Duration chips — click to sign up */}
           <div className="mt-7 flex flex-wrap gap-2" data-testid="hero-duration-chips">
@@ -130,7 +143,7 @@ export default function Landing() {
           {/* CTAs */}
           <div className="mt-8 flex flex-wrap gap-3">
             <Button onClick={() => startFree("hero_primary")} className="rounded-full bg-brand-600 hover:bg-brand-700 text-white h-12 px-6 text-base font-semibold" data-testid="hero-signup-btn">
-              <Sparkles className="w-4 h-4 mr-2" /> Start free — 1 video / month
+              <Sparkles className="w-4 h-4 mr-2" /> Start free · 50 credits included
             </Button>
             <Button variant="outline" onClick={scrollToDemo} className="rounded-full h-12 px-6 text-base font-semibold border-ink-200 text-ink-900" data-testid="hero-demo-btn">
               See what you get
@@ -139,7 +152,7 @@ export default function Landing() {
           <div className="mt-3 text-xs text-ink-500 flex flex-wrap items-center gap-x-4 gap-y-1">
             <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> No credit card</span>
             <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Sign up with Google</span>
-            <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Free credits auto-refill</span>
+            <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Free credits never expire</span>
           </div>
         </div>
       </section>
@@ -244,7 +257,7 @@ export default function Landing() {
       {/* FOOTER */}
       <footer className="border-t border-ink-100 py-8">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 text-sm text-ink-500">
-          <div>© {new Date().getFullYear()} AI Video Studio</div>
+          <div>© {new Date().getFullYear()} ContentOS AI</div>
           <div className="flex items-center gap-x-5 gap-y-2 flex-wrap justify-end">
             <a href="#faq" className="hover:text-brand-600" data-testid="footer-faq">FAQ</a>
             <Link to="/pricing" className="hover:text-brand-600" data-testid="footer-pricing">Pricing</Link>

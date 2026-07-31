@@ -52,7 +52,7 @@ export function Terms() {
   return (
     <LegalShell title="Terms of Service" updated="July 23, 2026">
       <h2>1. Who we are</h2>
-      <p>AI Video Studio (the &ldquo;Service&rdquo;) is an AI-powered video generation platform that turns text prompts into polished short-form and long-form video content. By using the Service you agree to these Terms.</p>
+      <p>ContentOS AI (the &ldquo;Service&rdquo;) is an AI-powered video generation platform that turns text prompts into polished short-form and long-form video content. By using the Service you agree to these Terms.</p>
 
       <h2>2. Your account</h2>
       <ul>
@@ -83,7 +83,7 @@ export function Terms() {
       <p>Subject to your compliance with these Terms and applicable law, you own the videos, audio, images and text that you generate using the Service and may use them for any purpose — personal or commercial. We claim no ownership over your creations. However:</p>
       <ul>
         <li>You grant us a limited, non-exclusive licence to store, process and deliver your content solely for the purpose of operating the Service.</li>
-        <li>You grant us the right to display your <strong>publicly shared</strong> videos (those you explicitly enable a share link for) on any &ldquo;Made with AI Video Studio&rdquo; showcase surface. You can revoke the share link at any time to remove them.</li>
+        <li>You grant us the right to display your <strong>publicly shared</strong> videos (those you explicitly enable a share link for) on any &ldquo;Made with ContentOS AI&rdquo; showcase surface. You can revoke the share link at any time to remove them.</li>
       </ul>
 
       <h2>6. AI limitations and no warranty</h2>

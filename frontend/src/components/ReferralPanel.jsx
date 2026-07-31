@@ -125,7 +125,7 @@ export default function ReferralPanel() {
     if (!data?.share_url) return;
     const shareData = {
       title: "Make videos with AI",
-      text: "I've been making videos with AI Video Studio — you get 3 bonus credits with my link:",
+      text: "I've been making videos with ContentOS AI — you get 3 bonus credits with my link:",
       url: data.share_url,
     };
     if (navigator.share) {
@@ -209,13 +209,13 @@ export default function ReferralPanel() {
         {data.share_url && (() => {
           const url = encodeURIComponent(data.share_url);
           const tweet = encodeURIComponent(
-            `I've been making videos with AI Video Studio — you get 3 bonus credits with my link:`
+            `I've been making videos with ContentOS AI — you get 3 bonus credits with my link:`
           );
           const linkedin = encodeURIComponent(
-            `I've been making videos with AI Video Studio — turn any topic into a polished 30s–10min video (16:9 for YouTube + 9:16 for LinkedIn/Reels) in minutes. Grab 3 bonus credits with my invite link:`
+            `I've been making videos with ContentOS AI — turn any topic into a polished 30s–10min video (16:9 for YouTube + 9:16 for LinkedIn/Reels) in minutes. Grab 3 bonus credits with my invite link:`
           );
           const whatsapp = encodeURIComponent(
-            `Hey! I've been using AI Video Studio to turn ideas into polished videos — you'll get 3 bonus credits if you sign up with my link 👉 ${data.share_url}`
+            `Hey! I've been using ContentOS AI to turn ideas into polished videos — you'll get 3 bonus credits if you sign up with my link 👉 ${data.share_url}`
           );
           const socials = [
             { id: "twitter",  label: "X / Twitter", Icon: Twitter,       href: `https://twitter.com/intent/tweet?text=${tweet}&url=${url}`,  bg: "hover:bg-ink-900 hover:text-white hover:border-ink-900" },

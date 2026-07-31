@@ -395,7 +395,7 @@ export default function AdminPanel() {
                     data-testid="empty-share-linkedin-btn"
                     onClick={() => {
                       const url = `${window.location.origin}/?utm_source=linkedin&utm_medium=organic&utm_campaign=launch`;
-                      const text = "I'm building AI Video Studio — turn any topic into a ready-to-post video (16:9 for YouTube + 9:16 for LinkedIn/Reels) in minutes. Reserve your spot 👇";
+                      const text = "I'm building ContentOS AI — turn any topic into a ready-to-post video (16:9 for YouTube + 9:16 for LinkedIn/Reels) in minutes. Reserve your spot 👇";
                       window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}&summary=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
                     }}>
                     <LinkIcon className="w-4 h-4 mr-2" /> Share beta on LinkedIn
