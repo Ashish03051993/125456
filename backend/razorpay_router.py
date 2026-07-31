@@ -34,11 +34,11 @@ router = APIRouter(prefix="/api/payments/razorpay", tags=["payments"])
 
 # Credit-pack catalogue. Amounts are in INR (rupees). The frontend uses this
 # to render the pricing tiles and pass a valid pack_id to /create-order.
+# ContentOS AI · Part B pricing — synced with GET /api/pricing/config packs.
 CREDIT_PACKS = [
-    {"id": "starter",     "credits": 30,   "price_inr": 499,   "label": "Starter pack"},
-    {"id": "creator",     "credits": 100,  "price_inr": 1499,  "label": "Creator pack",   "popular": True},
-    {"id": "studio",      "credits": 500,  "price_inr": 5999,  "label": "Studio pack"},
-    {"id": "enterprise",  "credits": 2000, "price_inr": 19999, "label": "Enterprise pack"},
+    {"id": "micro",  "credits":  100, "price_inr":  999, "label": "Micro Pack"},
+    {"id": "growth", "credits":  500, "price_inr": 3999, "label": "Growth Pack", "popular": True},
+    {"id": "power",  "credits": 1500, "price_inr": 9999, "label": "Power Pack"},
 ]
 PACKS_BY_ID = {p["id"]: p for p in CREDIT_PACKS}
 
