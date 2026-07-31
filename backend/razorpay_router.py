@@ -32,6 +32,14 @@ logger = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/api/payments/razorpay", tags=["payments"])
 
 
+def _current_user_dep():
+    """FastAPI dependency wrapper — resolves `current_user` lazily to avoid the
+    circular import (server.py imports this router at boot). We return the raw
+    dependency callable so FastAPI does its own signature-based resolution."""
+    from server import current_user  # type: ignore
+    return current_user
+
+
 # Credit-pack catalogue. Amounts are in INR (rupees). The frontend uses this
 # to render the pricing tiles and pass a valid pack_id to /create-order.
 # ContentOS AI · Part B pricing — synced with GET /api/pricing/config packs.
@@ -78,11 +86,13 @@ def _require_user(request: Request):
 
 
 @router.post("/create-order")
-async def create_order(payload: CreateOrderIn, request: Request):
+async def create_order(payload: CreateOrderIn,
+                       user=Depends(_current_user_dep())):
     """Creates a Razorpay order for the requested credit pack and returns the
     order details the frontend needs to launch Checkout.js."""
-    from server import current_user, db  # type: ignore
-    user = await current_user(request)
+    from server import db  # type: ignore
+    if not _is_configured():
+        raise HTTPException(503, "Payments are not activated yet — check back soon.")
     pack = PACKS_BY_ID.get(payload.pack_id)
     if not pack:
         raise HTTPException(400, "Unknown credit pack.")
@@ -139,13 +149,13 @@ class VerifyIn(BaseModel):
 
 
 @router.post("/verify")
-async def verify_payment(payload: VerifyIn, request: Request):
+async def verify_payment(payload: VerifyIn,
+                         user=Depends(_current_user_dep())):
     """Client-side callback after Checkout.js completes. We verify the HMAC
     signature and, on success, grant the credits + mark the payment paid.
     Idempotent: repeat calls for the same order_id return a 'paid' result
     without double-crediting."""
-    from server import current_user, db  # type: ignore
-    user = await current_user(request)
+    from server import db  # type: ignore
     if not _is_configured():
         raise HTTPException(503, "Payments are not activated yet.")
 

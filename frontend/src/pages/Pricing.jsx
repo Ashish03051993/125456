@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { TopBar } from "@/components/Layout";
 import { track } from "@/lib/analytics";
 import { api } from "@/lib/api";
+import { purchaseCreditPack } from "@/lib/razorpayCheckout";
+import { toast } from "sonner";
 
 // ContentOS AI · Two-part pricing model. Fallbacks mirror /api/pricing/config
 // exactly so the page still renders during API downtime.
@@ -56,6 +58,8 @@ export default function Pricing() {
   const [plans, setPlans] = useState(FALLBACK_PLANS);
   const [packs, setPacks] = useState(FALLBACK_PACKS);
   const [usage, setUsage] = useState(FALLBACK_USAGE);
+  const [rzpEnabled, setRzpEnabled] = useState(false);
+  const [busyId, setBusyId] = useState(null);
 
   useEffect(() => {
     track("page_view", { page: "pricing" });
@@ -64,6 +68,9 @@ export default function Pricing() {
       if (Array.isArray(data.credit_packs) && data.credit_packs.length) setPacks(data.credit_packs);
       if (Array.isArray(data.usage_costs) && data.usage_costs.length) setUsage(data.usage_costs);
     }).catch(() => {/* fall back to defaults */});
+    api.get("/payments/razorpay/config").then(({ data }) => {
+      setRzpEnabled(!!data.enabled);
+    }).catch(() => {});
   }, []);
 
   // --- Content Cost Estimator ---
@@ -84,8 +91,28 @@ export default function Pricing() {
     return [...packs].sort((a, b) => a.credits - b.credits).find((p) => p.credits >= estimate) || packs[packs.length - 1];
   }, [estimate, packs]);
 
-  const goCheckout = (id, kind) => {
-    track("pricing_cta_click", { id, kind });
+  const goCheckout = async (id, kind) => {
+    track("pricing_cta_click", { id, kind, rzp_enabled: rzpEnabled });
+    // Payments still dormant → friendly toast, no redirect to a broken checkout page.
+    if (!rzpEnabled) {
+      toast.info("Payments launching soon", {
+        description: "We're activating the payment gateway. Sign up free — we'll email you the moment checkout is live.",
+      });
+      navigate("/signup");
+      return;
+    }
+    // Credit-pack path → Razorpay Checkout.js modal opens right here.
+    if (kind === "pack") {
+      setBusyId(id);
+      try {
+        await purchaseCreditPack({ packId: id });
+      } catch (e) {
+        // Errors already toasted inside purchaseCreditPack (network/user cancel).
+      } finally { setBusyId(null); }
+      return;
+    }
+    // Subscription path → dedicated checkout page (subscriptions use Razorpay
+    // Plans, requires a separate Recurring flow — deferred until Phase 2).
     navigate(`/checkout?plan=${id}&kind=${kind}`);
   };
 
@@ -176,9 +203,10 @@ export default function Pricing() {
                 </div>
                 <div className="mt-1 text-[11px] font-mono text-emerald-700">₹{perCreditInr(p)} / credit</div>
                 <Button onClick={() => goCheckout(p.id, "pack")}
+                  disabled={busyId === p.id}
                   className={`mt-5 rounded-full font-bold ${p.popular ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-white border-2 border-ink-900 text-ink-900 hover:bg-ink-900 hover:text-white"}`}
                   data-testid={`pack-cta-${p.id}`}>
-                  Buy pack
+                  {busyId === p.id ? "Opening checkout…" : rzpEnabled ? "Buy pack" : "Notify me when live"}
                 </Button>
               </div>
             ))}
