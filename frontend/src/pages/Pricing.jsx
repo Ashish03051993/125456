@@ -1,89 +1,93 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import usePageTitle from "@/lib/usePageTitle";
-import { Check, X, Sparkles, Zap, Rocket, Building2, Calculator, ShieldCheck, Star, Info, CreditCard, RefreshCcw, Award, FileCheck, Lock } from "lucide-react";
+import { Check, Sparkles, Zap, Rocket, Building2, Calculator, ShieldCheck, Star, CreditCard, Award, Package, Video, Image as ImageIcon, FileText, Mic, Film } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TopBar } from "@/components/Layout";
 import { track } from "@/lib/analytics";
 import { api } from "@/lib/api";
 
-// Pricing page — designed for full transparency. Every number, feature, and
-// policy is exposed to the user. Backend `/api/pricing/config` is the single
-// source of truth for plans + duration costs; fallbacks below mirror it so
-// the page still renders during API downtime.
+// ContentOS AI · Two-part pricing model. Fallbacks mirror /api/pricing/config
+// exactly so the page still renders during API downtime.
 const FALLBACK_PLANS = [
-  { id: "free",     name: "Free",     price_inr: 0,     credits: 5,    tagline: "Try the full flow — one video on us." },
-  { id: "starter",  name: "Starter",  price_inr: 499,   credits: 10,   tagline: "Occasional creators. Warm-up plan." },
-  { id: "creator",  name: "Creator",  price_inr: 1999,  credits: 50,   tagline: "Regular short-form content." },
-  { id: "business", name: "Business", price_inr: 6999,  credits: 200,  tagline: "Unlocks premium AI video (Sora).", popular: true },
-  { id: "agency",   name: "Agency",   price_inr: 24999, credits: 800,  tagline: "Teams, workspaces, priority support." },
+  { id: "free",   name: "Free Preview", price_inr: 0,     credits: 50,   tagline: "Try one 30-sec slideshow video · no card" },
+  { id: "basic",  name: "Basic Access", price_inr: 999,   credits: 50,   tagline: "1 Brand Kit · Standard voices · 50 credits bundled" },
+  { id: "pro",    name: "Pro Studio",   price_inr: 3999,  credits: 250,  tagline: "5 Brand Kits · Premium voices · Sora unlocked · 250 credits bundled", popular: true },
+  { id: "agency", name: "Agency OS",    price_inr: 14999, credits: 1000, tagline: "Unlimited Brand Kits · Multi-workspace · Priority support · 1,000 credits bundled" },
 ];
-const FALLBACK_DURATIONS = [
-  { sec: 30,  credits: 5,   label: "30 sec",  bestFor: "Instagram Stories, TikTok teasers" },
-  { sec: 45,  credits: 8,   label: "45 sec",  bestFor: "LinkedIn feed videos" },
-  { sec: 60,  credits: 10,  label: "60 sec",  bestFor: "Instagram Reels, YouTube Shorts" },
-  { sec: 90,  credits: 15,  label: "90 sec",  bestFor: "X/Twitter video posts" },
-  { sec: 120, credits: 20,  label: "2 min",   bestFor: "Product demos" },
-  { sec: 180, credits: 30,  label: "3 min",   bestFor: "Deep explainers" },
-  { sec: 300, credits: 50,  label: "5 min",   bestFor: "Tutorials, walkthroughs" },
-  { sec: 600, credits: 100, label: "10 min",  bestFor: "Long-form YouTube" },
+const FALLBACK_PACKS = [
+  { id: "micro",  name: "Micro Pack",  price_inr:  999, credits:  100, tagline: "Top-up for ~1 minute of slideshow video" },
+  { id: "growth", name: "Growth Pack", price_inr: 3999, credits:  500, tagline: "Best value for regular content", popular: true },
+  { id: "power",  name: "Power Pack",  price_inr: 9999, credits: 1500, tagline: "Bulk savings for agencies + video-heavy months" },
 ];
-const PLAN_ICONS = { free: Sparkles, starter: Zap, creator: Rocket, business: Star, agency: Building2 };
-
-// Feature capability matrix — kept explicit so nothing is "surprise-locked".
-const FEATURES = [
-  { key: "wizard",       label: "Guided script → visuals → voice wizard",  all: true },
-  { key: "aspects",      label: "All aspect ratios (16:9, 9:16, 1:1)",     all: true },
-  { key: "download_mp4", label: "MP4 downloads + auto-thumbnail",           all: true },
-  { key: "share",        label: "Public share link (/v/…)",                all: true },
-  { key: "captions",     label: "Multi-language captions (10+ scripts)",   all: true },
-  { key: "credit_expiry",label: "Credits never expire",                    all: true },
-  { key: "no_watermark", label: "No watermark on video",                   plans: ["starter", "creator", "business", "agency"] },
-  { key: "priority",     label: "Priority render queue",                   plans: ["creator", "business", "agency"] },
-  { key: "talking_head", label: "Talking-head avatars",                    plans: ["creator", "business", "agency"] },
-  { key: "sora",         label: "Premium AI video (Sora, 200 credits/sec)", plans: ["business", "agency"] },
-  { key: "workspaces",   label: "Team workspaces + roles",                 plans: ["agency"] },
-  { key: "support_sla",  label: "1-hour support SLA",                      plans: ["agency"] },
+const FALLBACK_USAGE = [
+  { action: "Text-only post (LinkedIn / Blog)", credits: 10,  unit: "post" },
+  { action: "AI image generation",              credits: 20,  unit: "image" },
+  { action: "Slideshow video (Ken Burns)",      credits: 100, unit: "minute" },
+  { action: "Cinematic AI video (Sora 2)",      credits: 20,  unit: "second" },
+  { action: "Talking-head avatar (Phase 2)",    credits: 30,  unit: "second" },
 ];
 
-// What one credit actually pays for — no math hidden anywhere.
-const WHAT_CREDITS_PAY_FOR = [
-  { action: "Slideshow video generation",         cost: "~1 credit per 6 seconds (5 credits = 30-sec video)" },
-  { action: "AI script writing (unlimited edits)", cost: "Free — included in every video generation" },
-  { action: "AI image generation for scenes",     cost: "Free — included in every video generation" },
-  { action: "AI voiceover (TTS, multi-voice)",    cost: "Free — included in every video generation" },
-  { action: "Enhance-topic AI helper",            cost: "Free — no credits deducted" },
-  { action: "Talking-head avatar (paid plans)",   cost: "Included in the video's credit cost" },
-  { action: "Premium AI video (Sora)",            cost: "200 credits per second of footage" },
+const PLAN_ICONS = { free: Sparkles, basic: Zap, pro: Rocket, agency: Building2 };
+const USAGE_ICONS = { post: FileText, image: ImageIcon, minute: Film, second: Video, avatar: Mic };
+
+// Access-only feature matrix (what you get JUST by having the subscription —
+// separate from usage credits). Kept intentionally short so the promise is clear.
+const ACCESS_FEATURES = [
+  { key: "brand_kits",   label: "Brand Kits (logo, colors, fonts)",
+    free: "—", basic: "1", pro: "5", agency: "Unlimited" },
+  { key: "voices",       label: "Voice library",
+    free: "Standard", basic: "Standard", pro: "Premium", agency: "Premium + custom" },
+  { key: "sora_access",  label: "Cinematic Sora 2 video",
+    free: "Preview only", basic: "—", pro: "Yes", agency: "Yes" },
+  { key: "workspaces",   label: "Team workspaces + roles",
+    free: "—", basic: "—", pro: "—", agency: "Unlimited" },
+  { key: "watermark",    label: "No watermark on video",
+    free: "—", basic: "Yes", pro: "Yes", agency: "Yes" },
+  { key: "support",      label: "Support SLA",
+    free: "Community", basic: "Email · 48 hr", pro: "Email · 24 hr", agency: "Priority · 1 hr" },
 ];
 
-const inr = (n) => n.toLocaleString("en-IN");
+const inr = (n) => (n || 0).toLocaleString("en-IN");
 
 export default function Pricing() {
-  usePageTitle("Pricing");
+  usePageTitle("ContentOS AI · Pricing");
   const navigate = useNavigate();
   const [plans, setPlans] = useState(FALLBACK_PLANS);
-  const [durations, setDurations] = useState(FALLBACK_DURATIONS);
-  const [topup, setTopup] = useState({ price_inr: 1999, credits: 50, label: "Credit Top-Up Pack" });
-  const [pickedSec, setPickedSec] = useState(30);
+  const [packs, setPacks] = useState(FALLBACK_PACKS);
+  const [usage, setUsage] = useState(FALLBACK_USAGE);
 
   useEffect(() => {
     track("page_view", { page: "pricing" });
     api.get("/pricing/config").then(({ data }) => {
       if (Array.isArray(data.plans) && data.plans.length) setPlans(data.plans);
-      if (Array.isArray(data.durations) && data.durations.length) setDurations(data.durations);
-      if (data.topup) setTopup(data.topup);
+      if (Array.isArray(data.credit_packs) && data.credit_packs.length) setPacks(data.credit_packs);
+      if (Array.isArray(data.usage_costs) && data.usage_costs.length) setUsage(data.usage_costs);
     }).catch(() => {/* fall back to defaults */});
   }, []);
 
-  const picked = durations.find((d) => d.sec === pickedSec) || durations[0];
-  const planHas = (planId, featKey) => {
-    const f = FEATURES.find((x) => x.key === featKey);
-    if (!f) return false;
-    if (f.all) return true;
-    return (f.plans || []).includes(planId);
+  // --- Content Cost Estimator ---
+  // User picks a mix of assets they want to produce → we sum the credits.
+  const [est, setEst] = useState({ text: 0, image: 0, slideshowMin: 0, soraSec: 0 });
+  const findCost = (unit) => usage.find((u) => u.unit === unit)?.credits || 0;
+  const estimate = useMemo(() => {
+    return (
+      est.text          * findCost("post")   +
+      est.image         * findCost("image")  +
+      est.slideshowMin  * findCost("minute") +
+      est.soraSec       * findCost("second")
+    );
+  }, [est, usage]);
+  const perCreditInr = (p) => (p.credits > 0 && p.price_inr > 0 ? (p.price_inr / p.credits).toFixed(2) : "0");
+  const cheapestPack = useMemo(() => {
+    if (!estimate) return null;
+    return [...packs].sort((a, b) => a.credits - b.credits).find((p) => p.credits >= estimate) || packs[packs.length - 1];
+  }, [estimate, packs]);
+
+  const goCheckout = (id, kind) => {
+    track("pricing_cta_click", { id, kind });
+    navigate(`/checkout?plan=${id}&kind=${kind}`);
   };
-  const perCreditInr = (p) => (p.credits > 0 && p.price_inr > 0 ? (p.price_inr / p.credits) : 0);
 
   return (
     <div className="min-h-screen bg-white">
@@ -92,128 +96,162 @@ export default function Pricing() {
 
         {/* Header */}
         <div className="text-center max-w-2xl mx-auto">
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 text-brand-700 border border-brand-200 px-3 py-1 text-[11px] font-bold uppercase tracking-widest">
-            <ShieldCheck className="w-3.5 h-3.5" /> Transparent Pricing · No Hidden Fees
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 text-brand-700 border border-brand-200 px-3 py-1 text-[11px] font-bold uppercase tracking-widest" data-testid="pricing-badge">
+            <ShieldCheck className="w-3.5 h-3.5" /> Fairness First · Credits Never Expire
           </div>
           <h1 className="mt-4 font-heading text-4xl sm:text-5xl lg:text-6xl font-black tracking-tighter text-ink-900">
-            Simple, honest pricing.
+            Pay for Access. Fuel with Credits.
           </h1>
-          <p className="mt-4 text-base sm:text-lg text-ink-500">
-            Every plan is credit-based, credits never expire, and every feature that requires a paid plan is clearly labelled below. Cancel any time — you keep every credit you've bought.
+          <p className="mt-4 text-lg text-ink-600 leading-relaxed">
+            <strong>Subscribe once</strong> for platform access, brand kits, and premium features. <strong>Buy credits</strong> as you need them — every credit works across text, images, slideshows, and cinematic Sora 2 videos. <em>Your credits never expire.</em>
           </p>
         </div>
 
-        {/* Trust badges strip */}
-        <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="trust-badges">
-          {[
-            { Icon: ShieldCheck, title: "No hidden fees",        body: "One monthly price + optional top-ups. Nothing else." },
-            { Icon: RefreshCcw,  title: "Cancel any time",       body: "Downgrade, pause, or cancel from Settings. Zero questions." },
-            { Icon: Award,       title: "Credits never expire",  body: "Anything you've paid for stays yours forever." },
-            { Icon: FileCheck,   title: "You own your videos",   body: "Full commercial rights. Yours to publish, sell, remix." },
-          ].map((b) => (
-            <div key={b.title} className="rounded-xl border border-ink-200 bg-white p-4">
-              <b.Icon className="w-4 h-4 text-brand-600" />
-              <div className="mt-2 text-sm font-bold text-ink-900">{b.title}</div>
-              <div className="text-xs text-ink-500 mt-0.5 leading-snug">{b.body}</div>
+        {/* --- Part A: Platform Access (Subscriptions) --- */}
+        <div className="mt-14">
+          <div className="text-center">
+            <div className="inline-flex items-center gap-1 text-[11px] uppercase tracking-widest text-brand-700 font-bold">
+              <Package className="w-3.5 h-3.5" /> Part A · Platform Access
             </div>
-          ))}
+            <h2 className="mt-2 font-heading text-3xl sm:text-4xl font-black tracking-tighter text-ink-900">Monthly Subscriptions</h2>
+            <p className="mt-2 text-sm text-ink-500">Unlock features + get bundled credits every month. Cancel anytime.</p>
+          </div>
+
+          <div className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="plans-grid">
+            {plans.map((p) => {
+              const Icon = PLAN_ICONS[p.id] || Sparkles;
+              return (
+                <div key={p.id}
+                  className={`relative rounded-2xl border-2 p-5 flex flex-col ${p.popular ? "border-brand-600 bg-gradient-to-br from-brand-50 via-white to-white shadow-xl" : "border-ink-200 bg-white"}`}
+                  data-testid={`plan-card-${p.id}`}>
+                  {p.popular && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-brand-600 text-white text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full shadow">Most Popular</div>
+                  )}
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${p.popular ? "bg-brand-600 text-white" : "bg-ink-100 text-ink-700"}`}>
+                    <Icon className="w-4 h-4" />
+                  </div>
+                  <div className="mt-3 font-heading text-2xl font-black tracking-tighter">{p.name}</div>
+                  <div className="mt-1 text-xs text-ink-500 min-h-[36px]">{p.tagline}</div>
+                  <div className="mt-4 flex items-baseline gap-1">
+                    <span className="text-3xl font-black tracking-tighter">₹{inr(p.price_inr)}</span>
+                    {p.price_inr > 0 && <span className="text-xs text-ink-500">/mo</span>}
+                  </div>
+                  <div className="mt-3 inline-flex items-center gap-1.5 text-[11px] font-mono font-semibold text-brand-700 bg-brand-50 border border-brand-200 rounded-full px-2 py-0.5 self-start">
+                    + {inr(p.credits)} credits bundled
+                  </div>
+                  <Button onClick={() => goCheckout(p.id, "subscription")}
+                    className={`mt-5 rounded-full font-bold ${p.popular ? "bg-brand-600 hover:bg-brand-700 text-white" : "bg-white border-2 border-ink-900 text-ink-900 hover:bg-ink-900 hover:text-white"}`}
+                    data-testid={`plan-cta-${p.id}`}>
+                    {p.price_inr === 0 ? "Start free" : "Subscribe"}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Plan tiles */}
-        <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4" data-testid="pricing-plans-grid">
-          {plans.map((p) => {
-            const Icon = PLAN_ICONS[p.id] || Sparkles;
-            const isPopular = !!p.popular;
-            const per = perCreditInr(p);
-            return (
+        {/* --- Part B: Credit Packs --- */}
+        <div className="mt-16">
+          <div className="text-center">
+            <div className="inline-flex items-center gap-1 text-[11px] uppercase tracking-widest text-emerald-700 font-bold">
+              <CreditCard className="w-3.5 h-3.5" /> Part B · Content Credits
+            </div>
+            <h2 className="mt-2 font-heading text-3xl sm:text-4xl font-black tracking-tighter text-ink-900">Top-Up Packs (Never Expire)</h2>
+            <p className="mt-2 text-sm text-ink-500">Buy once, use forever. Credits work across every AI action.</p>
+          </div>
+
+          <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4" data-testid="packs-grid">
+            {packs.map((p) => (
               <div key={p.id}
-                   className={`relative rounded-2xl border p-6 bg-white flex flex-col ${isPopular ? "border-brand-600 ring-2 ring-brand-600/20 shadow-lg shadow-brand-600/10" : "border-ink-200"}`}
-                   data-testid={`plan-${p.id}`}>
-                {isPopular && (
-                  <div className="absolute -top-3 left-6 inline-flex items-center gap-1 rounded-full bg-brand-600 text-white text-[10px] font-bold px-3 py-1 uppercase tracking-widest">
-                    Most popular
-                  </div>
+                className={`relative rounded-2xl border-2 p-5 flex flex-col ${p.popular ? "border-emerald-600 bg-gradient-to-br from-emerald-50 via-white to-white shadow-xl" : "border-ink-200 bg-white"}`}
+                data-testid={`pack-card-${p.id}`}>
+                {p.popular && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-emerald-600 text-white text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full shadow">Best Value</div>
                 )}
-                <Icon className="w-6 h-6 text-brand-600" />
-                <div className="mt-4 font-heading font-black text-xl text-ink-900">{p.name}</div>
-                <div className="mt-2 flex items-end gap-1">
-                  {p.price_inr === 0 ? (
-                    <span className="font-heading text-4xl font-black tracking-tighter">Free</span>
-                  ) : (
-                    <>
-                      <span className="text-lg font-bold text-ink-500">₹</span>
-                      <span className="font-heading text-4xl font-black tracking-tighter">{inr(p.price_inr)}</span>
-                      <span className="text-sm text-ink-500 mb-1">/mo</span>
-                    </>
-                  )}
+                <div className="font-heading text-2xl font-black tracking-tighter">{p.name}</div>
+                <div className="mt-1 text-xs text-ink-500 min-h-[32px]">{p.tagline}</div>
+                <div className="mt-4 flex items-baseline gap-2">
+                  <span className="text-3xl font-black tracking-tighter">₹{inr(p.price_inr)}</span>
+                  <span className="text-xs text-ink-500">= {inr(p.credits)} credits</span>
                 </div>
-                <div className="mt-1 text-sm font-semibold text-brand-700">
-                  {inr(p.credits)} credits{p.price_inr === 0 ? " / month" : " included"}
-                </div>
-                {per > 0 && (
-                  <div className="text-[11px] text-ink-500 mt-0.5" data-testid={`plan-${p.id}-per-credit`}>
-                    ₹{per.toFixed(2)} per credit
-                  </div>
-                )}
-                <p className="mt-2 text-xs text-ink-500 leading-relaxed">{p.tagline}</p>
-                <ul className="mt-4 space-y-1.5 text-xs text-ink-700 flex-1">
-                  {FEATURES.map((f) => {
-                    const has = planHas(p.id, f.key);
-                    return (
-                      <li key={f.key} className={`flex items-start gap-1.5 ${has ? "" : "opacity-45"}`}>
-                        {has
-                          ? <Check className="w-3.5 h-3.5 text-emerald-500 mt-0.5 shrink-0" />
-                          : <X     className="w-3.5 h-3.5 text-ink-400 mt-0.5 shrink-0" />}
-                        <span className={has ? "" : "line-through"}>{f.label}</span>
-                      </li>
-                    );
-                  })}
-                </ul>
-                <Button
-                  onClick={() => { track("pricing_cta", { plan: p.id }); navigate(p.price_inr === 0 ? "/signup" : "/credits"); }}
-                  className={`mt-5 rounded-full ${isPopular ? "bg-brand-600 hover:bg-brand-700 text-white" : "bg-ink-900 hover:bg-ink-800 text-white"}`}
-                  data-testid={`plan-${p.id}-cta`}
-                >
-                  {p.price_inr === 0 ? "Start free" : "Choose " + p.name}
+                <div className="mt-1 text-[11px] font-mono text-emerald-700">₹{perCreditInr(p)} / credit</div>
+                <Button onClick={() => goCheckout(p.id, "pack")}
+                  className={`mt-5 rounded-full font-bold ${p.popular ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-white border-2 border-ink-900 text-ink-900 hover:bg-ink-900 hover:text-white"}`}
+                  data-testid={`pack-cta-${p.id}`}>
+                  Buy pack
                 </Button>
               </div>
-            );
-          })}
-        </div>
-
-        {/* Top-up strip */}
-        <div className="mt-6 rounded-2xl border border-ink-200 bg-ink-50/40 p-5 flex flex-wrap items-center justify-between gap-4" data-testid="topup-strip">
-          <div>
-            <div className="text-[10px] uppercase tracking-widest text-brand-600 font-bold">Top-up any time</div>
-            <div className="mt-1 text-lg font-semibold text-ink-900">
-              {topup.label} — <span className="font-mono">{inr(topup.credits)}</span> credits for <span className="font-mono">₹{inr(topup.price_inr)}</span>
-              <span className="text-sm text-ink-500 ml-2">(₹{(topup.price_inr / topup.credits).toFixed(2)} per credit)</span>
-            </div>
-            <div className="text-xs text-ink-500 mt-1">Credits never expire · works on every plan · buy as many packs as you need.</div>
+            ))}
           </div>
-          <Link to="/credits">
-            <Button className="rounded-full bg-brand-600 hover:bg-brand-700 text-white">Buy credits</Button>
-          </Link>
         </div>
 
-        {/* What credits actually pay for */}
-        <div className="mt-14">
-          <div className="text-[11px] uppercase tracking-widest text-brand-600 font-bold">Full credit transparency</div>
-          <h2 className="mt-1 font-heading text-2xl sm:text-3xl font-black tracking-tighter">What one credit pays for</h2>
-          <p className="mt-1 text-sm text-ink-500 max-w-2xl">Everything you see below is included in your credit cost. We don't charge for AI writing, image generation, or voice separately.</p>
-          <div className="mt-4 rounded-2xl border border-ink-200 bg-white overflow-hidden" data-testid="credit-usage-table">
-            <table className="w-full text-sm">
-              <thead className="bg-ink-50/60 text-left">
+        {/* --- Content Cost Estimator --- */}
+        <div className="mt-16 rounded-3xl border-2 border-ink-200 bg-gradient-to-br from-ink-50 via-white to-brand-50/30 p-6 sm:p-8" data-testid="cost-estimator">
+          <div className="flex items-center gap-2 text-[11px] uppercase tracking-widest text-ink-700 font-bold">
+            <Calculator className="w-4 h-4" /> Content Cost Estimator
+          </div>
+          <h3 className="mt-2 font-heading text-3xl font-black tracking-tighter">See what your month will cost</h3>
+          <p className="mt-2 text-sm text-ink-600">Enter what you plan to produce. We&apos;ll show total credits + which pack covers it.</p>
+
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <EstimatorRow icon={FileText}  label="Text posts (LinkedIn / Blog)" unitLabel="posts"  cost={findCost("post")}
+              value={est.text}         onChange={(v) => setEst({ ...est, text: v })}          testid="est-text" />
+            <EstimatorRow icon={ImageIcon} label="AI images"                   unitLabel="images" cost={findCost("image")}
+              value={est.image}        onChange={(v) => setEst({ ...est, image: v })}         testid="est-image" />
+            <EstimatorRow icon={Film}      label="Slideshow video"             unitLabel="minutes" cost={findCost("minute")}
+              value={est.slideshowMin} onChange={(v) => setEst({ ...est, slideshowMin: v })}  testid="est-slide" />
+            <EstimatorRow icon={Video}     label="Cinematic Sora 2 video"      unitLabel="seconds" cost={findCost("second")}
+              value={est.soraSec}      onChange={(v) => setEst({ ...est, soraSec: v })}       testid="est-sora" />
+          </div>
+
+          <div className="mt-6 rounded-2xl bg-white border border-ink-200 p-5 flex flex-wrap items-center gap-4">
+            <div className="min-w-[180px]">
+              <div className="text-[11px] uppercase tracking-widest text-ink-500 font-bold">Estimated total</div>
+              <div className="mt-1 text-4xl font-black tracking-tighter text-ink-900" data-testid="est-total">
+                {inr(estimate)} <span className="text-base font-bold text-ink-500">credits</span>
+              </div>
+            </div>
+            {cheapestPack && estimate > 0 && (
+              <div className="flex-1 min-w-[240px] p-4 rounded-xl bg-emerald-50 border border-emerald-200">
+                <div className="text-[11px] uppercase tracking-widest text-emerald-700 font-bold flex items-center gap-1">
+                  <Award className="w-3.5 h-3.5" /> Recommended pack
+                </div>
+                <div className="mt-1 text-sm font-bold text-ink-900">
+                  {cheapestPack.name} · ₹{inr(cheapestPack.price_inr)} = {inr(cheapestPack.credits)} credits
+                </div>
+                <div className="text-[11px] text-ink-500">Covers your month with {inr(cheapestPack.credits - estimate)} credits left over.</div>
+                <Button onClick={() => goCheckout(cheapestPack.id, "pack")}
+                  size="sm" className="mt-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                  data-testid="est-cta-pack">
+                  Buy this pack
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* --- Access-only feature matrix --- */}
+        <div className="mt-16">
+          <h3 className="font-heading text-2xl font-black tracking-tighter">What each subscription unlocks</h3>
+          <p className="mt-1 text-sm text-ink-500">Compare access features — credits sold separately.</p>
+          <div className="mt-6 overflow-x-auto rounded-2xl border border-ink-200 bg-white">
+            <table className="w-full text-sm" data-testid="feature-matrix">
+              <thead className="bg-ink-50">
                 <tr>
-                  <th className="px-4 py-3 text-xs uppercase tracking-widest text-ink-500 font-bold">Action</th>
-                  <th className="px-4 py-3 text-xs uppercase tracking-widest text-ink-500 font-bold">Credit cost</th>
+                  <th className="text-left px-4 py-3 font-bold text-ink-700 text-xs uppercase tracking-widest">Feature</th>
+                  {plans.map((p) => (
+                    <th key={p.id} className="text-left px-4 py-3 font-bold text-ink-700 text-xs uppercase tracking-widest whitespace-nowrap">{p.name}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {WHAT_CREDITS_PAY_FOR.map((row) => (
-                  <tr key={row.action} className="border-t border-ink-100">
-                    <td className="px-4 py-3 text-ink-900">{row.action}</td>
-                    <td className="px-4 py-3 text-ink-600 font-mono text-xs">{row.cost}</td>
+                {ACCESS_FEATURES.map((f) => (
+                  <tr key={f.key} className="border-t border-ink-100">
+                    <td className="px-4 py-3 text-ink-800 font-medium">{f.label}</td>
+                    <td className="px-4 py-3 text-ink-600">{f.free}</td>
+                    <td className="px-4 py-3 text-ink-600">{f.basic}</td>
+                    <td className="px-4 py-3 text-ink-800 font-semibold">{f.pro}</td>
+                    <td className="px-4 py-3 text-ink-800 font-semibold">{f.agency}</td>
                   </tr>
                 ))}
               </tbody>
@@ -221,96 +259,66 @@ export default function Pricing() {
           </div>
         </div>
 
-        {/* Duration calculator */}
-        <div className="mt-14">
-          <div className="flex items-center gap-2">
-            <Calculator className="w-4 h-4 text-brand-600" />
-            <div className="text-[11px] uppercase tracking-widest text-brand-600 font-bold">Credit Calculator</div>
-          </div>
-          <h2 className="mt-1 font-heading text-2xl sm:text-3xl font-black tracking-tighter">See what any video costs</h2>
-          <p className="mt-1 text-sm text-ink-500 max-w-2xl">Pick a duration to see the exact credit cost + the ₹ equivalent on each paid plan. No surprises when you hit generate.</p>
-
-          <div className="mt-4 flex flex-wrap gap-2" data-testid="duration-picker">
-            {durations.map((d) => (
-              <button key={d.sec}
-                      onClick={() => setPickedSec(d.sec)}
-                      className={`rounded-full px-4 py-2 text-sm font-semibold border transition-all
-                                  ${pickedSec === d.sec ? "bg-brand-600 border-brand-600 text-white" : "bg-white border-ink-200 text-ink-700 hover:border-brand-300"}`}
-                      data-testid={`duration-${d.sec}`}>
-                {d.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-5 rounded-2xl border border-ink-200 bg-white p-6" data-testid="calc-result">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <div>
-                <div className="text-[10px] uppercase tracking-widest text-ink-500 font-bold">You picked</div>
-                <div className="mt-1 font-heading text-3xl font-black tracking-tighter text-ink-900">{picked.label}</div>
-                <div className="text-xs text-ink-500 mt-1">Best for {picked.bestFor}</div>
-              </div>
-              <div className="text-right">
-                <div className="text-[10px] uppercase tracking-widest text-ink-500 font-bold">Credits used</div>
-                <div className="mt-1 font-heading text-3xl font-black tracking-tighter text-brand-700" data-testid="picked-credit-cost">
-                  {inr(picked.credits)} credits
-                </div>
-              </div>
-            </div>
-            <div className="mt-4 pt-4 border-t border-ink-100 grid grid-cols-2 md:grid-cols-4 gap-3">
-              {plans.filter((p) => p.price_inr > 0).map((p) => (
-                <div key={p.id} className="text-center rounded-lg bg-ink-50/60 p-3">
-                  <div className="text-[10px] uppercase tracking-widest text-ink-500 font-semibold">On {p.name}</div>
-                  <div className="mt-1 font-heading font-black text-lg text-ink-900">
-                    ₹{(perCreditInr(p) * picked.credits).toFixed(0)}
+        {/* --- Transparent unit costs --- */}
+        <div className="mt-16">
+          <h3 className="font-heading text-2xl font-black tracking-tighter">Exactly what each credit pays for</h3>
+          <p className="mt-1 text-sm text-ink-500">No hidden math. Every AI action has a fixed credit cost.</p>
+          <div className="mt-6 grid gap-2" data-testid="usage-costs-list">
+            {usage.map((u, i) => {
+              const Icon = USAGE_ICONS[u.unit] || Sparkles;
+              return (
+                <div key={i} className="flex items-center gap-3 bg-white border border-ink-200 rounded-xl px-4 py-3">
+                  <div className="w-8 h-8 rounded-lg bg-ink-100 flex items-center justify-center text-ink-700">
+                    <Icon className="w-4 h-4" />
                   </div>
-                  <div className="text-[10px] text-ink-500">per video</div>
+                  <div className="flex-1 text-sm text-ink-800 font-medium">{u.action}</div>
+                  <div className="text-sm font-mono font-bold text-brand-700">{u.credits} credits / {u.unit}</div>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-4 flex items-start gap-3" data-testid="sora-tooltip">
-            <Sparkles className="w-4 h-4 text-amber-700 mt-0.5" />
-            <div className="text-xs text-amber-800">
-              <span className="font-bold">Premium AI Video (Sora)</span> is priced separately at <span className="font-bold">200 credits per second</span> — a 10-second Sora clip = 2,000 credits. Only available on Business plan and above. Regular slideshow videos above already include everything (script + images + voice + captions) for the credit cost shown.
-            </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* Ethical / policy strip */}
-        <div className="mt-14" data-testid="policy-strip">
-          <div className="text-[11px] uppercase tracking-widest text-brand-600 font-bold">Our fair-use commitment</div>
-          <h2 className="mt-1 font-heading text-2xl sm:text-3xl font-black tracking-tighter">The fine print, unhidden.</h2>
-          <div className="mt-6 grid md:grid-cols-2 gap-4">
-            {[
-              { Icon: CreditCard, title: "How billing works", body: "You're billed monthly on the day you subscribe. Credits arrive instantly. If your card fails, we retry over 3 days and email you before pausing your plan — never a silent charge." },
-              { Icon: RefreshCcw, title: "Cancel or downgrade", body: "Do it any time from Settings — takes effect at the end of your current billing cycle. Credits you've already earned stay in your account and remain usable forever." },
-              { Icon: Award,      title: "Refund policy", body: "Since credits never expire and are consumable, we don't offer prorated cash refunds. If you're unhappy with a specific generation, contact support — we'll re-credit failed jobs within 24 hours." },
-              { Icon: Lock,       title: "Your data & privacy", body: "Your prompts and generated videos are yours. We never train models on your prompts and never resell your data. Delete your account at any time to wipe everything." },
-              { Icon: FileCheck,  title: "Commercial rights", body: "You own the full commercial rights to every video generated on paid plans. Free-tier videos are also yours to use, with a small unobtrusive credit line." },
-              { Icon: Info,       title: "Fair-use rate limits", body: "Every plan has generous limits and a soft priority queue. Agency plan gets its own priority lane. Abuse (bots, scraped prompts, illegal content) leads to a warning + refund + closure." },
-            ].map((p) => (
-              <div key={p.title} className="rounded-2xl border border-ink-200 bg-white p-5">
-                <p.Icon className="w-5 h-5 text-brand-600" />
-                <div className="mt-3 font-heading font-bold text-ink-900">{p.title}</div>
-                <p className="mt-1 text-sm text-ink-600 leading-relaxed">{p.body}</p>
-              </div>
-            ))}
+        {/* --- Fairness pledge --- */}
+        <div className="mt-16 rounded-2xl bg-ink-900 text-white p-6 sm:p-10 flex flex-wrap items-start gap-6">
+          <ShieldCheck className="w-8 h-8 text-emerald-400 shrink-0" />
+          <div className="flex-1 min-w-[240px]">
+            <div className="font-heading text-2xl font-black tracking-tighter">Our fairness pledge</div>
+            <ul className="mt-3 space-y-2 text-sm text-white/85">
+              <li className="flex items-start gap-2"><Check className="w-4 h-4 text-emerald-400 mt-0.5" /> Credits <strong>never expire</strong> — buy in bulk, use over months.</li>
+              <li className="flex items-start gap-2"><Check className="w-4 h-4 text-emerald-400 mt-0.5" /> Every AI action shows its <strong>exact credit cost</strong> before you spend.</li>
+              <li className="flex items-start gap-2"><Check className="w-4 h-4 text-emerald-400 mt-0.5" /> Auto-pause if balance runs low — <strong>no surprise overages</strong>.</li>
+              <li className="flex items-start gap-2"><Check className="w-4 h-4 text-emerald-400 mt-0.5" /> Cancel your subscription anytime — your <strong>credits stay with you</strong>.</li>
+            </ul>
           </div>
         </div>
 
-        {/* Bottom CTA */}
-        <div className="mt-14 rounded-2xl bg-gradient-to-br from-brand-600 to-indigo-700 text-white p-8 sm:p-10 text-center">
-          <div className="text-[11px] uppercase tracking-widest text-white/80 font-bold">Early access</div>
-          <h2 className="mt-2 font-heading text-3xl sm:text-4xl font-black tracking-tighter">Start with 5 free credits. No card.</h2>
-          <p className="mt-2 text-white/85 max-w-lg mx-auto">Generate your first 30-second video in under 3 minutes — script, visuals, voice, all approved by you.</p>
-          <Link to="/signup" data-testid="pricing-waitlist-cta">
-            <Button className="mt-5 rounded-full bg-white text-brand-700 hover:bg-white/90 font-bold px-6 h-11">
-              Get started free <Zap className="w-4 h-4 ml-1.5" />
-            </Button>
+        {/* --- CTA --- */}
+        <div className="mt-14 text-center">
+          <Link to="/signup" className="inline-flex items-center gap-2 text-brand-700 font-bold hover:underline" data-testid="pricing-signup-link">
+            <Sparkles className="w-4 h-4" /> Start free · No card required
           </Link>
         </div>
+
       </div>
+    </div>
+  );
+}
+
+// Small numeric input for the estimator; keeps main render clean.
+function EstimatorRow({ icon: Icon, label, unitLabel, cost, value, onChange, testid }) {
+  return (
+    <div className="rounded-xl bg-white border border-ink-200 p-4">
+      <div className="flex items-center gap-2 text-xs text-ink-700 font-bold">
+        <Icon className="w-3.5 h-3.5" /> {label}
+      </div>
+      <div className="mt-1 text-[11px] text-ink-500">{cost} credits / {unitLabel.replace(/s$/, "")}</div>
+      <input type="number" min="0" step="1"
+        value={value} onChange={(e) => onChange(Math.max(0, parseInt(e.target.value || "0", 10)))}
+        placeholder="0"
+        className="mt-3 w-full rounded-lg border-2 border-ink-200 focus:border-brand-600 outline-none px-3 py-2 text-lg font-mono font-bold text-ink-900"
+        data-testid={testid} />
+      <div className="mt-1 text-[11px] text-ink-500">{unitLabel}</div>
     </div>
   );
 }

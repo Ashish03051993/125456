@@ -45,7 +45,7 @@ EMERGENT_LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
 # Talking-head provider — "stub" (default, no external calls) or "fal_sonic" (needs FAL_KEY env)
 TALKING_HEAD_PROVIDER = os.environ.get("TALKING_HEAD_PROVIDER", "stub")
 # Paid-only feature — Free-plan users cannot enable talking_head
-PAID_PLANS = {"creator", "business", "agency", "pro", "enterprise"}  # legacy names kept for backwards-compat with any existing accounts
+PAID_PLANS = {"basic", "pro", "agency", "creator", "business", "enterprise", "starter"}  # includes legacy names for backwards-compat
 
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
@@ -905,14 +905,15 @@ async def list_projects(user=Depends(current_user)):
 # before, just prettier smaller numbers on the UI.
 DURATION_TIERS: list = [
     # (duration_sec, credit_cost, num_scenes, label)
-    (30,    5,  3,  "30 sec"),
-    (45,    8,  4,  "45 sec"),
-    (60,   10,  5,  "60 sec"),
-    (90,   15,  7,  "90 sec"),
-    (120,  20,  9,  "2 min"),
-    (180,  30, 12,  "3 min"),
-    (300,  50, 16,  "5 min"),
-    (600, 100, 22,  "10 min"),
+    # New ContentOS AI billing model: 100 credits per minute of slideshow video.
+    (30,    50,  3,  "30 sec"),
+    (45,    75,  4,  "45 sec"),
+    (60,   100,  5,  "60 sec"),
+    (90,   150,  7,  "90 sec"),
+    (120,  200,  9,  "2 min"),
+    (180,  300, 12,  "3 min"),
+    (300,  500, 16,  "5 min"),
+    (600, 1000, 22,  "10 min"),
 ]
 DURATION_BY_SEC = {t[0]: t for t in DURATION_TIERS}
 DEFAULT_DURATION_SEC = 30
@@ -937,8 +938,8 @@ def scenes_for_sec(sec: int) -> int:
 
 
 # --------------------------- Free-tier credit refill ---------------------------
-FREE_MONTHLY_CREDITS = 5    # 1 × 30-sec video every month (new pricing scale)
-LOW_CREDIT_THRESHOLD = 20   # Show a persistent "Low Credits" warning below this
+FREE_MONTHLY_CREDITS = 50    # New ContentOS AI: enough for one 30-sec slideshow video
+LOW_CREDIT_THRESHOLD = 100   # Warn when balance can't cover the next video generation
 
 async def apply_free_refill(user: dict) -> dict:
     """If the user's `last_refill_at` is in a previous calendar month (or missing),
@@ -1329,8 +1330,14 @@ async def talking_head_feature():
 @api.get("/pricing/config")
 async def pricing_config():
     """Public pricing constants — used by the frontend to keep the low-credit
-    threshold, referral bonus, and durations table in one authoritative place."""
+    threshold, referral bonus, and durations table in one authoritative place.
+
+    ContentOS AI two-part model:
+      • Platform Access (monthly subscription) → seats + brand kits + feature access
+      • Content Credits (usage packs) → deducted on every AI action, never expire
+    """
     return {
+        "app_name": "ContentOS AI",
         "durations": [
             {"sec": t[0], "credits": t[1], "scenes": t[2], "label": t[3]} for t in DURATION_TIERS
         ],
@@ -1338,14 +1345,38 @@ async def pricing_config():
         "low_credit_threshold": LOW_CREDIT_THRESHOLD,
         "referral_bonus": REFERRAL_BONUS,
         "currency": "INR",
+        # Part A — Platform Access (recurring subscriptions)
         "plans": [
-            {"id": "free",     "name": "Free",     "price_inr": 0,     "credits": FREE_MONTHLY_CREDITS, "period": "month", "tagline": "1 × 30-sec video every month"},
-            {"id": "starter",  "name": "Starter",  "price_inr": 499,   "credits": 10,   "period": "month", "tagline": "2 × 30-sec videos or 1 × 60-sec video every month"},
-            {"id": "creator",  "name": "Creator",  "price_inr": 1999,  "credits": 50,   "period": "month", "tagline": "10 × 30-sec videos or ~5 mins of slideshow"},
-            {"id": "business", "name": "Business", "price_inr": 6999,  "credits": 200,  "period": "month", "tagline": "Unlocks premium AI video (Sora) + higher volume", "popular": True},
-            {"id": "agency",   "name": "Agency",   "price_inr": 24999, "credits": 800,  "period": "month", "tagline": "Multi-workspace + team seats + priority support"},
+            {"id": "free",   "name": "Free Preview", "price_inr": 0,     "credits": FREE_MONTHLY_CREDITS,
+             "period": "month", "tagline": "Try one 30-sec slideshow video · no card"},
+            {"id": "basic",  "name": "Basic Access", "price_inr": 999,   "credits": 50,
+             "period": "month", "tagline": "1 Brand Kit · Standard voices · 50 credits bundled"},
+            {"id": "pro",    "name": "Pro Studio",   "price_inr": 3999,  "credits": 250,
+             "period": "month", "tagline": "5 Brand Kits · Premium voices · Sora unlocked · 250 credits bundled", "popular": True},
+            {"id": "agency", "name": "Agency OS",    "price_inr": 14999, "credits": 1000,
+             "period": "month", "tagline": "Unlimited Brand Kits · Multi-workspace · Priority support · 1,000 credits bundled"},
         ],
-        "topup": {"price_inr": 1999, "credits": 50, "label": "Credit Top-Up Pack"},
+        # Part B — Content Credit Packs (one-time, never expire)
+        "credit_packs": [
+            {"id": "micro",  "name": "Micro Pack",  "price_inr":  999, "credits":  100, "tagline": "Top-up for ~1 minute of slideshow video"},
+            {"id": "growth", "name": "Growth Pack", "price_inr": 3999, "credits":  500, "tagline": "Best value for regular content", "popular": True},
+            {"id": "power",  "name": "Power Pack",  "price_inr": 9999, "credits": 1500, "tagline": "Bulk savings for agencies + video-heavy months"},
+        ],
+        # Transparent unit costs — nothing hidden.
+        "usage_costs": [
+            {"action": "Text-only post (LinkedIn / Blog)",   "credits": 10,  "unit": "post"},
+            {"action": "AI image generation",                "credits": 20,  "unit": "image"},
+            {"action": "Slideshow video (Ken Burns)",        "credits": 100, "unit": "minute"},
+            {"action": "Cinematic AI video (Sora 2)",        "credits": 20,  "unit": "second"},
+            {"action": "Talking-head avatar (Phase 2)",      "credits": 30,  "unit": "second"},
+        ],
+        "policy": {
+            "credits_expire": False,
+            "credits_refundable": False,
+            "auto_pause_on_low_balance": True,
+        },
+        # Legacy compat — some old flows still expect a `topup` field.
+        "topup": {"price_inr": 3999, "credits": 500, "label": "Growth Credit Pack"},
     }
 
 
@@ -2839,18 +2870,17 @@ async def _generate_image(prompt: str, out_path: Path):
 # --------------------------- Sora 2 animated-scene generation ---------------------------
 # Uses OpenAIVideoGeneration from emergentintegrations, routed via the Emergent
 # Universal LLM Key (no separate OpenAI wallet). Sora 2 supports 4s / 8s / 12s
-# clips at 720p/1024p. We use the approved scene image as the first frame so the
-# animation stays visually consistent with the storyboard the user already OK'd.
+# clips at 720p/1024p. ContentOS AI billing: 20 credits per second of Sora.
 ANIMATED_SCENE_DURATION = 4      # seconds — default (cheapest Sora tier)
-ANIMATED_SCENE_CREDIT_COST = 5   # user-facing app credits per 4-second scene
+ANIMATED_SCENE_CREDIT_COST = 80  # 4 seconds × 20 credits/sec = 80 credits per scene
 SORA_ALLOWED_DURATIONS = (4, 8, 12)
 
 
 def _animate_cost_for(duration: int) -> int:
-    """Linear pricing: 4s=5, 8s=10, 12s=15 credits."""
+    """Linear pricing at 20 credits/sec: 4s=80, 8s=160, 12s=240 credits."""
     if duration not in SORA_ALLOWED_DURATIONS:
         raise HTTPException(400, f"Invalid duration {duration}. Must be one of {SORA_ALLOWED_DURATIONS}.")
-    return (duration // 4) * ANIMATED_SCENE_CREDIT_COST
+    return duration * 20
 
 
 async def _generate_animated_scene(prompt: str, image_path: Path, out_path: Path,
